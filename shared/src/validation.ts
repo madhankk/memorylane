@@ -56,3 +56,7 @@ export const searchQuerySchema = z.object({
 export const randomMediaQuerySchema = z.object({
   count: z.coerce.number().int().min(1).max(100).default(100),
 });
+
+export const runScanRequestSchema = z.object({
+  scanRootId: z.number().int().positive().optional(),
+});

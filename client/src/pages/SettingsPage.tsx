@@ -89,15 +89,21 @@ export default function SettingsPage() {
     setScanRoots((prev) => prev.filter((r) => r.id !== root.id));
   };
 
-  const runScanNow = async () => {
+  const runScanNow = async (scanRootId?: number) => {
+    setError(null);
     try {
-      await api.scans.run();
+      await api.scans.run(scanRootId);
       const st = await api.scans.status();
       setStatus(st);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not start scan");
     }
   };
+
+  const scanningRootPath =
+    status?.running && status.currentRun?.scanRootId != null
+      ? scanRoots.find((r) => r.id === status.currentRun!.scanRootId)?.path
+      : null;
 
   const updateSchedule = async (patch: Partial<SettingsDto>) => {
     const updated = await api.settings.update(patch);
@@ -132,6 +138,13 @@ export default function SettingsPage() {
                 <span className="scan-root-stats muted">{scanRootSummary(root)}</span>
               </div>
               <span>
+                <button
+                  onClick={() => runScanNow(root.id)}
+                  disabled={!root.enabled || status?.running}
+                  title={!root.enabled ? "Enable this folder to scan it" : undefined}
+                >
+                  {status?.running && status.currentRun?.scanRootId === root.id ? "Scanning..." : "Scan Now"}
+                </button>
                 <button onClick={() => toggleRoot(root)}>{root.enabled ? "Disable" : "Enable"}</button>
                 <button onClick={() => removeRoot(root)}>Remove</button>
               </span>
@@ -164,15 +177,16 @@ export default function SettingsPage() {
           days
         </div>
 
-        <button onClick={runScanNow} disabled={status?.running} className="run-scan-button">
-          {status?.running ? "Scan running..." : "Run Scan Now"}
+        <button onClick={() => runScanNow()} disabled={status?.running} className="run-scan-button">
+          {status?.running ? "Scan running..." : "Run Scan Now (all folders)"}
         </button>
 
         {status && (
           <div className="scan-status">
             {status.currentRun && status.running && (
               <p>
-                Scanning: {status.currentRun.filesScanned} files scanned, {status.currentRun.filesNew} new,{" "}
+                Scanning{scanningRootPath ? ` "${scanningRootPath}"` : " all folders"}:{" "}
+                {status.currentRun.filesScanned} files scanned, {status.currentRun.filesNew} new,{" "}
                 {status.currentRun.errorCount} errors so far.
               </p>
             )}

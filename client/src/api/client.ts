@@ -65,7 +65,11 @@ export const api = {
     remove: (id: number) => request<void>(`/api/scan-roots/${id}`, { method: "DELETE" }),
   },
   scans: {
-    run: () => request<{ ok: true }>("/api/scans/run", { method: "POST" }),
+    run: (scanRootId?: number) =>
+      request<{ ok: true }>("/api/scans/run", {
+        method: "POST",
+        body: scanRootId !== undefined ? JSON.stringify({ scanRootId }) : undefined,
+      }),
     status: () => request<ScanStatusDto>("/api/scans/status"),
     history: () => request<ScanRunDto[]>("/api/scans/history"),
   },

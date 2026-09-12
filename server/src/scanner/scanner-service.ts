@@ -32,6 +32,7 @@ interface ScanRunRow {
   files_removed: number;
   error_count: number;
   trigger_source: string;
+  scan_root_id: number | null;
 }
 
 function toScanRunDto(row: ScanRunRow): ScanRunDto {
@@ -46,6 +47,7 @@ function toScanRunDto(row: ScanRunRow): ScanRunDto {
     filesRemoved: row.files_removed,
     errorCount: row.error_count,
     trigger: row.trigger_source as ScanTrigger,
+    scanRootId: row.scan_root_id,
   };
 }
 
@@ -103,15 +105,30 @@ export class ScannerService {
     return rows.map(toScanRunDto);
   }
 
-  async runScan(trigger: ScanTrigger): Promise<void> {
+  // scanRootId scopes the run to a single folder ("Scan Now" on one scan root
+  // in Settings); omitted, it scans every enabled root as before.
+  async runScan(trigger: ScanTrigger, scanRootId?: number): Promise<void> {
     if (this.running) {
       throw new Error("A scan is already running");
     }
+
+    let roots: ScanRootRow[];
+    if (scanRootId !== undefined) {
+      const root = this.db.prepare("SELECT * FROM scan_roots WHERE id = ?").get(scanRootId) as
+        | ScanRootRow
+        | undefined;
+      if (!root) throw new Error("Scan root not found");
+      if (!root.enabled) throw new Error("Scan root is disabled");
+      roots = [root];
+    } else {
+      roots = this.db.prepare("SELECT * FROM scan_roots WHERE enabled = 1").all() as ScanRootRow[];
+    }
+
     this.running = true;
     const runStartedAt = new Date().toISOString();
     const runInfo = this.db
-      .prepare("INSERT INTO scan_runs (status, trigger_source) VALUES ('running', ?)")
-      .run(trigger);
+      .prepare("INSERT INTO scan_runs (status, trigger_source, scan_root_id) VALUES ('running', ?, ?)")
+      .run(trigger, scanRootId ?? null);
     const runId = Number(runInfo.lastInsertRowid);
 
     const stats: Stats = { filesScanned: 0, filesNew: 0, filesChanged: 0, filesRemoved: 0, errorCount: 0 };
@@ -132,11 +149,9 @@ export class ScannerService {
       }
     };
 
-    this.logger.info({ runId, trigger }, "Scan started");
+    this.logger.info({ runId, trigger, scanRootId: scanRootId ?? "all" }, "Scan started");
 
     try {
-      const roots = this.db.prepare("SELECT * FROM scan_roots WHERE enabled = 1").all() as ScanRootRow[];
-
       for (const root of roots) {
         try {
           await this.scanRoot(root, stats, enqueueProcessing, flushIfNeeded);
@@ -148,17 +163,32 @@ export class ScannerService {
 
       await flushIfNeeded(true);
 
-      // Anything not touched during this run (last_seen_at before this run started) is now missing.
-      const missingMedia = this.db
-        .prepare(
-          "UPDATE media SET status = 'missing' WHERE status = 'active' AND last_seen_at < ? RETURNING id",
-        )
-        .all(runStartedAt) as { id: number }[];
+      // Anything not touched during this run (last_seen_at before this run started) is
+      // now missing - but only within the root(s) this run actually covered. A scan
+      // scoped to one folder (or a run that skips disabled roots) must never mark media
+      // in untouched roots as missing just because this run didn't visit them.
+      const scannedRootIds = roots.map((r) => r.id);
+      const placeholders = scannedRootIds.map(() => "?").join(",");
+
+      const missingMedia = scannedRootIds.length
+        ? (this.db
+            .prepare(
+              `UPDATE media SET status = 'missing'
+               WHERE status = 'active' AND last_seen_at < ? AND scan_root_id IN (${placeholders})
+               RETURNING id`,
+            )
+            .all(runStartedAt, ...scannedRootIds) as { id: number }[])
+        : [];
       stats.filesRemoved = missingMedia.length;
 
-      this.db
-        .prepare("UPDATE folders SET status = 'missing' WHERE status = 'active' AND updated_at < ?")
-        .run(runStartedAt);
+      if (scannedRootIds.length) {
+        this.db
+          .prepare(
+            `UPDATE folders SET status = 'missing'
+             WHERE status = 'active' AND updated_at < ? AND scan_root_id IN (${placeholders})`,
+          )
+          .run(runStartedAt, ...scannedRootIds);
+      }
 
       this.db
         .prepare(

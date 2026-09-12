@@ -130,6 +130,8 @@ export interface ScanRunDto {
   filesRemoved: number;
   errorCount: number;
   trigger: ScanTrigger;
+  // null = every enabled scan root; set = a single-folder "Scan Now".
+  scanRootId: number | null;
 }
 
 export interface ScanStatusDto {
@@ -138,6 +140,10 @@ export interface ScanStatusDto {
   lastRun: ScanRunDto | null;
   lastSuccessfulRun: ScanRunDto | null;
   nextScheduledAt: string | null;
+}
+
+export interface RunScanRequest {
+  scanRootId?: number;
 }
 
 export interface PaginatedResult<T> {
