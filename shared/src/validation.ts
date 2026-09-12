@@ -34,6 +34,19 @@ export const paginationQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
+// z.coerce.boolean() is unsuitable for query strings: Boolean("false") is
+// `true` in JS, so "recursive=false" would coerce to true. Parse the literal
+// string instead.
+const booleanQueryParam = z
+  .enum(["true", "false"])
+  .optional()
+  .transform((v) => v === "true");
+
+export const folderMediaQuerySchema = paginationQuerySchema.extend({
+  // When true, includes media from all descendant subfolders, not just this one.
+  recursive: booleanQueryParam,
+});
+
 export const searchQuerySchema = z.object({
   q: z.string().min(1).max(200),
   offset: z.coerce.number().int().min(0).default(0),

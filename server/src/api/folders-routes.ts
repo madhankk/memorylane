@@ -1,7 +1,17 @@
 import type { FastifyInstance } from "fastify";
-import { paginationQuerySchema, type FolderBreadcrumbDto } from "@memorylane/shared";
+import { paginationQuerySchema, folderMediaQuerySchema, type FolderBreadcrumbDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { toFolderDto, toMediaDto, type FolderRow, type FolderCounts, type MediaRow } from "./mappers.js";
+
+// Recursive CTE selecting a folder and every active descendant - reused by the
+// "all files in this folder tree" flat view.
+const DESCENDANT_FOLDERS_CTE = `
+  WITH RECURSIVE descendant_folders(id) AS (
+    SELECT id FROM folders WHERE id = ? AND status = 'active'
+    UNION ALL
+    SELECT f.id FROM folders f JOIN descendant_folders d ON f.parent_id = d.id WHERE f.status = 'active'
+  )
+`;
 
 function getFolderCounts(ctx: AppContext, folderId: number): FolderCounts {
   const mediaCount = (
@@ -76,18 +86,41 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
 
   app.get("/api/folders/:id/media", { preHandler: app.requireAuth }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
-    const parsed = paginationQuerySchema.safeParse(request.query);
+    const parsed = folderMediaQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: "Invalid query" });
-    const { offset, limit } = parsed.data;
+    const { offset, limit, recursive } = parsed.data;
 
+    if (!recursive) {
+      const total = (
+        db.prepare("SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status = 'active'").get(id) as {
+          c: number;
+        }
+      ).c;
+      const rows = db
+        .prepare(
+          `SELECT * FROM media WHERE parent_folder_id = ? AND status = 'active'
+           ORDER BY captured_date IS NULL, captured_date, filename LIMIT ? OFFSET ?`,
+        )
+        .all(id, limit, offset) as MediaRow[];
+
+      return reply.send({ items: rows.map(toMediaDto), total, offset, limit });
+    }
+
+    // Flat view: every active media file under this folder and all of its subfolders.
     const total = (
-      db.prepare("SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status = 'active'").get(id) as {
-        c: number;
-      }
+      db
+        .prepare(
+          `${DESCENDANT_FOLDERS_CTE}
+           SELECT COUNT(*) as c FROM media
+           WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active'`,
+        )
+        .get(id) as { c: number }
     ).c;
     const rows = db
       .prepare(
-        `SELECT * FROM media WHERE parent_folder_id = ? AND status = 'active'
+        `${DESCENDANT_FOLDERS_CTE}
+         SELECT media.* FROM media
+         WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active'
          ORDER BY captured_date IS NULL, captured_date, filename LIMIT ? OFFSET ?`,
       )
       .all(id, limit, offset) as MediaRow[];

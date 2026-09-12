@@ -19,26 +19,44 @@ export default function FolderPage() {
   const [media, setMedia] = useState<MediaDto[]>([]);
   const [mediaTotal, setMediaTotal] = useState(0);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  // "All files" flattens every subfolder's media into one list, instead of
+  // showing only this folder's direct children/media.
+  const [showAllFiles, setShowAllFiles] = useState(false);
+
+  const loadMedia = useCallback(
+    async (recursive: boolean) => {
+      const res = await api.folders.media(folderId, 0, PAGE_SIZE, recursive);
+      setMedia(res.items);
+      setMediaTotal(res.total);
+    },
+    [folderId],
+  );
 
   const load = useCallback(async () => {
-    const [detail, childrenRes, mediaRes] = await Promise.all([
+    const [detail, childrenRes] = await Promise.all([
       api.folders.get(folderId),
       api.folders.children(folderId, 0, 500),
-      api.folders.media(folderId, 0, PAGE_SIZE),
     ]);
     setFolder(detail.folder);
     setBreadcrumbs(detail.breadcrumbs);
     setChildren(childrenRes.items);
-    setMedia(mediaRes.items);
-    setMediaTotal(mediaRes.total);
+    await loadMedia(false);
+  }, [folderId, loadMedia]);
+
+  // Reset to the normal (non-flattened) view and reload whenever navigating to a different folder.
+  useEffect(() => {
+    setShowAllFiles(false);
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderId]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const toggleAllFiles = async (checked: boolean) => {
+    setShowAllFiles(checked);
+    await loadMedia(checked);
+  };
 
   const loadMore = async () => {
-    const res = await api.folders.media(folderId, media.length, PAGE_SIZE);
+    const res = await api.folders.media(folderId, media.length, PAGE_SIZE, showAllFiles);
     setMedia((prev) => [...prev, ...res.items]);
   };
 
@@ -47,9 +65,15 @@ export default function FolderPage() {
   return (
     <div className="folder-page">
       <Breadcrumbs items={breadcrumbs} />
-      <h1>{folder.name}</h1>
+      <div className="folder-page-header">
+        <h1>{folder.name}</h1>
+        <label className="all-files-toggle">
+          <input type="checkbox" checked={showAllFiles} onChange={(e) => void toggleAllFiles(e.target.checked)} />
+          All files
+        </label>
+      </div>
 
-      {children.length > 0 && (
+      {!showAllFiles && children.length > 0 && (
         <div className="folder-grid">
           {children.map((c) => (
             <FolderCard key={c.id} folder={c} />
@@ -59,7 +83,10 @@ export default function FolderPage() {
 
       {media.length > 0 && <MediaGrid items={media} onOpen={setViewerIndex} />}
 
-      {children.length === 0 && media.length === 0 && <p className="muted">This folder is empty.</p>}
+      {!showAllFiles && children.length === 0 && media.length === 0 && (
+        <p className="muted">This folder is empty.</p>
+      )}
+      {showAllFiles && media.length === 0 && <p className="muted">No files in this folder or its subfolders.</p>}
 
       {media.length < mediaTotal && (
         <button className="load-more" onClick={loadMore}>

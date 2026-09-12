@@ -74,8 +74,10 @@ export const api = {
     get: (id: number) => request<{ folder: FolderDto; breadcrumbs: FolderBreadcrumbDto[] }>(`/api/folders/${id}`),
     children: (id: number, offset = 0, limit = 100) =>
       request<PaginatedResult<FolderDto>>(`/api/folders/${id}/children?offset=${offset}&limit=${limit}`),
-    media: (id: number, offset = 0, limit = 200) =>
-      request<PaginatedResult<MediaDto>>(`/api/folders/${id}/media?offset=${offset}&limit=${limit}`),
+    media: (id: number, offset = 0, limit = 200, recursive = false) =>
+      request<PaginatedResult<MediaDto>>(
+        `/api/folders/${id}/media?offset=${offset}&limit=${limit}&recursive=${recursive}`,
+      ),
   },
   media: {
     get: (id: number) => request<MediaDto>(`/api/media/${id}`),

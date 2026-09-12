@@ -192,6 +192,25 @@ input {
   border-radius: 8px;
 }
 
+/* Folder page header */
+.folder-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.folder-page-header h1 { margin: 0; }
+.all-files-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.all-files-toggle input { cursor: pointer; }
+
 /* Breadcrumbs */
 .breadcrumbs { color: var(--text-muted); margin-bottom: 8px; font-size: 14px; }
 .breadcrumbs a { color: var(--text-muted); }
