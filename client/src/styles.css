@@ -182,14 +182,13 @@ input {
   border-radius: 4px;
 }
 
-.load-more {
-  display: block;
-  margin: 24px auto;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 10px 20px;
-  border-radius: 8px;
+.load-more-sentinel {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 60px;
+  margin-top: 8px;
+  font-size: 13px;
 }
 
 /* Folder page header */

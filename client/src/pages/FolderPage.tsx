@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import type { FolderDto, FolderBreadcrumbDto, MediaDto } from "@memorylane/shared";
 import { api } from "../api/client";
@@ -6,6 +6,7 @@ import Breadcrumbs from "../components/Breadcrumbs";
 import FolderCard from "../components/FolderCard";
 import MediaGrid from "../components/MediaGrid";
 import Viewer from "../components/Viewer";
+import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
 
 const PAGE_SIZE = 200;
 
@@ -22,6 +23,8 @@ export default function FolderPage() {
   // "All files" flattens every subfolder's media into one list, instead of
   // showing only this folder's direct children/media.
   const [showAllFiles, setShowAllFiles] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
 
   const loadMedia = useCallback(
     async (recursive: boolean) => {
@@ -55,10 +58,21 @@ export default function FolderPage() {
     await loadMedia(checked);
   };
 
-  const loadMore = async () => {
-    const res = await api.folders.media(folderId, media.length, PAGE_SIZE, showAllFiles);
-    setMedia((prev) => [...prev, ...res.items]);
-  };
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const res = await api.folders.media(folderId, media.length, PAGE_SIZE, showAllFiles);
+      setMedia((prev) => [...prev, ...res.items]);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [folderId, media.length, showAllFiles]);
+
+  const hasMore = media.length < mediaTotal;
+  const sentinelRef = useInfiniteScroll(loadMore, hasMore, loadingMore);
 
   if (!folder) return <p className="muted">Loading...</p>;
 
@@ -88,10 +102,10 @@ export default function FolderPage() {
       )}
       {showAllFiles && media.length === 0 && <p className="muted">No files in this folder or its subfolders.</p>}
 
-      {media.length < mediaTotal && (
-        <button className="load-more" onClick={loadMore}>
-          Load more ({media.length} / {mediaTotal})
-        </button>
+      {hasMore && (
+        <div ref={sentinelRef} className="load-more-sentinel">
+          {loadingMore && <span className="muted">Loading more ({media.length} / {mediaTotal})...</span>}
+        </div>
       )}
 
       {viewerIndex !== null && (
