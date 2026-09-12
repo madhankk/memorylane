@@ -26,7 +26,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    // Only set Content-Type when there's an actual JSON body - Fastify rejects
+    // a request that declares application/json but sends an empty body (e.g.
+    // GET/DELETE calls), which every request here would otherwise trigger.
+    headers: init?.body ? { "Content-Type": "application/json", ...init?.headers } : init?.headers,
   });
   if (!res.ok) {
     let message = res.statusText;
