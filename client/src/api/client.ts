@@ -1,0 +1,87 @@
+import type {
+  UserDto,
+  SetupRequest,
+  LoginRequest,
+  SettingsDto,
+  UpdateSettingsRequest,
+  ScanRootDto,
+  CreateScanRootRequest,
+  UpdateScanRootRequest,
+  ScanStatusDto,
+  ScanRunDto,
+  FolderDto,
+  FolderBreadcrumbDto,
+  MediaDto,
+  PaginatedResult,
+  SearchResultDto,
+} from "@memorylane/shared";
+
+class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // ignore non-JSON error bodies
+    }
+    throw new ApiError(res.status, message);
+  }
+  if (res.status === 204 || res.status === 202) return undefined as T;
+  return (await res.json()) as T;
+}
+
+export { ApiError };
+
+export const api = {
+  auth: {
+    me: () => request<{ user: UserDto | null; needsSetup: boolean }>("/api/auth/me"),
+    setup: (body: SetupRequest) => request<{ ok: true }>("/api/auth/setup", { method: "POST", body: JSON.stringify(body) }),
+    login: (body: LoginRequest) => request<{ user: UserDto }>("/api/auth/login", { method: "POST", body: JSON.stringify(body) }),
+    logout: () => request<{ ok: true }>("/api/auth/logout", { method: "POST" }),
+  },
+  settings: {
+    get: () => request<SettingsDto>("/api/settings"),
+    update: (body: UpdateSettingsRequest) => request<SettingsDto>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
+  },
+  scanRoots: {
+    list: () => request<ScanRootDto[]>("/api/scan-roots"),
+    create: (body: CreateScanRootRequest) => request<ScanRootDto>("/api/scan-roots", { method: "POST", body: JSON.stringify(body) }),
+    update: (id: number, body: UpdateScanRootRequest) => request<ScanRootDto>(`/api/scan-roots/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+    remove: (id: number) => request<void>(`/api/scan-roots/${id}`, { method: "DELETE" }),
+  },
+  scans: {
+    run: () => request<{ ok: true }>("/api/scans/run", { method: "POST" }),
+    status: () => request<ScanStatusDto>("/api/scans/status"),
+    history: () => request<ScanRunDto[]>("/api/scans/history"),
+  },
+  folders: {
+    listTop: () => request<FolderDto[]>("/api/folders"),
+    get: (id: number) => request<{ folder: FolderDto; breadcrumbs: FolderBreadcrumbDto[] }>(`/api/folders/${id}`),
+    children: (id: number, offset = 0, limit = 100) =>
+      request<PaginatedResult<FolderDto>>(`/api/folders/${id}/children?offset=${offset}&limit=${limit}`),
+    media: (id: number, offset = 0, limit = 200) =>
+      request<PaginatedResult<MediaDto>>(`/api/folders/${id}/media?offset=${offset}&limit=${limit}`),
+  },
+  media: {
+    get: (id: number) => request<MediaDto>(`/api/media/${id}`),
+    fileUrl: (id: number) => `/api/media/${id}/file`,
+    thumbnailUrl: (id: number) => `/api/media/${id}/thumbnail`,
+  },
+  search: (q: string, offset = 0, limit = 50) =>
+    request<PaginatedResult<SearchResultDto>>(`/api/search?q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`),
+  memories: {
+    random: (count = 100) => request<{ items: MediaDto[] }>(`/api/memories/random?count=${count}`),
+  },
+};

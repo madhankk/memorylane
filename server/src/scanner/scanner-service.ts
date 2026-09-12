@@ -1,0 +1,337 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import type Database from "better-sqlite3";
+import type { Logger } from "pino";
+import pLimit from "p-limit";
+import type { ScanRunDto, ScanStatusDto, ScanTrigger } from "@memorylane/shared";
+import type { AppPaths } from "../config/paths.js";
+import { classifyExtension } from "./media-types.js";
+import { computeFingerprint } from "./fingerprint.js";
+import { getOrCreateFolder } from "./folder-repo.js";
+import { processMediaItem } from "../media/media-processor.js";
+
+interface ScanRootRow {
+  id: number;
+  path: string;
+  enabled: number;
+}
+
+interface MediaLookupRow {
+  id: number;
+  fingerprint: string;
+}
+
+interface ScanRunRow {
+  id: number;
+  started_at: string;
+  finished_at: string | null;
+  status: string;
+  files_scanned: number;
+  files_new: number;
+  files_changed: number;
+  files_removed: number;
+  error_count: number;
+  trigger_source: string;
+}
+
+function toScanRunDto(row: ScanRunRow): ScanRunDto {
+  return {
+    id: row.id,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    status: row.status as ScanRunDto["status"],
+    filesScanned: row.files_scanned,
+    filesNew: row.files_new,
+    filesChanged: row.files_changed,
+    filesRemoved: row.files_removed,
+    errorCount: row.error_count,
+    trigger: row.trigger_source as ScanTrigger,
+  };
+}
+
+interface Stats {
+  filesScanned: number;
+  filesNew: number;
+  filesChanged: number;
+  filesRemoved: number;
+  errorCount: number;
+}
+
+const THUMBNAIL_QUEUE_CONCURRENCY = 4;
+const THUMBNAIL_QUEUE_FLUSH_SIZE = 200;
+
+export class ScannerService {
+  private running = false;
+  private scheduleTimer: NodeJS.Timeout | null = null;
+
+  constructor(
+    private db: Database.Database,
+    private paths: AppPaths,
+    private logger: Logger,
+  ) {}
+
+  isRunning(): boolean {
+    return this.running;
+  }
+
+  getStatus(): ScanStatusDto {
+    const currentRun = this.running ? this.getLatestRun() : null;
+    const lastRun = this.getLatestRun();
+    const lastSuccessfulRun = this.db
+      .prepare("SELECT * FROM scan_runs WHERE status = 'completed' ORDER BY id DESC LIMIT 1")
+      .get() as ScanRunRow | undefined;
+    return {
+      running: this.running,
+      currentRun,
+      lastRun: lastRun ?? null,
+      lastSuccessfulRun: lastSuccessfulRun ? toScanRunDto(lastSuccessfulRun) : null,
+      nextScheduledAt: null,
+    };
+  }
+
+  private getLatestRun(): ScanRunDto | null {
+    const row = this.db.prepare("SELECT * FROM scan_runs ORDER BY id DESC LIMIT 1").get() as
+      | ScanRunRow
+      | undefined;
+    return row ? toScanRunDto(row) : null;
+  }
+
+  getHistory(limit = 20): ScanRunDto[] {
+    const rows = this.db
+      .prepare("SELECT * FROM scan_runs ORDER BY id DESC LIMIT ?")
+      .all(limit) as ScanRunRow[];
+    return rows.map(toScanRunDto);
+  }
+
+  async runScan(trigger: ScanTrigger): Promise<void> {
+    if (this.running) {
+      throw new Error("A scan is already running");
+    }
+    this.running = true;
+    const runStartedAt = new Date().toISOString();
+    const runInfo = this.db
+      .prepare("INSERT INTO scan_runs (status, trigger_source) VALUES ('running', ?)")
+      .run(trigger);
+    const runId = Number(runInfo.lastInsertRowid);
+
+    const stats: Stats = { filesScanned: 0, filesNew: 0, filesChanged: 0, filesRemoved: 0, errorCount: 0 };
+    const limiter = pLimit(THUMBNAIL_QUEUE_CONCURRENCY);
+    let pendingJobs: Promise<void>[] = [];
+
+    const enqueueProcessing = (mediaId: number, absolutePath: string, mediaType: "image" | "raw" | "video") => {
+      pendingJobs.push(
+        limiter(() => processMediaItem(this.db, this.paths, this.logger, { id: mediaId, absolute_path: absolutePath, media_type: mediaType })),
+      );
+    };
+
+    const flushIfNeeded = async (force = false) => {
+      if (pendingJobs.length >= THUMBNAIL_QUEUE_FLUSH_SIZE || force) {
+        const batch = pendingJobs;
+        pendingJobs = [];
+        await Promise.all(batch);
+      }
+    };
+
+    this.logger.info({ runId, trigger }, "Scan started");
+
+    try {
+      const roots = this.db.prepare("SELECT * FROM scan_roots WHERE enabled = 1").all() as ScanRootRow[];
+
+      for (const root of roots) {
+        try {
+          await this.scanRoot(root, stats, enqueueProcessing, flushIfNeeded);
+        } catch (err) {
+          stats.errorCount++;
+          this.logger.error({ err, root: root.path }, "Failed to scan root - continuing with remaining roots");
+        }
+      }
+
+      await flushIfNeeded(true);
+
+      // Anything not touched during this run (last_seen_at before this run started) is now missing.
+      const missingMedia = this.db
+        .prepare(
+          "UPDATE media SET status = 'missing' WHERE status = 'active' AND last_seen_at < ? RETURNING id",
+        )
+        .all(runStartedAt) as { id: number }[];
+      stats.filesRemoved = missingMedia.length;
+
+      this.db
+        .prepare("UPDATE folders SET status = 'missing' WHERE status = 'active' AND updated_at < ?")
+        .run(runStartedAt);
+
+      this.db
+        .prepare(
+          `UPDATE scan_runs SET status = 'completed', finished_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+           files_scanned = ?, files_new = ?, files_changed = ?, files_removed = ?, error_count = ? WHERE id = ?`,
+        )
+        .run(stats.filesScanned, stats.filesNew, stats.filesChanged, stats.filesRemoved, stats.errorCount, runId);
+
+      this.logger.info({ runId, stats }, "Scan completed");
+    } catch (err) {
+      this.logger.error({ err, runId }, "Scan failed");
+      this.db
+        .prepare(
+          `UPDATE scan_runs SET status = 'failed', finished_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+           files_scanned = ?, files_new = ?, files_changed = ?, files_removed = ?, error_count = ? WHERE id = ?`,
+        )
+        .run(stats.filesScanned, stats.filesNew, stats.filesChanged, stats.filesRemoved, stats.errorCount + 1, runId);
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private async scanRoot(
+    root: ScanRootRow,
+    stats: Stats,
+    enqueueProcessing: (mediaId: number, absolutePath: string, mediaType: "image" | "raw" | "video") => void,
+    flushIfNeeded: (force?: boolean) => Promise<void>,
+  ): Promise<void> {
+    let rootStat;
+    try {
+      rootStat = await fs.stat(root.path);
+    } catch {
+      this.logger.warn({ root: root.path }, "Scan root is not accessible - skipping");
+      stats.errorCount++;
+      return;
+    }
+    if (!rootStat.isDirectory()) {
+      this.logger.warn({ root: root.path }, "Scan root is not a directory - skipping");
+      return;
+    }
+
+    const rootFolder = getOrCreateFolder(this.db, root.id, null, path.basename(root.path), root.path);
+    await this.walkDirectory(root, rootFolder.id, root.path, stats, enqueueProcessing, flushIfNeeded);
+  }
+
+  private async walkDirectory(
+    root: ScanRootRow,
+    parentFolderId: number,
+    dirPath: string,
+    stats: Stats,
+    enqueueProcessing: (mediaId: number, absolutePath: string, mediaType: "image" | "raw" | "video") => void,
+    flushIfNeeded: (force?: boolean) => Promise<void>,
+  ): Promise<void> {
+    let entries;
+    try {
+      entries = await fs.readdir(dirPath, { withFileTypes: true });
+    } catch (err) {
+      this.logger.warn({ err, dir: dirPath }, "Could not read directory - skipping (permission or I/O error)");
+      stats.errorCount++;
+      return;
+    }
+
+    for (const entry of entries) {
+      const entryPath = path.join(dirPath, entry.name);
+
+      if (entry.isDirectory()) {
+        const folder = getOrCreateFolder(this.db, root.id, parentFolderId, entry.name, entryPath);
+        await this.walkDirectory(root, folder.id, entryPath, stats, enqueueProcessing, flushIfNeeded);
+        continue;
+      }
+
+      if (!entry.isFile()) continue;
+
+      const ext = path.extname(entry.name).slice(1).toLowerCase();
+      const mediaType = classifyExtension(ext);
+      if (!mediaType) continue; // unsupported file type, skip silently (not an error)
+
+      if (mediaType === "video") {
+        // Video pipeline lands in a later phase - skip indexing entirely for now
+        // rather than creating half-populated rows.
+        continue;
+      }
+
+      try {
+        await this.indexFile(root, parentFolderId, entryPath, entry.name, ext, mediaType, stats, enqueueProcessing);
+      } catch (err) {
+        stats.errorCount++;
+        this.logger.warn({ err, file: entryPath }, "Failed to index file - continuing scan");
+      }
+
+      await flushIfNeeded();
+    }
+  }
+
+  private async indexFile(
+    root: ScanRootRow,
+    parentFolderId: number,
+    absolutePath: string,
+    filename: string,
+    extension: string,
+    mediaType: "image" | "raw" | "video",
+    stats: Stats,
+    enqueueProcessing: (mediaId: number, absolutePath: string, mediaType: "image" | "raw" | "video") => void,
+  ): Promise<void> {
+    const stat = await fs.stat(absolutePath);
+    const fingerprint = computeFingerprint(stat.size, stat.mtimeMs);
+    const fsCreatedAt = stat.birthtimeMs > 0 ? stat.birthtime.toISOString() : null;
+
+    const existing = this.db
+      .prepare("SELECT id, fingerprint FROM media WHERE absolute_path = ?")
+      .get(absolutePath) as MediaLookupRow | undefined;
+
+    stats.filesScanned++;
+
+    if (!existing) {
+      const info = this.db
+        .prepare(
+          `INSERT INTO media (parent_folder_id, scan_root_id, absolute_path, filename, extension, media_type,
+            file_size, fs_created_at, fs_modified_at, fingerprint, thumbnail_status, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'active')`,
+        )
+        .run(
+          parentFolderId, root.id, absolutePath, filename, extension, mediaType,
+          stat.size, fsCreatedAt, stat.mtime.toISOString(), fingerprint,
+        );
+      stats.filesNew++;
+      enqueueProcessing(Number(info.lastInsertRowid), absolutePath, mediaType);
+      return;
+    }
+
+    if (existing.fingerprint !== fingerprint) {
+      this.db
+        .prepare(
+          `UPDATE media SET file_size = ?, fs_modified_at = ?, fingerprint = ?, thumbnail_status = 'pending',
+           status = 'active', last_seen_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), parent_folder_id = ?
+           WHERE id = ?`,
+        )
+        .run(stat.size, stat.mtime.toISOString(), fingerprint, parentFolderId, existing.id);
+      stats.filesChanged++;
+      enqueueProcessing(existing.id, absolutePath, mediaType);
+      return;
+    }
+
+    this.db
+      .prepare(
+        "UPDATE media SET status = 'active', last_seen_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), parent_folder_id = ? WHERE id = ?",
+      )
+      .run(parentFolderId, existing.id);
+  }
+
+  // Called once at startup - if scheduled scanning is enabled and the interval
+  // has elapsed since the last run, kicks off a scan; otherwise arms a timer
+  // for the remaining interval.
+  scheduleFromSettings(scanIntervalDays: number | null, scanScheduleEnabled: boolean): void {
+    if (this.scheduleTimer) {
+      clearTimeout(this.scheduleTimer);
+      this.scheduleTimer = null;
+    }
+    if (!scanScheduleEnabled || !scanIntervalDays) return;
+
+    const intervalMs = scanIntervalDays * 24 * 60 * 60 * 1000;
+    const lastRun = this.db
+      .prepare("SELECT started_at FROM scan_runs WHERE status = 'completed' ORDER BY id DESC LIMIT 1")
+      .get() as { started_at: string } | undefined;
+
+    const elapsedMs = lastRun ? Date.now() - new Date(lastRun.started_at).getTime() : Infinity;
+    const delayMs = Math.max(0, intervalMs - elapsedMs);
+
+    this.scheduleTimer = setTimeout(() => {
+      this.runScan("scheduled")
+        .catch((err) => this.logger.error({ err }, "Scheduled scan failed"))
+        .finally(() => this.scheduleFromSettings(scanIntervalDays, scanScheduleEnabled));
+    }, delayMs);
+    this.scheduleTimer.unref();
+  }
+}

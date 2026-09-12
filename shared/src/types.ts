@@ -1,0 +1,148 @@
+// Shared enums and DTOs used by both server and client.
+// Keep this file free of any server-only or browser-only dependencies.
+
+export type MediaType = "image" | "raw" | "video";
+
+export type ThumbnailStatus = "pending" | "done" | "failed" | "unsupported";
+
+export type MediaStatus = "active" | "missing";
+
+export type ScanTrigger = "manual" | "scheduled";
+
+export type ScanRunStatus = "running" | "completed" | "failed";
+
+export interface UserDto {
+  id: number;
+  username: string;
+  createdAt: string;
+}
+
+export interface SetupRequest {
+  username: string;
+  password: string;
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface ScanRootDto {
+  id: number;
+  path: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateScanRootRequest {
+  path: string;
+}
+
+export interface UpdateScanRootRequest {
+  enabled?: boolean;
+}
+
+export interface SettingsDto {
+  bindAddress: string;
+  port: number;
+  scanIntervalDays: number | null;
+  scanScheduleEnabled: boolean;
+}
+
+export interface UpdateSettingsRequest {
+  bindAddress?: string;
+  port?: number;
+  scanIntervalDays?: number | null;
+  scanScheduleEnabled?: boolean;
+}
+
+export interface FolderDto {
+  id: number;
+  scanRootId: number;
+  parentId: number | null;
+  name: string;
+  absolutePath: string;
+  mediaCount: number;
+  childFolderCount: number;
+  thumbnailMediaId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FolderBreadcrumbDto {
+  id: number;
+  name: string;
+}
+
+export interface MediaDto {
+  id: number;
+  parentFolderId: number;
+  scanRootId: number;
+  filename: string;
+  extension: string;
+  mediaType: MediaType;
+  fileSize: number;
+  fsCreatedAt: string | null;
+  fsModifiedAt: string;
+  capturedDate: string | null;
+  width: number | null;
+  height: number | null;
+  orientation: number | null;
+  thumbnailStatus: ThumbnailStatus;
+  status: MediaStatus;
+
+  cameraMake: string | null;
+  cameraModel: string | null;
+  lensModel: string | null;
+  focalLength: number | null;
+  aperture: number | null;
+  shutterSpeed: string | null;
+  iso: number | null;
+  rating: number | null;
+  gpsLat: number | null;
+  gpsLon: number | null;
+
+  durationSeconds: number | null;
+  codec: string | null;
+}
+
+export interface ScanRunDto {
+  id: number;
+  startedAt: string;
+  finishedAt: string | null;
+  status: ScanRunStatus;
+  filesScanned: number;
+  filesNew: number;
+  filesChanged: number;
+  filesRemoved: number;
+  errorCount: number;
+  trigger: ScanTrigger;
+}
+
+export interface ScanStatusDto {
+  running: boolean;
+  currentRun: ScanRunDto | null;
+  lastRun: ScanRunDto | null;
+  lastSuccessfulRun: ScanRunDto | null;
+  nextScheduledAt: string | null;
+}
+
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export type SearchResultType = "folder" | "media";
+
+export interface SearchResultDto {
+  type: SearchResultType;
+  folder?: FolderDto;
+  media?: MediaDto;
+}
+
+export interface RandomMediaRequest {
+  count?: number;
+}
