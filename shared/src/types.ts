@@ -27,12 +27,24 @@ export interface LoginRequest {
   password: string;
 }
 
+export interface ScanRootStatsDto {
+  mediaCount: number;
+  photoCount: number;
+  rawCount: number;
+  videoCount: number;
+  folderCount: number;
+  totalSizeBytes: number;
+  pendingThumbnails: number;
+  failedThumbnails: number;
+}
+
 export interface ScanRootDto {
   id: number;
   path: string;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
+  stats: ScanRootStatsDto;
 }
 
 export interface CreateScanRootRequest {

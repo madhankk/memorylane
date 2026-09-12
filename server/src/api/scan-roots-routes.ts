@@ -1,10 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
+import type Database from "better-sqlite3";
 import type { FastifyInstance } from "fastify";
 import {
   createScanRootRequestSchema,
   updateScanRootRequestSchema,
   type ScanRootDto,
+  type ScanRootStatsDto,
 } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 
@@ -16,13 +18,62 @@ interface ScanRootRow {
   updated_at: string;
 }
 
-function toDto(row: ScanRootRow): ScanRootDto {
+interface MediaTypeAggRow {
+  media_type: "image" | "raw" | "video";
+  count: number;
+  size: number | null;
+  pending: number;
+  failed: number;
+}
+
+function getScanRootStats(db: Database.Database, scanRootId: number): ScanRootStatsDto {
+  const byType = db
+    .prepare(
+      `SELECT media_type, COUNT(*) as count, SUM(file_size) as size,
+        SUM(CASE WHEN thumbnail_status = 'pending' THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN thumbnail_status = 'failed' THEN 1 ELSE 0 END) as failed
+       FROM media WHERE scan_root_id = ? AND status = 'active' GROUP BY media_type`,
+    )
+    .all(scanRootId) as MediaTypeAggRow[];
+
+  const folderCount = (
+    db.prepare("SELECT COUNT(*) as c FROM folders WHERE scan_root_id = ? AND status = 'active'").get(scanRootId) as {
+      c: number;
+    }
+  ).c;
+
+  const stats: ScanRootStatsDto = {
+    mediaCount: 0,
+    photoCount: 0,
+    rawCount: 0,
+    videoCount: 0,
+    folderCount,
+    totalSizeBytes: 0,
+    pendingThumbnails: 0,
+    failedThumbnails: 0,
+  };
+
+  for (const row of byType) {
+    stats.mediaCount += row.count;
+    stats.totalSizeBytes += row.size ?? 0;
+    stats.pendingThumbnails += row.pending;
+    stats.failedThumbnails += row.failed;
+    if (row.media_type === "image") stats.photoCount += row.count;
+    else if (row.media_type === "raw") stats.rawCount += row.count;
+    else if (row.media_type === "video") stats.videoCount += row.count;
+  }
+
+  return stats;
+}
+
+function toDto(db: Database.Database, row: ScanRootRow): ScanRootDto {
   return {
     id: row.id,
     path: row.path,
     enabled: row.enabled === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    stats: getScanRootStats(db, row.id),
   };
 }
 
@@ -31,7 +82,7 @@ export async function registerScanRootRoutes(app: FastifyInstance, ctx: AppConte
 
   app.get("/api/scan-roots", { preHandler: app.requireAuth }, async (_request, reply) => {
     const rows = db.prepare("SELECT * FROM scan_roots ORDER BY path").all() as ScanRootRow[];
-    return reply.send(rows.map(toDto));
+    return reply.send(rows.map((row) => toDto(db, row)));
   });
 
   app.post("/api/scan-roots", { preHandler: app.requireAuth }, async (request, reply) => {
@@ -56,7 +107,7 @@ export async function registerScanRootRoutes(app: FastifyInstance, ctx: AppConte
         .prepare("INSERT INTO scan_roots (path, enabled) VALUES (?, 1)")
         .run(resolvedPath);
       const row = db.prepare("SELECT * FROM scan_roots WHERE id = ?").get(info.lastInsertRowid) as ScanRootRow;
-      return reply.code(201).send(toDto(row));
+      return reply.code(201).send(toDto(db, row));
     } catch (err) {
       if (err instanceof Error && err.message.includes("UNIQUE")) {
         return reply.code(409).send({ error: "This path is already a scan root" });
@@ -79,7 +130,7 @@ export async function registerScanRootRoutes(app: FastifyInstance, ctx: AppConte
         .run(parsed.data.enabled ? 1 : 0, id);
     }
     const updated = db.prepare("SELECT * FROM scan_roots WHERE id = ?").get(id) as ScanRootRow;
-    return reply.send(toDto(updated));
+    return reply.send(toDto(db, updated));
   });
 
   app.delete("/api/scan-roots/:id", { preHandler: app.requireAuth }, async (request, reply) => {

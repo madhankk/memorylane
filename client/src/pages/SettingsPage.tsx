@@ -2,6 +2,30 @@ import { useEffect, useRef, useState } from "react";
 import type { ScanRootDto, SettingsDto, ScanStatusDto } from "@memorylane/shared";
 import { api, ApiError } from "../api/client";
 
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function scanRootSummary(root: ScanRootDto): string {
+  const { stats } = root;
+  if (stats.mediaCount === 0) return "No media indexed yet";
+
+  const parts: string[] = [];
+  if (stats.photoCount) parts.push(`${stats.photoCount.toLocaleString()} photos`);
+  if (stats.rawCount) parts.push(`${stats.rawCount.toLocaleString()} RAW`);
+  if (stats.videoCount) parts.push(`${stats.videoCount.toLocaleString()} videos`);
+  parts.push(`${stats.folderCount.toLocaleString()} folders`);
+  parts.push(formatBytes(stats.totalSizeBytes));
+
+  let summary = parts.join(" · ");
+  if (stats.pendingThumbnails) summary += ` · ${stats.pendingThumbnails.toLocaleString()} pending`;
+  if (stats.failedThumbnails) summary += ` · ${stats.failedThumbnails.toLocaleString()} failed`;
+  return summary;
+}
+
 export default function SettingsPage() {
   const [scanRoots, setScanRoots] = useState<ScanRootDto[]>([]);
   const [settings, setSettings] = useState<SettingsDto | null>(null);
@@ -29,6 +53,8 @@ export default function SettingsPage() {
         if (!st.running && pollRef.current) {
           clearInterval(pollRef.current);
           pollRef.current = null;
+          // Scan just finished - refresh per-folder stats now that they've changed.
+          setScanRoots(await api.scanRoots.list());
         }
       }, 2000);
     }
@@ -101,7 +127,10 @@ export default function SettingsPage() {
         <ul className="scan-root-list">
           {scanRoots.map((root) => (
             <li key={root.id}>
-              <span className={root.enabled ? "" : "muted"}>{root.path}</span>
+              <div className="scan-root-info">
+                <span className={root.enabled ? "" : "muted"}>{root.path}</span>
+                <span className="scan-root-stats muted">{scanRootSummary(root)}</span>
+              </div>
               <span>
                 <button onClick={() => toggleRoot(root)}>{root.enabled ? "Disable" : "Enable"}</button>
                 <button onClick={() => removeRoot(root)}>Remove</button>
