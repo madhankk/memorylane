@@ -15,10 +15,12 @@ function badgeFor(media: MediaDto): string | null {
   return null;
 }
 
-// Mirrors life-archive-app's AlbumPhotoGrid masonry view: CSS columns so each
-// thumbnail keeps its natural aspect ratio, small rounded corners, a subtle
-// border ring, and a hover lift + zoom. Denser (smaller gap, more columns)
-// than the source app since MemoryLane favors seeing more photos at once.
+// A standard row-major grid (not CSS-columns masonry): masonry packs items
+// column-by-column, so sequential/chronological photos in a folder would
+// read down the first column before continuing in the second - confusing
+// for browsing. A uniform grid reads left-to-right, top-to-bottom like every
+// other photo browser. Keeps the small rounded corners, border ring, and
+// hover lift/zoom from the life-archive-app-inspired styling.
 export default function MediaGrid({ items, onOpen }: MediaGridProps) {
   // Optimistic per-thumbnail favorite overrides - `items` is an external prop
   // that won't reflect a toggle until the parent refetches, so track it locally.
@@ -35,7 +37,7 @@ export default function MediaGrid({ items, onOpen }: MediaGridProps) {
   };
 
   return (
-    <div className="columns-2 gap-2 sm:columns-3 lg:columns-4 2xl:columns-5">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-2">
       {items.map((media, i) => {
         const badge = badgeFor(media);
         const hasThumbnail = media.thumbnailStatus === "done";
@@ -45,17 +47,17 @@ export default function MediaGrid({ items, onOpen }: MediaGridProps) {
             key={media.id}
             onClick={() => onOpen(i)}
             title={media.filename}
-            className="group relative mb-2 block w-full break-inside-avoid overflow-hidden rounded-[8px] bg-media text-left shadow-media ring-1 ring-border transition hover:-translate-y-0.5 hover:shadow-media-hover"
+            className="group relative aspect-square overflow-hidden rounded-[8px] bg-media text-left shadow-media ring-1 ring-border transition hover:-translate-y-0.5 hover:shadow-media-hover"
           >
             {hasThumbnail ? (
               <img
                 src={api.media.thumbnailUrl(media.id)}
                 alt=""
                 loading="lazy"
-                className="h-auto w-full transition duration-500 group-hover:scale-[1.018]"
+                className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.018]"
               />
             ) : (
-              <div className="flex h-40 items-center justify-center text-2xl text-ink opacity-40">
+              <div className="flex h-full items-center justify-center text-2xl text-ink opacity-40">
                 {media.mediaType === "video" ? "🎬" : "🖼"}
               </div>
             )}
