@@ -21,9 +21,6 @@ export default function Layout() {
             Browse
           </NavLink>
           <NavLink to="/search">Search</NavLink>
-          <NavLink to="/surprise" className="surprise-link">
-            Surprise Me
-          </NavLink>
           <NavLink to="/settings">Settings</NavLink>
           <button className="link-button" onClick={handleLogout}>
             Log out

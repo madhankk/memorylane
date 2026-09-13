@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ScanRootDto, SettingsDto, ScanStatusDto } from "@memorylane/shared";
 import { api, ApiError } from "../api/client";
+import { useTheme, type Theme } from "../hooks/useTheme";
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -110,11 +111,36 @@ export default function SettingsPage() {
     setSettings(updated);
   };
 
+  const { theme, setTheme } = useTheme();
+
   if (!settings) return <p className="muted">Loading...</p>;
+
+  const themeOptions: { value: Theme; label: string }[] = [
+    { value: "dark", label: "Dark" },
+    { value: "light", label: "Light" },
+  ];
 
   return (
     <div className="settings-page">
       <h1>Settings</h1>
+
+      <section>
+        <h2>Appearance</h2>
+        <div className="theme-picker">
+          {themeOptions.map((opt) => (
+            <label key={opt.value} className={`theme-option${theme === opt.value ? " active" : ""}`}>
+              <input
+                type="radio"
+                name="theme"
+                value={opt.value}
+                checked={theme === opt.value}
+                onChange={() => setTheme(opt.value)}
+              />
+              {opt.label}
+            </label>
+          ))}
+        </div>
+      </section>
 
       <section>
         <h2>Scan Folders</h2>
