@@ -17,6 +17,7 @@ import type {
   SearchResultDto,
   HomeSummaryDto,
   StorageStatsDto,
+  OnThisDayResponse,
 } from "@memorylane/shared";
 
 class ApiError extends Error {
@@ -98,6 +99,7 @@ export const api = {
     request<PaginatedResult<SearchResultDto>>(`/api/search?q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`),
   memories: {
     random: (count = 100) => request<{ items: MediaDto[] }>(`/api/memories/random?count=${count}`),
+    onThisDay: (count = 30) => request<OnThisDayResponse>(`/api/memories/on-this-day?count=${count}`),
   },
   home: {
     summary: () => request<HomeSummaryDto>("/api/home/summary"),

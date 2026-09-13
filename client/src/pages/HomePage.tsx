@@ -1,13 +1,28 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { FolderDto, HomeSummaryDto } from "@memorylane/shared";
+import type { FolderDto, HomeSummaryDto, MediaDto, OnThisDayTier } from "@memorylane/shared";
 import { api } from "../api/client";
 import FolderCard from "../components/FolderCard";
+import InlineSlideshow from "../components/InlineSlideshow";
 import { formatBytes } from "../utils/format";
+import { formatMemoryBlurb } from "../utils/blurb";
+
+type MemoryTab = "random" | "onThisDay";
+
+const TIER_CAPTION: Record<OnThisDayTier, string> = {
+  day: "Photos taken on this day across the years.",
+  week: "No photos from this exact day yet - here's the same week across the years.",
+  month: "Nothing from this week yet - here's the same month across the years.",
+  none: "",
+};
 
 export default function HomePage() {
   const [folders, setFolders] = useState<FolderDto[] | null>(null);
   const [summary, setSummary] = useState<HomeSummaryDto | null>(null);
+  const [activeTab, setActiveTab] = useState<MemoryTab | null>(null);
+  const [tabItems, setTabItems] = useState<MediaDto[] | null>(null);
+  const [tabTier, setTabTier] = useState<OnThisDayTier | null>(null);
+  const [tabLoading, setTabLoading] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -23,6 +38,25 @@ export default function HomePage() {
     }
   };
 
+  const selectTab = async (tab: MemoryTab) => {
+    setActiveTab(tab);
+    setTabLoading(true);
+    setTabItems(null);
+    setTabTier(null);
+    try {
+      if (tab === "random") {
+        const res = await api.memories.random(30);
+        setTabItems(res.items);
+      } else {
+        const res = await api.memories.onThisDay(30);
+        setTabItems(res.items);
+        setTabTier(res.tier);
+      }
+    } finally {
+      setTabLoading(false);
+    }
+  };
+
   const heroMetadata = summary
     ? [
         summary.mediaCount > 0 ? `${summary.mediaCount.toLocaleString()} media` : null,
@@ -32,15 +66,22 @@ export default function HomePage() {
       ].filter((v): v is string => v !== null)
     : [];
 
+  const heroBlurb = summary?.heroMedia ? formatMemoryBlurb(summary.heroMedia) : null;
+
+  const tabButtonClass = (tab: MemoryTab) =>
+    `rounded-full px-4 py-2 text-sm font-medium transition ${
+      activeTab === tab ? "bg-photo-shell text-white" : "border border-border bg-surface text-ink hover:bg-hover"
+    }`;
+
   return (
     <div className="flex flex-col gap-10">
       {/* Hero card - mirrors life-archive-app's home hero, with a random
           library photo standing in for the archive's "hero.jpg". */}
       <section>
         <div className="relative min-h-[460px] overflow-hidden rounded-[8px] bg-hero-fallback shadow-hero ring-1 ring-border">
-          {summary?.heroMediaId && (
+          {summary?.heroMedia && (
             <img
-              src={api.media.thumbnailUrl(summary.heroMediaId)}
+              src={api.media.thumbnailUrl(summary.heroMedia.id)}
               alt=""
               className="absolute inset-0 h-full w-full object-cover"
             />
@@ -54,6 +95,7 @@ export default function HomePage() {
               <h1 className="mt-2 font-serif text-[clamp(3.875rem,5.4vw,5.25rem)] font-semibold leading-[0.95] tracking-[-0.03em]">
                 MemoryLane
               </h1>
+              {heroBlurb && <p className="mt-3 text-sm font-medium text-white/60">{heroBlurb}</p>}
             </div>
           </div>
         </div>
@@ -82,14 +124,41 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Small tabbed rediscovery widgets - surface photos from anywhere in
+          the library with zero effort, right on the home page. */}
+      <section>
+        <div className="flex gap-2 px-1">
+          <button onClick={() => selectTab("random")} className={tabButtonClass("random")}>
+            Random Memory
+          </button>
+          <button onClick={() => selectTab("onThisDay")} className={tabButtonClass("onThisDay")}>
+            This Day, Another Time
+          </button>
+        </div>
+
+        {activeTab && (
+          <div className="mt-4">
+            {tabLoading && <p className="px-1 text-sm text-muted">Gathering photos...</p>}
+            {!tabLoading && tabItems && tabItems.length > 0 && (
+              <>
+                {activeTab === "onThisDay" && tabTier && tabTier !== "none" && (
+                  <p className="mb-2 px-1 text-xs text-muted">{TIER_CAPTION[tabTier]}</p>
+                )}
+                <InlineSlideshow items={tabItems} />
+              </>
+            )}
+            {!tabLoading && tabItems && tabItems.length === 0 && (
+              <p className="px-1 text-sm text-muted">
+                {activeTab === "onThisDay"
+                  ? "No dated photos yet to pull memories from - dates come from photo metadata."
+                  : "No indexed photos yet - add a scan root and run a scan from Settings first."}
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+
       <section className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
-        <button
-          disabled
-          title="Coming soon"
-          className="rounded-xl border border-border bg-surface p-5 text-left text-sm text-ink shadow-card disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          On This Day
-        </button>
         <button
           disabled
           title="Coming soon"

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { HomeSummaryDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
+import { toMediaDto, type MediaRow } from "./mappers.js";
 
 // Backs the Home page's hero card: library-wide totals plus a randomly
 // picked photo to use as the hero background (re-rolled on every page load).
@@ -32,17 +33,17 @@ export async function registerHomeRoutes(app: FastifyInstance, ctx: AppContext):
 
     const heroRow = db
       .prepare(
-        `SELECT id FROM media WHERE status = 'active' AND media_type IN ('image', 'raw') AND thumbnail_status = 'done'
+        `SELECT * FROM media WHERE status = 'active' AND media_type IN ('image', 'raw') AND thumbnail_status = 'done'
          ORDER BY RANDOM() LIMIT 1`,
       )
-      .get() as { id: number } | undefined;
+      .get() as MediaRow | undefined;
 
     const summary: HomeSummaryDto = {
       mediaCount,
       folderCount,
       totalSizeBytes,
       yearSpan,
-      heroMediaId: heroRow?.id ?? null,
+      heroMedia: heroRow ? toMediaDto(heroRow) : null,
     };
     return reply.send(summary);
   });

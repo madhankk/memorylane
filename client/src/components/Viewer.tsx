@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MediaDto } from "@memorylane/shared";
 import { api } from "../api/client";
+import { formatMemoryBlurb } from "../utils/blurb";
 
 interface ViewerProps {
   items: MediaDto[];
@@ -106,6 +107,8 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false }:
 
   if (!current) return null;
 
+  const blurb = formatMemoryBlurb(current);
+
   const controlButtonClass =
     "h-12 w-12 rounded-full border-none bg-overlay-control text-2xl text-white transition-colors hover:bg-overlay-control-hover";
 
@@ -119,6 +122,12 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false }:
       <button className={`absolute top-5 right-5 ${controlButtonClass}`} onClick={onClose} aria-label="Close">
         ✕
       </button>
+
+      {blurb && (
+        <p className="absolute top-6 left-6 max-w-[60vw] text-sm font-medium text-white/70 [text-shadow:0_1px_4px_rgba(0,0,0,0.6)]">
+          {blurb}
+        </p>
+      )}
 
       <button
         className={`absolute top-1/2 left-5 -translate-y-1/2 ${controlButtonClass}`}

@@ -171,7 +171,17 @@ export interface HomeSummaryDto {
   totalSizeBytes: number;
   yearSpan: number;
   // A randomly picked photo to use as the hero background - null if nothing indexed yet.
-  heroMediaId: number | null;
+  heroMedia: MediaDto | null;
+}
+
+// "This Day, Another Time" degrades gracefully: exact same day-of-year across
+// years, then the surrounding week, then the whole month - whichever tier
+// first turns up results.
+export type OnThisDayTier = "day" | "week" | "month" | "none";
+
+export interface OnThisDayResponse {
+  tier: OnThisDayTier;
+  items: MediaDto[];
 }
 
 export interface PaginatedResult<T> {
