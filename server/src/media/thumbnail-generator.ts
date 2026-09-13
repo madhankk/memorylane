@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import bmpJs from "bmp-js";
 
 export const THUMBNAIL_LONG_EDGE = 500;
 
@@ -44,13 +45,35 @@ function applyExifOrientation(image: sharp.Sharp, orientation: number | null | u
   }
 }
 
+// Sharp/libvips does not support BMP as an input format at all (unlike every
+// other format in IMAGE_EXTENSIONS) - it throws "unsupported image format"
+// on every BMP, valid or not. Decode it ourselves via bmp-js into raw pixels
+// and hand those to sharp instead of failing every BMP's thumbnail. BMP has
+// no EXIF/orientation concept of its own, so there's no rotation to apply.
+async function sharpFromBmpFile(sourcePath: string): Promise<sharp.Sharp> {
+  const buffer = await fs.readFile(sourcePath);
+  const decoded = bmpJs.decode(buffer);
+  const { width, height, data } = decoded;
+  // bmp-js emits 4 bytes/pixel as [alpha, blue, green, red] - reorder to the
+  // plain RGB triples sharp's raw-pixel input expects (alpha dropped; BMP
+  // photos are effectively always opaque).
+  const rgb = Buffer.alloc(width * height * 3);
+  for (let i = 0, j = 0; i < data.length; i += 4, j += 3) {
+    rgb[j] = data[i + 3];
+    rgb[j + 1] = data[i + 2];
+    rgb[j + 2] = data[i + 1];
+  }
+  return sharp(rgb, { raw: { width, height, channels: 3 } });
+}
+
 // Resizes from a source file path (standard images) - Sharp handles EXIF
 // orientation automatically via .rotate() with no arguments, since the file
 // being read is itself the authoritative source of its own orientation tag.
 export async function generateThumbnailFromFile(sourcePath: string, destPath: string): Promise<void> {
   await ensureDirFor(destPath);
-  await sharp(sourcePath)
-    .rotate()
+  const image =
+    path.extname(sourcePath).toLowerCase() === ".bmp" ? await sharpFromBmpFile(sourcePath) : sharp(sourcePath).rotate();
+  await image
     .resize({ width: THUMBNAIL_LONG_EDGE, height: THUMBNAIL_LONG_EDGE, fit: "inside", withoutEnlargement: true })
     .jpeg({ quality: 80 })
     .toFile(destPath);
@@ -86,6 +109,10 @@ export async function generatePreviewFromBuffer(
 
 export async function readImageDimensions(sourcePath: string): Promise<{ width: number | null; height: number | null; orientation: number | null }> {
   try {
+    if (path.extname(sourcePath).toLowerCase() === ".bmp") {
+      const decoded = bmpJs.decode(await fs.readFile(sourcePath));
+      return { width: decoded.width, height: decoded.height, orientation: null };
+    }
     const meta = await sharp(sourcePath).metadata();
     return { width: meta.width ?? null, height: meta.height ?? null, orientation: meta.orientation ?? null };
   } catch {

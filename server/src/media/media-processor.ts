@@ -62,6 +62,13 @@ function extractMetadataFields(tags: Tags | null) {
 // Processes one media row end-to-end: metadata extraction + thumbnail
 // generation. Never throws - failures are logged and reflected in
 // thumbnail_status so a single corrupt file can never abort a scan.
+//
+// Metadata extraction and thumbnail generation are guarded independently
+// (rather than one try/catch around everything) so that a thumbnail failure
+// - a corrupt file, an unsupported format quirk - never discards metadata
+// ExifTool already successfully read. Losing captured-date/camera/GPS data
+// just because Sharp couldn't decode the file would be an unrelated failure
+// bundled into one.
 export async function processMediaItem(
   db: Database.Database,
   paths: AppPaths,
@@ -70,10 +77,16 @@ export async function processMediaItem(
 ): Promise<void> {
   const destPath = thumbnailPathForMediaId(paths.thumbnailsDir, row.id);
 
+  let metadata: ReturnType<typeof extractMetadataFields>;
   try {
-    let metadata = extractMetadataFields(isExifToolAvailable() ? await readTags(row.absolute_path) : null);
-    let thumbnailStatus: "done" | "unsupported" | "failed" = "failed";
+    metadata = extractMetadataFields(isExifToolAvailable() ? await readTags(row.absolute_path) : null);
+  } catch (err) {
+    logger.error({ err, mediaId: row.id, path: row.absolute_path }, "Failed to read metadata");
+    metadata = extractMetadataFields(null);
+  }
 
+  let thumbnailStatus: "done" | "unsupported" | "failed" = "failed";
+  try {
     if (row.media_type === "raw") {
       const preview = await extractLargestEmbeddedPreview(row.absolute_path);
       if (preview) {
@@ -107,7 +120,12 @@ export async function processMediaItem(
       // video: thumbnail/metadata pipeline lands in a later phase.
       thumbnailStatus = "unsupported";
     }
+  } catch (err) {
+    logger.error({ err, mediaId: row.id, path: row.absolute_path }, "Failed to generate thumbnail");
+    thumbnailStatus = "failed";
+  }
 
+  try {
     db.prepare(
       `UPDATE media SET
         captured_date = ?, width = ?, height = ?, orientation = ?,
@@ -123,7 +141,6 @@ export async function processMediaItem(
       thumbnailStatus, row.id,
     );
   } catch (err) {
-    logger.error({ err, mediaId: row.id, path: row.absolute_path }, "Failed to process media item");
-    db.prepare("UPDATE media SET thumbnail_status = 'failed' WHERE id = ?").run(row.id);
+    logger.error({ err, mediaId: row.id, path: row.absolute_path }, "Failed to save media metadata");
   }
 }
