@@ -34,6 +34,8 @@ interface ScanRunRow {
   error_count: number;
   trigger_source: string;
   scan_root_id: number | null;
+  thumbnails_queued: number;
+  thumbnails_processed: number;
 }
 
 function toScanRunDto(row: ScanRunRow): ScanRunDto {
@@ -49,6 +51,8 @@ function toScanRunDto(row: ScanRunRow): ScanRunDto {
     errorCount: row.error_count,
     trigger: row.trigger_source as ScanTrigger,
     scanRootId: row.scan_root_id,
+    thumbnailsQueued: row.thumbnails_queued,
+    thumbnailsProcessed: row.thumbnails_processed,
   };
 }
 
@@ -58,6 +62,8 @@ interface Stats {
   filesChanged: number;
   filesRemoved: number;
   errorCount: number;
+  thumbnailsQueued: number;
+  thumbnailsProcessed: number;
 }
 
 const THUMBNAIL_QUEUE_CONCURRENCY = 4;
@@ -132,13 +138,23 @@ export class ScannerService {
       .run(trigger, scanRootId ?? null);
     const runId = Number(runInfo.lastInsertRowid);
 
-    const stats: Stats = { filesScanned: 0, filesNew: 0, filesChanged: 0, filesRemoved: 0, errorCount: 0 };
+    const stats: Stats = {
+      filesScanned: 0, filesNew: 0, filesChanged: 0, filesRemoved: 0, errorCount: 0,
+      thumbnailsQueued: 0, thumbnailsProcessed: 0,
+    };
     const limiter = pLimit(THUMBNAIL_QUEUE_CONCURRENCY);
     let pendingJobs: Promise<void>[] = [];
 
     const enqueueProcessing = (mediaId: number, absolutePath: string, mediaType: "image" | "raw" | "video") => {
+      stats.thumbnailsQueued++;
       pendingJobs.push(
-        limiter(() => processMediaItem(this.db, this.paths, this.logger, { id: mediaId, absolute_path: absolutePath, media_type: mediaType })),
+        limiter(() =>
+          processMediaItem(this.db, this.paths, this.logger, { id: mediaId, absolute_path: absolutePath, media_type: mediaType }).finally(
+            () => {
+              stats.thumbnailsProcessed++;
+            },
+          ),
+        ),
       );
     };
 
@@ -149,6 +165,26 @@ export class ScannerService {
         await Promise.all(batch);
       }
     };
+
+    // Indexing can finish in seconds while thumbnail generation (rate-limited
+    // to THUMBNAIL_QUEUE_CONCURRENCY at a time) continues for much longer on a
+    // large backlog - without this, the scan_runs row (and so /api/scans/status)
+    // never changed until the whole run finished, making a long-running scan
+    // look identical to a stalled one. Same cadence as the client's poll.
+    const persistProgress = () => {
+      this.db
+        .prepare(
+          `UPDATE scan_runs SET
+            files_scanned = ?, files_new = ?, files_changed = ?, files_removed = ?, error_count = ?,
+            thumbnails_queued = ?, thumbnails_processed = ?
+           WHERE id = ?`,
+        )
+        .run(
+          stats.filesScanned, stats.filesNew, stats.filesChanged, stats.filesRemoved, stats.errorCount,
+          stats.thumbnailsQueued, stats.thumbnailsProcessed, runId,
+        );
+    };
+    const progressTimer = setInterval(persistProgress, 2000);
 
     this.logger.info({ runId, trigger, scanRootId: scanRootId ?? "all" }, "Scan started");
 
@@ -194,9 +230,13 @@ export class ScannerService {
       this.db
         .prepare(
           `UPDATE scan_runs SET status = 'completed', finished_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
-           files_scanned = ?, files_new = ?, files_changed = ?, files_removed = ?, error_count = ? WHERE id = ?`,
+           files_scanned = ?, files_new = ?, files_changed = ?, files_removed = ?, error_count = ?,
+           thumbnails_queued = ?, thumbnails_processed = ? WHERE id = ?`,
         )
-        .run(stats.filesScanned, stats.filesNew, stats.filesChanged, stats.filesRemoved, stats.errorCount, runId);
+        .run(
+          stats.filesScanned, stats.filesNew, stats.filesChanged, stats.filesRemoved, stats.errorCount,
+          stats.thumbnailsQueued, stats.thumbnailsProcessed, runId,
+        );
 
       this.logger.info({ runId, stats }, "Scan completed");
     } catch (err) {
@@ -204,10 +244,15 @@ export class ScannerService {
       this.db
         .prepare(
           `UPDATE scan_runs SET status = 'failed', finished_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
-           files_scanned = ?, files_new = ?, files_changed = ?, files_removed = ?, error_count = ? WHERE id = ?`,
+           files_scanned = ?, files_new = ?, files_changed = ?, files_removed = ?, error_count = ?,
+           thumbnails_queued = ?, thumbnails_processed = ? WHERE id = ?`,
         )
-        .run(stats.filesScanned, stats.filesNew, stats.filesChanged, stats.filesRemoved, stats.errorCount + 1, runId);
+        .run(
+          stats.filesScanned, stats.filesNew, stats.filesChanged, stats.filesRemoved, stats.errorCount + 1,
+          stats.thumbnailsQueued, stats.thumbnailsProcessed, runId,
+        );
     } finally {
+      clearInterval(progressTimer);
       this.running = false;
     }
   }

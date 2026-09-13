@@ -176,6 +176,11 @@ export interface ScanRunDto {
   trigger: ScanTrigger;
   // null = every enabled scan root; set = a single-folder "Scan Now".
   scanRootId: number | null;
+  // Thumbnail generation is a separate, often much slower phase that follows
+  // indexing - these update live while a scan runs, same as the files_*
+  // counts, so a large backlog is visible instead of looking stalled.
+  thumbnailsQueued: number;
+  thumbnailsProcessed: number;
 }
 
 export interface ScanStatusDto {

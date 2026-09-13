@@ -385,13 +385,37 @@ export default function SettingsPage() {
         </button>
 
         {status && (
-          <div className="mt-4 text-sm text-muted">
+          <div className="mt-4 flex flex-col gap-3 text-sm text-muted">
             {status.currentRun && status.running && (
-              <p>
-                Scanning{scanningRootPath ? ` "${scanningRootPath}"` : " all folders"}:{" "}
-                {status.currentRun.filesScanned} files scanned, {status.currentRun.filesNew} new,{" "}
-                {status.currentRun.errorCount} errors so far.
-              </p>
+              <div className="flex flex-col gap-2">
+                <p>
+                  Scanning{scanningRootPath ? ` "${scanningRootPath}"` : " all folders"}:{" "}
+                  {status.currentRun.filesScanned} files scanned, {status.currentRun.filesNew} new,{" "}
+                  {status.currentRun.errorCount} errors so far.
+                </p>
+                {status.currentRun.thumbnailsQueued > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    <p>
+                      {status.currentRun.thumbnailsProcessed < status.currentRun.thumbnailsQueued
+                        ? "Generating thumbnails: "
+                        : "Thumbnails done: "}
+                      {status.currentRun.thumbnailsProcessed.toLocaleString()} of{" "}
+                      {status.currentRun.thumbnailsQueued.toLocaleString()}
+                    </p>
+                    <div className="h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-border">
+                      <div
+                        className="h-full rounded-full bg-accent transition-[width] duration-500"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            (status.currentRun.thumbnailsProcessed / status.currentRun.thumbnailsQueued) * 100,
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
             {status.lastRun && !status.running && (
               <p>
