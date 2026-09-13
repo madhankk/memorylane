@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import type { SettingsDto } from "@memorylane/shared";
 
 const DEFAULTS: SettingsDto = {
-  bindAddress: "127.0.0.1",
+  bindAddress: "0.0.0.0",
   port: 4280,
   scanIntervalDays: null,
   scanScheduleEnabled: false,

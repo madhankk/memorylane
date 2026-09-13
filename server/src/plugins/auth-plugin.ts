@@ -34,13 +34,16 @@ export async function registerAuthPlugin(app: FastifyInstance, ctx: AppContext):
     }
   });
 
-  const isLocalBind = process.env.MEMORYLANE_BIND_ADDRESS !== "0.0.0.0";
-
   app.decorate("setSessionCookie", (reply: FastifyReply, sessionId: string) => {
     reply.setCookie(SESSION_COOKIE_NAME, sessionId, {
       httpOnly: true,
       sameSite: "lax",
-      secure: !isLocalBind,
+      // MemoryLane never serves HTTPS (self-signed certs aren't worth the
+      // setup friction for a self-hosted LAN app), so a Secure cookie would
+      // just never be sent back by the browser on any non-localhost origin -
+      // silently breaking login for every LAN client, not adding real
+      // protection. Revisit if/when real TLS termination is supported.
+      secure: false,
       path: "/",
       maxAge: SESSION_TTL_SECONDS,
     });

@@ -63,7 +63,9 @@ MemoryLane is configured entirely through environment variables (no config file)
 | --- | --- | --- |
 | `MEMORYLANE_DATA_DIR` | OS-standard app-data dir | Where the SQLite database, thumbnail cache, and logs are stored |
 | `MEMORYLANE_PORT` | `4280` | Port the server listens on |
-| `MEMORYLANE_BIND_ADDRESS` | `127.0.0.1` | Bind address - set to `0.0.0.0` to expose beyond localhost (e.g. on a home server/NAS) |
+| `MEMORYLANE_BIND_ADDRESS` | `0.0.0.0` | Bind address - `0.0.0.0` (the default) listens on every network interface, so other devices on your LAN (phone, tablet, another computer) can reach it at `http://<this-machine's-LAN-IP>:4280`. Set to `127.0.0.1` to restrict it to this machine only. |
+
+MemoryLane has no HTTPS/TLS support, so traffic (including your session cookie and the photos themselves) is unencrypted on the network - fine on a trusted home LAN, but don't expose the default `0.0.0.0` bind directly to the internet (e.g. via router port-forwarding) without putting a reverse proxy with real TLS in front of it.
 
 ## Data
 

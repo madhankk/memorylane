@@ -44,7 +44,14 @@ async function main(): Promise<void> {
   await app.listen({ host: bindAddress, port });
   app.log.info({ bindAddress, port, dataDir: paths.dataDir }, "MemoryLane server started");
 
-  if (!process.env.MEMORYLANE_NO_OPEN && (bindAddress === "127.0.0.1" || bindAddress === "localhost")) {
+  // 0.0.0.0 (listen on every interface) always includes loopback too, so
+  // http://127.0.0.1 is reachable there just as much as an explicit
+  // 127.0.0.1/localhost bind - only skip auto-open for some other specific
+  // non-loopback interface a user deliberately bound to.
+  if (
+    !process.env.MEMORYLANE_NO_OPEN &&
+    (bindAddress === "127.0.0.1" || bindAddress === "localhost" || bindAddress === "0.0.0.0")
+  ) {
     const url = `http://127.0.0.1:${port}`;
     try {
       const open = (await import("open")).default;
