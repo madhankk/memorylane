@@ -15,8 +15,8 @@ export interface FolderCounts {
   childFolderCount: number;
   thumbnailMediaId: number | null;
   thumbnailVersion: number;
-  recursiveMediaCount?: number;
-  recursiveSizeBytes?: number;
+  recursiveMediaCount: number;
+  recursiveSizeBytes: number;
 }
 
 export function toFolderDto(row: FolderRow, counts: FolderCounts): FolderDto {

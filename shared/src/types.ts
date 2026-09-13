@@ -100,11 +100,12 @@ export interface FolderDto {
   thumbnailVersion: number;
   createdAt: string;
   updatedAt: string;
-  // Only populated for top-level folders (GET /api/folders) - totals across
-  // the entire subtree, not just this folder's direct children. Undefined
-  // for folders returned from /children or /:id, which stay direct-count-only.
-  recursiveMediaCount?: number;
-  recursiveSizeBytes?: number;
+  // Totals across the folder's entire subtree, not just its direct children -
+  // every folder-returning endpoint populates these, so a folder card reads
+  // the same way whether it's a top-level "Your Library" card, a subfolder
+  // you've browsed into, or a search result.
+  recursiveMediaCount: number;
+  recursiveSizeBytes: number;
 }
 
 export interface FolderBreadcrumbDto {

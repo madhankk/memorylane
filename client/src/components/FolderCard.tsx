@@ -4,17 +4,13 @@ import type { FolderDto } from "@memorylane/shared";
 import { api } from "../api/client";
 import { formatBytes } from "../utils/format";
 
+// Every folder card reads the same way - whole-subtree item count and size -
+// whether it's a top-level "Your Library" card, a subfolder you've browsed
+// into, or a search result. See FolderDto.recursiveMediaCount.
 function summaryFor(folder: FolderDto): string {
-  // Top-level ("Your Library") cards get whole-subtree totals; nested folder
-  // browsing keeps the direct-children-only counts - see FolderDto.recursiveMediaCount.
-  if (folder.recursiveMediaCount !== undefined) {
-    if (folder.recursiveMediaCount === 0) return "Empty";
-    const size = folder.recursiveSizeBytes ? ` · ${formatBytes(folder.recursiveSizeBytes)}` : "";
-    return `${folder.recursiveMediaCount.toLocaleString()} items${size}`;
-  }
-  if (folder.mediaCount > 0) return `${folder.mediaCount.toLocaleString()} items`;
-  if (folder.childFolderCount > 0) return `${folder.childFolderCount.toLocaleString()} folders`;
-  return "Empty";
+  if (folder.recursiveMediaCount === 0) return "Empty";
+  const size = folder.recursiveSizeBytes ? ` · ${formatBytes(folder.recursiveSizeBytes)}` : "";
+  return `${folder.recursiveMediaCount.toLocaleString()} items${size}`;
 }
 
 // Mirrors life-archive-app's AlbumCard.tsx: cover image with a title overlaid

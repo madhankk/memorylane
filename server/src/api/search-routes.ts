@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { searchQuerySchema, type SearchResultDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { toFolderDto, toMediaDto, type FolderRow, type MediaRow } from "./mappers.js";
+import { getFolderCounts, getRecursiveFolderStats } from "./folders-routes.js";
 import { EngagementRepo } from "../db/engagement-repo.js";
 
 // Builds a safe FTS5 MATCH expression from free-text user input: each
@@ -47,19 +48,17 @@ export async function registerSearchRoutes(app: FastifyInstance, ctx: AppContext
       : [];
 
     const items: SearchResultDto[] = [
+      // Recursive stats too, not just direct counts - so a folder result here
+      // reads the same "600 items, 2.8 GB" way it would on Home or when
+      // browsing into it - see folders-routes.ts.
       ...folderRows.map((row) => {
-        const thumb = db
-          .prepare(
-            "SELECT id, thumbnail_version FROM media WHERE parent_folder_id = ? AND status='active' AND thumbnail_status='done' ORDER BY RANDOM() LIMIT 1",
-          )
-          .get(row.id) as { id: number; thumbnail_version: number } | undefined;
+        const recursive = getRecursiveFolderStats(ctx, row.id);
         return {
           type: "folder" as const,
           folder: toFolderDto(row, {
-            mediaCount: (db.prepare("SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status='active'").get(row.id) as { c: number }).c,
-            childFolderCount: (db.prepare("SELECT COUNT(*) as c FROM folders WHERE parent_id = ? AND status='active'").get(row.id) as { c: number }).c,
-            thumbnailMediaId: thumb?.id ?? null,
-            thumbnailVersion: thumb?.thumbnail_version ?? 0,
+            ...getFolderCounts(ctx, row.id),
+            recursiveMediaCount: recursive.count,
+            recursiveSizeBytes: recursive.sizeBytes,
           }),
         };
       }),

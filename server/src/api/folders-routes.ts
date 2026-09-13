@@ -14,7 +14,12 @@ const DESCENDANT_FOLDERS_CTE = `
   )
 `;
 
-function getFolderCounts(ctx: AppContext, folderId: number): FolderCounts {
+// Direct-children-only counts - callers combine this with getRecursiveFolderStats
+// before passing the result to toFolderDto, which requires both.
+export function getFolderCounts(
+  ctx: AppContext,
+  folderId: number,
+): Omit<FolderCounts, "recursiveMediaCount" | "recursiveSizeBytes"> {
   const mediaCount = (
     ctx.db
       .prepare("SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status = 'active'")
@@ -61,7 +66,7 @@ function getFolderCounts(ctx: AppContext, folderId: number): FolderCounts {
 // only for the top-level "Your Library" cards on Home, where seeing "600
 // items, 2.8 GB" for a whole year/scan-root folder is more useful than the
 // direct-child-only counts shown elsewhere.
-function getRecursiveFolderStats(ctx: AppContext, folderId: number): { count: number; sizeBytes: number } {
+export function getRecursiveFolderStats(ctx: AppContext, folderId: number): { count: number; sizeBytes: number } {
   const row = ctx.db
     .prepare(
       `${DESCENDANT_FOLDERS_CTE}
@@ -113,7 +118,13 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
         : undefined;
     }
 
-    return reply.send({ folder: toFolderDto(row, getFolderCounts(ctx, row.id)), breadcrumbs });
+    const recursive = getRecursiveFolderStats(ctx, row.id);
+    const folder = toFolderDto(row, {
+      ...getFolderCounts(ctx, row.id),
+      recursiveMediaCount: recursive.count,
+      recursiveSizeBytes: recursive.sizeBytes,
+    });
+    return reply.send({ folder, breadcrumbs });
   });
 
   app.get("/api/folders/:id/children", { preHandler: app.requireAuth }, async (request, reply) => {
@@ -132,7 +143,18 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
       .all(id, limit, offset) as FolderRow[];
 
     return reply.send({
-      items: rows.map((row) => toFolderDto(row, getFolderCounts(ctx, row.id))),
+      // Recursive stats too, not just direct counts - so a subfolder card
+      // reads "600 items, 2.8 GB" the same way the top-level Home cards do,
+      // instead of switching to a different (direct-count-only) summary once
+      // you're a level deep.
+      items: rows.map((row) => {
+        const recursive = getRecursiveFolderStats(ctx, row.id);
+        return toFolderDto(row, {
+          ...getFolderCounts(ctx, row.id),
+          recursiveMediaCount: recursive.count,
+          recursiveSizeBytes: recursive.sizeBytes,
+        });
+      }),
       total,
       offset,
       limit,
