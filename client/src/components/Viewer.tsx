@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MediaDto } from "@memorylane/shared";
-import { api } from "../api/client";
 import { formatMemoryBlurb } from "../utils/blurb";
+import { displaySrc } from "../utils/mediaSrc";
 
 interface ViewerProps {
   items: MediaDto[];
@@ -12,13 +12,6 @@ interface ViewerProps {
 }
 
 const SLIDESHOW_INTERVAL_MS = 5000;
-
-function displaySrc(media: MediaDto, useFallback: boolean): string {
-  // RAW files can't be decoded by the browser - always show the generated
-  // thumbnail (largest available preview) rather than the original bytes.
-  if (media.mediaType === "raw" || useFallback) return api.media.thumbnailUrl(media.id);
-  return api.media.fileUrl(media.id);
-}
 
 export default function Viewer({ items, startIndex, onClose, autoPlay = false }: ViewerProps) {
   const [index, setIndex] = useState(startIndex);

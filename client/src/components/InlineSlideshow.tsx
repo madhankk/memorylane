@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
 import type { MediaDto } from "@memorylane/shared";
-import { api } from "../api/client";
 import { formatMemoryBlurb } from "../utils/blurb";
+import { displaySrc } from "../utils/mediaSrc";
 import Viewer from "./Viewer";
 
 const AUTO_ADVANCE_MS = 4500;
@@ -14,10 +14,12 @@ export default function InlineSlideshow({ items }: { items: MediaDto[] }) {
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
+  const [fallback, setFallback] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Reset to the start whenever the underlying photo set changes (e.g. switching tabs).
   useEffect(() => setIndex(0), [items]);
+  useEffect(() => setFallback(false), [index]);
 
   const goNext = useCallback(() => setIndex((i) => (i + 1) % items.length), [items.length]);
   const goPrev = useCallback(() => setIndex((i) => (i - 1 + items.length) % items.length), [items.length]);
@@ -40,15 +42,18 @@ export default function InlineSlideshow({ items }: { items: MediaDto[] }) {
     <>
       <div className="relative h-[70vh] min-h-[480px] overflow-hidden rounded-xl bg-photo-shell ring-1 ring-border">
         <button
-          className="absolute inset-0 flex items-center justify-center"
+          className="absolute inset-0"
           onClick={() => setFullscreenOpen(true)}
           aria-label={`Open ${current.filename}`}
         >
           <img
             key={current.id}
-            src={api.media.thumbnailUrl(current.id)}
+            src={displaySrc(current, fallback)}
             alt={current.filename}
-            className="max-h-full max-w-full object-contain"
+            onError={() => {
+              if (!fallback) setFallback(true);
+            }}
+            className="h-full w-full object-cover"
           />
         </button>
 
