@@ -21,7 +21,7 @@ async function main(): Promise<void> {
     error: (obj: unknown, msg?: string) => console.error(msg ?? "", obj ?? ""),
   } as unknown as import("pino").Logger;
 
-  runMigrations(db, bootstrapLogger);
+  await runMigrations(db, paths.dbPath, bootstrapLogger);
   await checkExifToolAvailable(bootstrapLogger);
 
   const settingsRepo = new SettingsRepo(db);

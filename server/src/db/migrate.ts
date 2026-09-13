@@ -16,7 +16,32 @@ function resolveMigrationsDir(): string {
   throw new Error(`Could not locate migrations directory. Checked: ${candidates.join(", ")}`);
 }
 
-export function runMigrations(db: Database.Database, logger: Logger): void {
+// Uses SQLite's own online backup API (not a raw file copy, which could catch
+// the DB mid-write under WAL mode) to snapshot the database before applying
+// pending migrations - cheap insurance for anyone upgrading between releases,
+// since the DB is otherwise rebuildable from source media but a bad migration
+// shouldn't force that.
+const MAX_MIGRATION_BACKUPS = 5;
+
+async function backupDatabaseFile(db: Database.Database, dbPath: string, logger: Logger): Promise<void> {
+  if (!fs.existsSync(dbPath)) return;
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupPath = `${dbPath}.pre-migration-${stamp}.bak`;
+  await db.backup(backupPath);
+  logger.info({ backupPath }, "Backed up database before applying migrations");
+
+  const dir = path.dirname(dbPath);
+  const base = path.basename(dbPath);
+  const oldBackups = fs
+    .readdirSync(dir)
+    .filter((f) => f.startsWith(`${base}.pre-migration-`) && f.endsWith(".bak"))
+    .sort();
+  for (const stale of oldBackups.slice(0, -MAX_MIGRATION_BACKUPS)) {
+    fs.unlinkSync(path.join(dir, stale));
+  }
+}
+
+export async function runMigrations(db: Database.Database, dbPath: string, logger: Logger): Promise<void> {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       name TEXT PRIMARY KEY,
@@ -33,6 +58,9 @@ export function runMigrations(db: Database.Database, logger: Logger): void {
   const applied = new Set(
     db.prepare("SELECT name FROM schema_migrations").all().map((r) => (r as { name: string }).name),
   );
+
+  const pending = files.filter((f) => !applied.has(f));
+  if (pending.length > 0) await backupDatabaseFile(db, dbPath, logger);
 
   for (const file of files) {
     if (applied.has(file)) continue;

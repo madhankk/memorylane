@@ -59,6 +59,19 @@ MemoryLane is configured entirely through environment variables (no config file)
 
 MemoryLane's database, thumbnail cache, and logs live in an OS-standard app-data directory (e.g. `%LOCALAPPDATA%\MemoryLane` on Windows) - entirely separate from your photo folders, and safe to delete and rebuild via a rescan at any time. Override the location with the `MEMORYLANE_DATA_DIR` environment variable.
 
+## Upgrading
+
+```bash
+git pull
+npm install
+npm run build
+npm start
+```
+
+The database schema is versioned via numbered SQL files in `server/migrations/`, tracked in a `schema_migrations` table. Every server start applies any migrations it hasn't seen yet, in order, each in its own transaction - there's no manual DB migration step to run. Before applying any pending migration, the server automatically snapshots the SQLite database to `<data-dir>/memorylane.sqlite.pre-migration-<timestamp>.bak` (keeping the last 5), so a bad upgrade can be rolled back by stopping the server, restoring the most recent `.bak` over `memorylane.sqlite`, and restarting the previous version.
+
+Occasionally a migration needs to invalidate existing thumbnails (e.g. to fix a rendering bug) - when that happens, affected thumbnails simply regenerate the next time a scan runs, with no action needed beyond triggering a scan (automatic on schedule, or manually from Settings).
+
 ## Repository layout
 
 ```
