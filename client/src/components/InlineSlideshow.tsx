@@ -38,7 +38,7 @@ export default function InlineSlideshow({ items }: { items: MediaDto[] }) {
 
   return (
     <>
-      <div className="relative h-[360px] overflow-hidden rounded-xl bg-photo-shell ring-1 ring-border">
+      <div className="relative h-[70vh] min-h-[480px] overflow-hidden rounded-xl bg-photo-shell ring-1 ring-border">
         <button
           className="absolute inset-0 flex items-center justify-center"
           onClick={() => setFullscreenOpen(true)}

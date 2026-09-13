@@ -123,12 +123,6 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false }:
         ✕
       </button>
 
-      {blurb && (
-        <p className="absolute top-6 left-6 max-w-[60vw] text-sm font-medium text-white/70 [text-shadow:0_1px_4px_rgba(0,0,0,0.6)]">
-          {blurb}
-        </p>
-      )}
-
       <button
         className={`absolute top-1/2 left-5 -translate-y-1/2 ${controlButtonClass}`}
         onClick={goPrev}
@@ -157,24 +151,29 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false }:
         ›
       </button>
 
-      <div className="absolute bottom-5 left-1/2 flex max-w-[92vw] -translate-x-1/2 flex-wrap items-center justify-center gap-4 rounded-full bg-overlay-control px-4 py-2 text-sm text-white">
-        <button onClick={() => setPlaying((p) => !p)} className="text-white">
-          {playing ? "Pause" : "Play"}
-        </button>
-        <span className="max-w-[240px] truncate">{current.filename}</span>
-        <span>
-          {index + 1} / {items.length}
-        </span>
-        <button onClick={() => setShowInfo((s) => !s)} className="text-white">
-          Info
-        </button>
-        <button onClick={toggleFullscreen} className="text-white">
-          {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
-        </button>
+      <div className="absolute bottom-5 left-1/2 flex max-w-[92vw] -translate-x-1/2 flex-col items-center gap-1.5">
+        <div className="flex flex-wrap items-center justify-center gap-4 rounded-full bg-overlay-control px-4 py-2 text-sm text-white">
+          <button onClick={() => setPlaying((p) => !p)} className="text-white">
+            {playing ? "Pause" : "Play"}
+          </button>
+          <span className="max-w-[240px] truncate">{current.filename}</span>
+          <span>
+            {index + 1} / {items.length}
+          </span>
+          <button onClick={() => setShowInfo((s) => !s)} className="text-white">
+            Info
+          </button>
+          <button onClick={toggleFullscreen} className="text-white">
+            {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+          </button>
+        </div>
+        {/* Subtle caption below the photo, overlaid on the image rather than
+            floating off to a corner. */}
+        {blurb && <p className="text-xs font-medium text-white/60">{blurb}</p>}
       </div>
 
       {showInfo && (
-        <div className="absolute bottom-20 left-1/2 flex -translate-x-1/2 flex-col gap-1 rounded-lg bg-black/70 px-4.5 py-3 text-sm text-white">
+        <div className="absolute bottom-24 left-1/2 flex -translate-x-1/2 flex-col gap-1 rounded-lg bg-black/70 px-4.5 py-3 text-sm text-white">
           {current.capturedDate && <div>Taken: {new Date(current.capturedDate).toLocaleString()}</div>}
           {current.cameraMake && (
             <div>
