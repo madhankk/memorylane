@@ -136,6 +136,20 @@ export interface MediaDto {
 
   durationSeconds: number | null;
   codec: string | null;
+
+  // Engagement (media_engagement table) - separate from the imported EXIF/XMP
+  // `rating` above, which is never overwritten by favoriting.
+  favorite: boolean;
+}
+
+export interface UpdateFavoriteRequest {
+  favorite: boolean;
+}
+
+export interface FavoriteResultDto {
+  mediaId: number;
+  favorite: boolean;
+  favoritedAt: string | null;
 }
 
 export interface ScanRunDto {

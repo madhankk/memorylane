@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { paginationQuerySchema, folderMediaQuerySchema, type FolderBreadcrumbDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { toFolderDto, toMediaDto, type FolderRow, type FolderCounts, type MediaRow } from "./mappers.js";
+import { EngagementRepo } from "../db/engagement-repo.js";
 
 // Recursive CTE selecting a folder and every active descendant - reused by the
 // "all files in this folder tree" flat view.
@@ -65,6 +66,7 @@ function getRecursiveFolderStats(ctx: AppContext, folderId: number): { count: nu
 
 export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { db } = ctx;
+  const engagement = new EngagementRepo(db);
 
   app.get("/api/folders", { preHandler: app.requireAuth }, async (_request, reply) => {
     // Top-level folders mirror their scan root's manually-arranged order
@@ -148,7 +150,7 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
         )
         .all(id, limit, offset) as MediaRow[];
 
-      return reply.send({ items: rows.map(toMediaDto), total, offset, limit });
+      return reply.send({ items: engagement.attachFavorites(rows.map(toMediaDto)), total, offset, limit });
     }
 
     // Flat view: every active media file under this folder and all of its subfolders.
@@ -170,6 +172,6 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
       )
       .all(id, limit, offset) as MediaRow[];
 
-    return reply.send({ items: rows.map(toMediaDto), total, offset, limit });
+    return reply.send({ items: engagement.attachFavorites(rows.map(toMediaDto)), total, offset, limit });
   });
 }

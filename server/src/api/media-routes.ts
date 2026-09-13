@@ -1,10 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
+import { updateFavoriteRequestSchema } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { toMediaDto, type MediaRow } from "./mappers.js";
 import { thumbnailPathForMediaId } from "../config/paths.js";
 import { streamFile, mimeTypeForExtension } from "./file-streaming.js";
+import { EngagementRepo } from "../db/engagement-repo.js";
 
 interface MediaWithRootRow extends MediaRow {
   scan_root_path: string;
@@ -34,12 +36,49 @@ function resolveVerifiedMedia(ctx: AppContext, id: number): MediaWithRootRow | n
 
 export async function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { db, paths } = ctx;
+  const engagement = new EngagementRepo(db);
 
   app.get("/api/media/:id", { preHandler: app.requireAuth }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
     const row = db.prepare("SELECT * FROM media WHERE id = ?").get(id) as MediaRow | undefined;
     if (!row) return reply.code(404).send({ error: "Media not found" });
-    return reply.send(toMediaDto(row));
+    const [dto] = engagement.attachFavorites([toMediaDto(row)]);
+    return reply.send(dto);
+  });
+
+  app.put("/api/media/:id/favorite", { preHandler: app.requireAuth }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id);
+    const parsed = updateFavoriteRequestSchema.safeParse(request.body);
+    if (!parsed.success || Number.isNaN(id)) {
+      return reply.code(400).send({ error: "Invalid input" });
+    }
+    const exists = db.prepare("SELECT id FROM media WHERE id = ?").get(id);
+    if (!exists) return reply.code(404).send({ error: "Media not found" });
+
+    return reply.send(engagement.setFavorite(id, parsed.data.favorite));
+  });
+
+  // Shown/viewed are fire-and-forget engagement signals from the photo
+  // viewer (Surprise Me, slideshows, fullscreen) - never from grid/search
+  // thumbnails. The client is responsible for not spamming these (one
+  // "shown" per photo transition, one "viewed" per ~2s dwell) - see
+  // Viewer.tsx / InlineSlideshow.tsx.
+  app.post("/api/media/:id/shown", { preHandler: app.requireAuth }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id);
+    if (Number.isNaN(id)) return reply.code(400).send({ error: "Invalid id" });
+    const exists = db.prepare("SELECT id FROM media WHERE id = ?").get(id);
+    if (!exists) return reply.code(404).send({ error: "Media not found" });
+    engagement.recordShown(id);
+    return reply.send({ ok: true });
+  });
+
+  app.post("/api/media/:id/viewed", { preHandler: app.requireAuth }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id);
+    if (Number.isNaN(id)) return reply.code(400).send({ error: "Invalid id" });
+    const exists = db.prepare("SELECT id FROM media WHERE id = ?").get(id);
+    if (!exists) return reply.code(404).send({ error: "Media not found" });
+    engagement.recordViewed(id);
+    return reply.send({ ok: true });
   });
 
   app.get("/api/media/:id/file", { preHandler: app.requireAuth }, async (request, reply) => {

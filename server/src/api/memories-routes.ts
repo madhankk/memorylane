@@ -2,11 +2,13 @@ import type { FastifyInstance } from "fastify";
 import { randomMediaQuerySchema, type OnThisDayTier } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { toMediaDto, type MediaRow } from "./mappers.js";
+import { EngagementRepo } from "../db/engagement-repo.js";
 
 const ELIGIBLE_MEDIA_FILTER = `status = 'active' AND media_type IN ('image', 'raw') AND thumbnail_status = 'done'`;
 
 export async function registerMemoriesRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { db, randomSelection } = ctx;
+  const engagement = new EngagementRepo(db);
 
   app.get("/api/memories/random", { preHandler: app.requireAuth }, async (request, reply) => {
     const parsed = randomMediaQuerySchema.safeParse(request.query);
@@ -21,7 +23,9 @@ export async function registerMemoriesRoutes(app: FastifyInstance, ctx: AppConte
 
     // Preserve the already-shuffled order from the selection service - a plain
     // `WHERE id IN (...)` gives no ordering guarantee.
-    const items = ids.map((id) => byId.get(id)).filter((r): r is MediaRow => !!r).map(toMediaDto);
+    const items = engagement.attachFavorites(
+      ids.map((id) => byId.get(id)).filter((r): r is MediaRow => !!r).map(toMediaDto),
+    );
     return reply.send({ items });
   });
 
@@ -79,7 +83,9 @@ export async function registerMemoriesRoutes(app: FastifyInstance, ctx: AppConte
     const placeholders = ids.map(() => "?").join(",");
     const rows = db.prepare(`SELECT * FROM media WHERE id IN (${placeholders})`).all(...ids) as MediaRow[];
     const byId = new Map(rows.map((r) => [r.id, r]));
-    const items = ids.map((id) => byId.get(id)).filter((r): r is MediaRow => !!r).map(toMediaDto);
+    const items = engagement.attachFavorites(
+      ids.map((id) => byId.get(id)).filter((r): r is MediaRow => !!r).map(toMediaDto),
+    );
 
     return reply.send({ tier, items });
   });

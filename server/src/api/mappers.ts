@@ -95,5 +95,9 @@ export function toMediaDto(row: MediaRow): MediaDto {
     gpsLon: row.gps_lon,
     durationSeconds: row.duration_seconds,
     codec: row.codec,
+    // Populated by EngagementRepo.attachFavorites() at the route level - see
+    // db/engagement-repo.ts. Defaults false here since not every call site
+    // needs it (or has fetched it yet).
+    favorite: false,
   };
 }

@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
 import type { MediaDto } from "@memorylane/shared";
 import { formatMemoryBlurb } from "../utils/blurb";
 import { displaySrc } from "../utils/mediaSrc";
+import { useEngagementTracking } from "../hooks/useEngagementTracking";
 import Viewer from "./Viewer";
 
 const AUTO_ADVANCE_MS = 4500;
@@ -34,6 +35,7 @@ export default function InlineSlideshow({ items }: { items: MediaDto[] }) {
   }, [playing, goNext, items.length]);
 
   const current = items[index];
+  useEngagementTracking(current?.id);
   if (!current) return null;
 
   const blurb = formatMemoryBlurb(current);

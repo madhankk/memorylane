@@ -18,6 +18,7 @@ import type {
   HomeSummaryDto,
   StorageStatsDto,
   OnThisDayResponse,
+  FavoriteResultDto,
 } from "@memorylane/shared";
 
 class ApiError extends Error {
@@ -94,6 +95,12 @@ export const api = {
     get: (id: number) => request<MediaDto>(`/api/media/${id}`),
     fileUrl: (id: number) => `/api/media/${id}/file`,
     thumbnailUrl: (id: number) => `/api/media/${id}/thumbnail`,
+    setFavorite: (id: number, favorite: boolean) =>
+      request<FavoriteResultDto>(`/api/media/${id}/favorite`, { method: "PUT", body: JSON.stringify({ favorite }) }),
+    // Fire-and-forget engagement signals - callers should not await these on
+    // any interactive path, just let them settle in the background.
+    markShown: (id: number) => request<{ ok: true }>(`/api/media/${id}/shown`, { method: "POST" }),
+    markViewed: (id: number) => request<{ ok: true }>(`/api/media/${id}/viewed`, { method: "POST" }),
   },
   search: (q: string, offset = 0, limit = 50) =>
     request<PaginatedResult<SearchResultDto>>(`/api/search?q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`),
@@ -103,5 +110,9 @@ export const api = {
   },
   home: {
     summary: () => request<HomeSummaryDto>("/api/home/summary"),
+  },
+  favorites: {
+    list: (offset = 0, limit = 200) =>
+      request<PaginatedResult<MediaDto>>(`/api/favorites?offset=${offset}&limit=${limit}`),
   },
 };

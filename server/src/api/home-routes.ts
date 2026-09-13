@@ -2,11 +2,13 @@ import type { FastifyInstance } from "fastify";
 import type { HomeSummaryDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { toMediaDto, type MediaRow } from "./mappers.js";
+import { EngagementRepo } from "../db/engagement-repo.js";
 
 // Backs the Home page's hero card: library-wide totals plus a randomly
 // picked photo to use as the hero background (re-rolled on every page load).
 export async function registerHomeRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { db } = ctx;
+  const engagement = new EngagementRepo(db);
 
   app.get("/api/home/summary", { preHandler: app.requireAuth }, async (_request, reply) => {
     const mediaCount = (
@@ -38,12 +40,14 @@ export async function registerHomeRoutes(app: FastifyInstance, ctx: AppContext):
       )
       .get() as MediaRow | undefined;
 
+    const heroMedia = heroRow ? engagement.attachFavorites([toMediaDto(heroRow)])[0] : null;
+
     const summary: HomeSummaryDto = {
       mediaCount,
       folderCount,
       totalSizeBytes,
       yearSpan,
-      heroMedia: heroRow ? toMediaDto(heroRow) : null,
+      heroMedia,
     };
     return reply.send(summary);
   });

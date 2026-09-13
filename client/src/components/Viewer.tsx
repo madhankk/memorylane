@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Star } from "lucide-react";
 import type { MediaDto } from "@memorylane/shared";
+import { api } from "../api/client";
 import { formatMemoryBlurb } from "../utils/blurb";
 import { displaySrc } from "../utils/mediaSrc";
+import { useEngagementTracking } from "../hooks/useEngagementTracking";
 
 interface ViewerProps {
   items: MediaDto[];
@@ -19,10 +22,12 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false }:
   const [playing, setPlaying] = useState(autoPlay);
   const [showInfo, setShowInfo] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
+  const [favoriteOverrides, setFavoriteOverrides] = useState<Record<number, boolean>>({});
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
 
   const current = items[index];
+  useEngagementTracking(current?.id);
 
   const goNext = useCallback(() => {
     setFallback(false);
@@ -100,6 +105,17 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false }:
 
   if (!current) return null;
 
+  const isFavorite = favoriteOverrides[current.id] ?? current.favorite;
+  const toggleFavorite = async () => {
+    const next = !isFavorite;
+    setFavoriteOverrides((prev) => ({ ...prev, [current.id]: next }));
+    try {
+      await api.media.setFavorite(current.id, next);
+    } catch {
+      setFavoriteOverrides((prev) => ({ ...prev, [current.id]: !next }));
+    }
+  };
+
   const blurb = formatMemoryBlurb(current);
 
   const controlButtonClass =
@@ -114,6 +130,19 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false }:
     >
       <button className={`absolute top-5 right-5 ${controlButtonClass}`} onClick={onClose} aria-label="Close">
         ✕
+      </button>
+
+      <button
+        className={`absolute top-5 right-24 grid place-items-center ${controlButtonClass}`}
+        onClick={toggleFavorite}
+        aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+        aria-pressed={isFavorite}
+      >
+        <Star
+          size={22}
+          strokeWidth={1.8}
+          className={isFavorite ? "fill-amber-400 text-amber-400" : "text-white"}
+        />
       </button>
 
       <button

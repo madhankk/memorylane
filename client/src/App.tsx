@@ -8,6 +8,7 @@ import FolderPage from "./pages/FolderPage";
 import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
 import SurprisePage from "./pages/SurprisePage";
+import FavoritesPage from "./pages/FavoritesPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, needsSetup, loading } = useAuth();
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="/search" element={<SearchPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/surprise" element={<SurprisePage />} />
+        <Route path="/favorites" element={<FavoritesPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

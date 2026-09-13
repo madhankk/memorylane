@@ -64,3 +64,7 @@ export const randomMediaQuerySchema = z.object({
 export const runScanRequestSchema = z.object({
   scanRootId: z.number().int().positive().optional(),
 });
+
+export const updateFavoriteRequestSchema = z.object({
+  favorite: z.boolean(),
+});

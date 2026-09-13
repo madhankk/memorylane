@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { searchQuerySchema, type SearchResultDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { toFolderDto, toMediaDto, type FolderRow, type MediaRow } from "./mappers.js";
+import { EngagementRepo } from "../db/engagement-repo.js";
 
 // Builds a safe FTS5 MATCH expression from free-text user input: each
 // whitespace-separated term becomes a quoted prefix match, ANDed together.
@@ -14,6 +15,7 @@ function buildFtsQuery(q: string): string {
 
 export async function registerSearchRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { db } = ctx;
+  const engagement = new EngagementRepo(db);
 
   app.get("/api/search", { preHandler: app.requireAuth }, async (request, reply) => {
     const parsed = searchQuerySchema.safeParse(request.query);
@@ -53,7 +55,9 @@ export async function registerSearchRoutes(app: FastifyInstance, ctx: AppContext
           thumbnailMediaId: (db.prepare("SELECT id FROM media WHERE parent_folder_id = ? AND thumbnail_status='done' LIMIT 1").get(row.id) as { id: number } | undefined)?.id ?? null,
         }),
       })),
-      ...mediaRows.map((row) => ({ type: "media" as const, media: toMediaDto(row) })),
+      ...engagement
+        .attachFavorites(mediaRows.map(toMediaDto))
+        .map((media) => ({ type: "media" as const, media })),
     ];
 
     return reply.send({ items, total: items.length, offset, limit });
