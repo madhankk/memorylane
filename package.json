@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Self-hosted photo and video browser for rediscovering existing photo archives.",
+  "license": "MIT",
   "workspaces": [
     "shared",
     "server",
