@@ -25,23 +25,26 @@ function getFolderCounts(ctx: AppContext, folderId: number): FolderCounts {
       .prepare("SELECT COUNT(*) as c FROM folders WHERE parent_id = ? AND status = 'active'")
       .get(folderId) as { c: number }
   ).c;
+  // Randomized (not "most recent") so a folder's cover photo changes on every
+  // request instead of always showing the same one - matches the Home hero's
+  // "re-rolled on every load" feel.
   let thumbRow = ctx.db
     .prepare(
       `SELECT id FROM media WHERE parent_folder_id = ? AND status = 'active' AND thumbnail_status = 'done'
-       ORDER BY captured_date DESC, id DESC LIMIT 1`,
+       ORDER BY RANDOM() LIMIT 1`,
     )
     .get(folderId) as { id: number } | undefined;
 
   // Folders that only contain subfolders (e.g. a year folder like "1999" with
   // no photos directly in it) would otherwise show no cover image at all -
-  // fall back to the most recent photo anywhere in the subtree.
+  // fall back to a random photo anywhere in the subtree.
   if (!thumbRow) {
     thumbRow = ctx.db
       .prepare(
         `${DESCENDANT_FOLDERS_CTE}
          SELECT media.id FROM media
          WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND thumbnail_status = 'done'
-         ORDER BY captured_date DESC, media.id DESC LIMIT 1`,
+         ORDER BY RANDOM() LIMIT 1`,
       )
       .get(folderId) as { id: number } | undefined;
   }

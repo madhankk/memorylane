@@ -52,7 +52,7 @@ export async function registerSearchRoutes(app: FastifyInstance, ctx: AppContext
         folder: toFolderDto(row, {
           mediaCount: (db.prepare("SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status='active'").get(row.id) as { c: number }).c,
           childFolderCount: (db.prepare("SELECT COUNT(*) as c FROM folders WHERE parent_id = ? AND status='active'").get(row.id) as { c: number }).c,
-          thumbnailMediaId: (db.prepare("SELECT id FROM media WHERE parent_folder_id = ? AND thumbnail_status='done' LIMIT 1").get(row.id) as { id: number } | undefined)?.id ?? null,
+          thumbnailMediaId: (db.prepare("SELECT id FROM media WHERE parent_folder_id = ? AND status='active' AND thumbnail_status='done' ORDER BY RANDOM() LIMIT 1").get(row.id) as { id: number } | undefined)?.id ?? null,
         }),
       })),
       ...engagement
