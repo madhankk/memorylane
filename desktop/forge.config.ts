@@ -52,8 +52,8 @@ const config: ForgeConfig = {
       InternalName: "MemoryLane",
       OriginalFilename: "memorylane-desktop.exe",
     },
-    // The tray app's own code has zero npm dependencies (child_process/fs/path
-    // + electron only) - the actual server and its native modules
+    // The tray app's JavaScript dependencies are bundled into dist/ by
+    // scripts/build.mjs. The actual server and its native modules
     // (better-sqlite3, sharp) live entirely in runtime/, added here as an
     // extraResource rather than bundled into the asar. See
     // scripts/prepare-runtime.mjs and server-manager.ts's resolveRuntimeDir().
