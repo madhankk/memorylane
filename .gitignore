@@ -16,3 +16,10 @@ server/data/
 # env
 .env
 .env.local
+
+# desktop tray app - runtime/ is the assembled node binary + server files
+# (see desktop/scripts/prepare-runtime.mjs), release/ is electron-forge's
+# `make`/`package` output (see desktop/forge.config.ts's outDir)
+desktop/runtime/
+desktop/release/
+desktop/out/

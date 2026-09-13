@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>MemoryLane</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: #f7f7f8;
+    color: #1a1a1a;
+    padding: 20px;
+  }
+  h1 { font-size: 16px; margin: 0 0 16px; }
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #eee;
+    margin-bottom: 16px;
+    font-size: 13px;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #999; flex-shrink: 0; }
+  .dot.running { background: #2ea043; }
+  .dot.starting, .dot.stopping { background: #d4a72c; }
+  .dot.error { background: #d1242f; }
+  .row { display: flex; gap: 8px; margin-bottom: 12px; }
+  label { font-size: 13px; display: block; margin-bottom: 4px; color: #555; }
+  input[type="number"] {
+    width: 90px;
+    padding: 6px 8px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  button {
+    padding: 7px 14px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: white;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button.primary { background: #2f6fed; color: white; border-color: #2f6fed; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .checkbox-row { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 16px 0; }
+  #log {
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    background: #111;
+    color: #ccc;
+    border-radius: 6px;
+    padding: 8px;
+    height: 130px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+  <h1>MemoryLane Server</h1>
+
+  <div class="status">
+    <span id="statusDot" class="dot"></span>
+    <span id="statusText">Checking status...</span>
+  </div>
+
+  <div class="row">
+    <div>
+      <label for="port">Port</label>
+      <input type="number" id="port" min="1" max="65535" />
+    </div>
+  </div>
+
+  <div class="row">
+    <button id="startBtn" class="primary">Start</button>
+    <button id="stopBtn">Stop</button>
+    <button id="openBtn">Open in Browser</button>
+  </div>
+
+  <label class="checkbox-row">
+    <input type="checkbox" id="autoStart" />
+    Start automatically when this app opens
+  </label>
+
+  <div id="log"></div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
