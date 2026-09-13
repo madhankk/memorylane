@@ -13,12 +13,12 @@ export default function SurprisePage() {
   }, []);
 
   if (items === null) {
-    return <p className="muted">Gathering memories...</p>;
+    return <p className="text-sm text-muted">Gathering memories...</p>;
   }
 
   if (items.length === 0) {
     return (
-      <p className="muted">
+      <p className="text-sm text-muted">
         No indexed photos yet - add a scan root and run a scan from Settings first.
       </p>
     );

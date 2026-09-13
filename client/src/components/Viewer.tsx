@@ -106,17 +106,29 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false }:
 
   if (!current) return null;
 
+  const controlButtonClass =
+    "h-12 w-12 rounded-full border-none bg-overlay-control text-2xl text-white transition-colors hover:bg-overlay-control-hover";
+
   return (
-    <div ref={overlayRef} className="viewer-overlay" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-      <button className="viewer-close" onClick={onClose} aria-label="Close">
+    <div
+      ref={overlayRef}
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-overlay/97"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      <button className={`absolute top-5 right-5 ${controlButtonClass}`} onClick={onClose} aria-label="Close">
         ✕
       </button>
 
-      <button className="viewer-nav viewer-nav-prev" onClick={goPrev} aria-label="Previous">
+      <button
+        className={`absolute top-1/2 left-5 -translate-y-1/2 ${controlButtonClass}`}
+        onClick={goPrev}
+        aria-label="Previous"
+      >
         ‹
       </button>
 
-      <div className="viewer-stage">
+      <div className="flex max-h-[82vh] max-w-[92vw] items-center justify-center">
         <img
           key={current.id}
           src={displaySrc(current, fallback)}
@@ -124,25 +136,36 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false }:
           onError={() => {
             if (!fallback) setFallback(true);
           }}
+          className="max-h-[82vh] max-w-[92vw] object-contain"
         />
       </div>
 
-      <button className="viewer-nav viewer-nav-next" onClick={goNext} aria-label="Next">
+      <button
+        className={`absolute top-1/2 right-5 -translate-y-1/2 ${controlButtonClass}`}
+        onClick={goNext}
+        aria-label="Next"
+      >
         ›
       </button>
 
-      <div className="viewer-toolbar">
-        <button onClick={() => setPlaying((p) => !p)}>{playing ? "Pause" : "Play"}</button>
-        <span className="viewer-filename">{current.filename}</span>
-        <span className="viewer-position">
+      <div className="absolute bottom-5 left-1/2 flex max-w-[92vw] -translate-x-1/2 flex-wrap items-center justify-center gap-4 rounded-full bg-overlay-control px-4 py-2 text-sm text-white">
+        <button onClick={() => setPlaying((p) => !p)} className="text-white">
+          {playing ? "Pause" : "Play"}
+        </button>
+        <span className="max-w-[240px] truncate">{current.filename}</span>
+        <span>
           {index + 1} / {items.length}
         </span>
-        <button onClick={() => setShowInfo((s) => !s)}>Info</button>
-        <button onClick={toggleFullscreen}>{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</button>
+        <button onClick={() => setShowInfo((s) => !s)} className="text-white">
+          Info
+        </button>
+        <button onClick={toggleFullscreen} className="text-white">
+          {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+        </button>
       </div>
 
       {showInfo && (
-        <div className="viewer-info">
+        <div className="absolute bottom-20 left-1/2 flex -translate-x-1/2 flex-col gap-1 rounded-lg bg-black/70 px-4.5 py-3 text-sm text-white">
           {current.capturedDate && <div>Taken: {new Date(current.capturedDate).toLocaleString()}</div>}
           {current.cameraMake && (
             <div>

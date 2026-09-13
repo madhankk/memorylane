@@ -1,14 +1,18 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
-export type Theme = "light" | "dark";
+// Ported from life-archive-app's theme system - see client/src/styles.css for the
+// token definitions of each.
+export type Theme = "light" | "dark" | "dusk" | "gallery";
+
+export const THEMES: Theme[] = ["light", "dark", "dusk", "gallery"];
 
 const STORAGE_KEY = "memorylane-theme";
-const DEFAULT_THEME: Theme = "dark";
+const DEFAULT_THEME: Theme = "light";
 
 function readStoredTheme(): Theme {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return stored === "light" || stored === "dark" ? stored : DEFAULT_THEME;
+    return (THEMES as string[]).includes(stored ?? "") ? (stored as Theme) : DEFAULT_THEME;
   } catch {
     return DEFAULT_THEME;
   }

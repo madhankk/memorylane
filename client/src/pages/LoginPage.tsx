@@ -27,21 +27,37 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="auth-screen">
-      <div className="auth-card">
-        <h1>MemoryLane</h1>
-        <p className="auth-subtitle">Reconnect with the memories already sitting in your photo archive.</p>
-        <form onSubmit={handleSubmit}>
-          <label>
+    <div className="flex min-h-screen items-center justify-center bg-page">
+      <div className="w-[360px] rounded-2xl border border-border bg-surface p-10 shadow-card">
+        <h1 className="font-serif text-2xl font-semibold text-ink">MemoryLane</h1>
+        <p className="mt-2 text-sm text-muted">Reconnect with the memories already sitting in your photo archive.</p>
+        <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3.5">
+          <label className="flex flex-col gap-1.5 text-sm text-muted">
             Username
-            <input value={username} onChange={(e) => setUsername(e.target.value)} required autoFocus />
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              autoFocus
+              className="rounded-lg border border-border bg-page px-3 py-2.5 text-ink outline-none focus:border-accent"
+            />
           </label>
-          <label>
+          <label className="flex flex-col gap-1.5 text-sm text-muted">
             Password
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="rounded-lg border border-border bg-page px-3 py-2.5 text-ink outline-none focus:border-accent"
+            />
           </label>
-          {error && <p className="form-error">{error}</p>}
-          <button type="submit" disabled={submitting}>
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="mt-2 rounded-lg bg-accent px-4 py-3 font-semibold text-page transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
             {submitting ? "Logging in..." : "Log in"}
           </button>
         </form>

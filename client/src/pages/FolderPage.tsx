@@ -74,21 +74,28 @@ export default function FolderPage() {
   const hasMore = media.length < mediaTotal;
   const sentinelRef = useInfiniteScroll(loadMore, hasMore, loadingMore);
 
-  if (!folder) return <p className="muted">Loading...</p>;
+  if (!folder) return <p className="text-sm text-muted">Loading...</p>;
 
   return (
-    <div className="folder-page">
-      <Breadcrumbs items={breadcrumbs} />
-      <div className="folder-page-header">
-        <h1>{folder.name}</h1>
-        <label className="all-files-toggle">
-          <input type="checkbox" checked={showAllFiles} onChange={(e) => void toggleAllFiles(e.target.checked)} />
-          All files
-        </label>
+    <div className="flex flex-col gap-5">
+      <div>
+        <Breadcrumbs items={breadcrumbs} />
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="font-serif text-2xl font-semibold text-ink">{folder.name}</h1>
+          <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap text-sm text-muted">
+            <input
+              type="checkbox"
+              checked={showAllFiles}
+              onChange={(e) => void toggleAllFiles(e.target.checked)}
+              className="cursor-pointer accent-accent"
+            />
+            All files
+          </label>
+        </div>
       </div>
 
       {!showAllFiles && children.length > 0 && (
-        <div className="folder-grid">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-5">
           {children.map((c) => (
             <FolderCard key={c.id} folder={c} />
           ))}
@@ -98,13 +105,19 @@ export default function FolderPage() {
       {media.length > 0 && <MediaGrid items={media} onOpen={setViewerIndex} />}
 
       {!showAllFiles && children.length === 0 && media.length === 0 && (
-        <p className="muted">This folder is empty.</p>
+        <p className="text-sm text-muted">This folder is empty.</p>
       )}
-      {showAllFiles && media.length === 0 && <p className="muted">No files in this folder or its subfolders.</p>}
+      {showAllFiles && media.length === 0 && (
+        <p className="text-sm text-muted">No files in this folder or its subfolders.</p>
+      )}
 
       {hasMore && (
-        <div ref={sentinelRef} className="load-more-sentinel">
-          {loadingMore && <span className="muted">Loading more ({media.length} / {mediaTotal})...</span>}
+        <div ref={sentinelRef} className="flex min-h-[60px] items-center justify-center text-sm">
+          {loadingMore && (
+            <span className="text-muted">
+              Loading more ({media.length} / {mediaTotal})...
+            </span>
+          )}
         </div>
       )}
 

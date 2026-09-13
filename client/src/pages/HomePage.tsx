@@ -20,12 +20,12 @@ export default function HomePage() {
   };
 
   return (
-    <div className="home-page">
-      <section className="hero">
-        <h1>MemoryLane</h1>
-        <p className="hero-tagline">Reconnect with the memories already sitting in your photo archive.</p>
+    <div className="flex flex-col gap-10">
+      <section className="py-10 text-center">
+        <h1 className="font-serif text-[40px] font-semibold tracking-tight text-ink">MemoryLane</h1>
+        <p className="mt-2 text-base text-muted">Reconnect with the memories already sitting in your photo archive.</p>
         <button
-          className="surprise-button"
+          className="mt-6 rounded-full bg-accent px-10 py-4 text-lg font-bold text-page shadow-hero transition-opacity hover:opacity-90"
           onClick={() => {
             // Requested synchronously inside the click handler - browsers only grant
             // fullscreen in direct response to a user gesture, and that gesture context
@@ -38,31 +38,45 @@ export default function HomePage() {
         </button>
       </section>
 
-      <section className="memory-tiles">
-        <button className="memory-tile" disabled title="Coming soon">
+      <section className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
+        <button
+          disabled
+          title="Coming soon"
+          className="rounded-xl border border-border bg-surface p-5 text-left text-sm text-ink shadow-card disabled:cursor-not-allowed disabled:opacity-40"
+        >
           On This Day
         </button>
-        <button className="memory-tile" disabled title="Coming soon">
+        <button
+          disabled
+          title="Coming soon"
+          className="rounded-xl border border-border bg-surface p-5 text-left text-sm text-ink shadow-card disabled:cursor-not-allowed disabled:opacity-40"
+        >
           Years Ago
         </button>
-        <button className="memory-tile" onClick={randomFolder} disabled={!folders?.length}>
+        <button
+          onClick={randomFolder}
+          disabled={!folders?.length}
+          className="rounded-xl border border-border bg-surface p-5 text-left text-sm text-ink shadow-card transition-colors hover:border-accent disabled:cursor-not-allowed disabled:opacity-40"
+        >
           Random Folder
         </button>
-        <button className="memory-tile" disabled title="Coming soon">
+        <button
+          disabled
+          title="Coming soon"
+          className="rounded-xl border border-border bg-surface p-5 text-left text-sm text-ink shadow-card disabled:cursor-not-allowed disabled:opacity-40"
+        >
           Forgotten Photos
         </button>
       </section>
 
       <section>
-        <h2>Your Library</h2>
-        {folders === null && <p className="muted">Loading...</p>}
+        <h2 className="mb-4 font-serif text-2xl font-semibold text-ink">Your Library</h2>
+        {folders === null && <p className="text-sm text-muted">Loading...</p>}
         {folders && folders.length === 0 && (
-          <p className="muted">
-            No photo folders configured yet. Head to Settings to add a folder to scan.
-          </p>
+          <p className="text-sm text-muted">No photo folders configured yet. Head to Settings to add a folder to scan.</p>
         )}
         {folders && folders.length > 0 && (
-          <div className="folder-grid">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-5">
             {folders.map((f) => (
               <FolderCard key={f.id} folder={f} />
             ))}

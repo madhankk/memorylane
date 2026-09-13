@@ -4,15 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MemoryLane</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,wght@0,400;0,600;1,400&display=swap"
+      rel="stylesheet"
+    />
     <script>
       // Applied synchronously, before first paint, to avoid a flash of the
       // wrong theme while React/ThemeProvider hydrate.
       (function () {
+        var THEMES = ["light", "dark", "dusk", "gallery"];
         try {
           var stored = localStorage.getItem("memorylane-theme");
-          document.documentElement.setAttribute("data-theme", stored === "light" ? "light" : "dark");
+          document.documentElement.setAttribute("data-theme", THEMES.indexOf(stored) !== -1 ? stored : "light");
         } catch (e) {
-          document.documentElement.setAttribute("data-theme", "dark");
+          document.documentElement.setAttribute("data-theme", "light");
         }
       })();
     </script>

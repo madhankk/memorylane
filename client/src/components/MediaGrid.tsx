@@ -15,18 +15,29 @@ function badgeFor(media: MediaDto): string | null {
 
 export default function MediaGrid({ items, onOpen }: MediaGridProps) {
   return (
-    <div className="media-grid">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2">
       {items.map((media, i) => {
         const badge = badgeFor(media);
         const hasThumbnail = media.thumbnailStatus === "done";
         return (
-          <button key={media.id} className="media-card" onClick={() => onOpen(i)} title={media.filename}>
+          <button
+            key={media.id}
+            onClick={() => onOpen(i)}
+            title={media.filename}
+            className="relative aspect-square overflow-hidden rounded-md bg-media p-0"
+          >
             {hasThumbnail ? (
-              <img src={api.media.thumbnailUrl(media.id)} alt="" loading="lazy" />
+              <img src={api.media.thumbnailUrl(media.id)} alt="" loading="lazy" className="h-full w-full object-cover" />
             ) : (
-              <div className="media-card-placeholder">{media.mediaType === "video" ? "🎬" : "🖼"}</div>
+              <div className="flex h-full items-center justify-center text-2xl text-ink opacity-40">
+                {media.mediaType === "video" ? "🎬" : "🖼"}
+              </div>
             )}
-            {badge && <span className="media-card-badge">{badge}</span>}
+            {badge && (
+              <span className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[11px] text-white">
+                {badge}
+              </span>
+            )}
           </button>
         );
       })}

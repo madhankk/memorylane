@@ -16,30 +16,40 @@ export default function SearchPage() {
   };
 
   return (
-    <div className="search-page">
-      <form onSubmit={handleSubmit} className="search-form">
+    <div>
+      <form onSubmit={handleSubmit} className="mb-5 flex gap-2">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search folders, filenames, camera, lens..."
           autoFocus
+          className="flex-1 rounded-lg border border-border bg-surface px-3.5 py-2.5 text-ink outline-none focus:border-accent"
         />
-        <button type="submit">Search</button>
+        <button type="submit" className="rounded-lg bg-accent px-5 py-2.5 font-semibold text-page hover:opacity-90">
+          Search
+        </button>
       </form>
 
       {results && (
-        <ul className="search-results">
-          {results.length === 0 && <li className="muted">No results.</li>}
+        <ul className="flex flex-col gap-2">
+          {results.length === 0 && <li className="text-sm text-muted">No results.</li>}
           {results.map((r, i) =>
             r.type === "folder" && r.folder ? (
-              <li key={`f-${r.folder.id}`}>
-                <span className="result-type">Folder</span>
-                <Link to={`/folder/${r.folder.id}`}>{r.folder.name}</Link>
+              <li key={`f-${r.folder.id}`} className="flex items-center gap-3">
+                <span className="rounded bg-chip px-2 py-0.5 text-[11px] uppercase text-muted">Folder</span>
+                <Link to={`/folder/${r.folder.id}`} className="text-ink hover:text-accent">
+                  {r.folder.name}
+                </Link>
               </li>
             ) : r.media ? (
-              <li key={`m-${r.media.id}-${i}`}>
-                <span className="result-type">{r.media.mediaType === "raw" ? "RAW" : r.media.mediaType === "video" ? "Video" : "Photo"}</span>
-                <button className="link-button" onClick={() => navigate(`/folder/${r.media!.parentFolderId}`)}>
+              <li key={`m-${r.media.id}-${i}`} className="flex items-center gap-3">
+                <span className="rounded bg-chip px-2 py-0.5 text-[11px] uppercase text-muted">
+                  {r.media.mediaType === "raw" ? "RAW" : r.media.mediaType === "video" ? "Video" : "Photo"}
+                </span>
+                <button
+                  className="text-ink underline hover:text-accent"
+                  onClick={() => navigate(`/folder/${r.media!.parentFolderId}`)}
+                >
                   {r.media.filename}
                 </button>
               </li>
