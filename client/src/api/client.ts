@@ -22,6 +22,7 @@ import type {
   FavoriteResultDto,
   IgnoredPathDto,
   IgnoreFolderResultDto,
+  VersionDto,
 } from "@memorylane/shared";
 
 class ApiError extends Error {
@@ -68,6 +69,7 @@ export const api = {
     get: () => request<SettingsDto>("/api/settings"),
     update: (body: UpdateSettingsRequest) => request<SettingsDto>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
     storage: () => request<StorageStatsDto>("/api/settings/storage"),
+    version: () => request<VersionDto>("/api/settings/version"),
   },
   scanRoots: {
     list: () => request<ScanRootDto[]>("/api/scan-roots"),

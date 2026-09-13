@@ -49,6 +49,7 @@ function buildTrayMenu(): void {
   const state = manager.state;
   const menu = Menu.buildFromTemplate([
     { label: statusLabel(state, manager.port), enabled: false },
+    { label: `Version ${updateStatus.currentVersion}`, enabled: false },
     { type: "separator" },
     { label: "Start Server", enabled: state === "stopped" || state === "error", click: () => manager.start(manager.port) },
     { label: "Stop Server", enabled: state === "running" || state === "starting", click: () => manager.stop() },

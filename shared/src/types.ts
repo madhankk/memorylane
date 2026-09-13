@@ -74,6 +74,10 @@ export interface StorageStatsDto {
   totalBytes: number;
 }
 
+export interface VersionDto {
+  version: string;
+}
+
 export interface SettingsDto {
   bindAddress: string;
   port: number;

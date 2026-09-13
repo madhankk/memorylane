@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
-import { updateSettingsRequestSchema, type StorageStatsDto } from "@memorylane/shared";
+import { updateSettingsRequestSchema, type StorageStatsDto, type VersionDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { SettingsRepo } from "../db/settings-repo.js";
 import { getDirectorySize, getFileSize } from "../util/dir-size.js";
+import { APP_VERSION } from "../version.js";
 
 export async function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const repo = new SettingsRepo(ctx.db);
@@ -39,5 +40,10 @@ export async function registerSettingsRoutes(app: FastifyInstance, ctx: AppConte
       totalBytes: thumbnailCacheBytes + databaseTotal + logsBytes,
     };
     return reply.send(stats);
+  });
+
+  app.get("/api/settings/version", { preHandler: app.requireAuth }, async (_request, reply) => {
+    const version: VersionDto = { version: APP_VERSION };
+    return reply.send(version);
   });
 }

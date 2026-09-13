@@ -23,3 +23,6 @@ server/data/
 desktop/runtime/
 desktop/release/
 desktop/out/
+
+# generated from server/package.json by scripts/generate-version.mjs
+server/src/version.ts

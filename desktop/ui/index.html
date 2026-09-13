@@ -48,12 +48,19 @@
     padding: 18px 20px;
   }
 
+  .header-row {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    margin: 0 0 14px;
+  }
   h1 {
     font-family: var(--font-serif);
     font-size: 18px;
     font-weight: 600;
-    margin: 0 0 14px;
+    margin: 0;
   }
+  #appVersion { font-size: 11.5px; color: var(--color-muted); }
 
   .top-row {
     display: flex;
@@ -186,7 +193,10 @@
 </style>
 </head>
 <body>
-  <h1>MemoryLane</h1>
+  <div class="header-row">
+    <h1>MemoryLane</h1>
+    <span id="appVersion"></span>
+  </div>
 
   <div id="updateBanner">
     <span id="updateBannerText"></span>

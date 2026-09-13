@@ -9,6 +9,7 @@ const logEl = document.getElementById("log");
 const updateBanner = document.getElementById("updateBanner");
 const updateBannerText = document.getElementById("updateBannerText");
 const updateBannerBtn = document.getElementById("updateBannerBtn");
+const appVersionEl = document.getElementById("appVersion");
 
 const LABELS = {
   running: "Running",
@@ -29,6 +30,7 @@ function render(status) {
 }
 
 function renderUpdateStatus(status) {
+  appVersionEl.textContent = `v${status.currentVersion}`;
   updateBanner.classList.toggle("visible", !!status.available);
   if (status.available) {
     updateBannerText.textContent = `A new version (v${status.latestVersion}) is available - you're on v${status.currentVersion}.`;

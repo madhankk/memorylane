@@ -149,20 +149,23 @@ export default function SettingsPage() {
   const [storage, setStorage] = useState<StorageStatsDto | null>(null);
   const [storageLoading, setStorageLoading] = useState(false);
   const [ignoredPaths, setIgnoredPaths] = useState<IgnoredPathDto[]>([]);
+  const [version, setVersion] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { theme, setTheme } = useTheme();
 
   const loadAll = async () => {
-    const [roots, s, st, ip] = await Promise.all([
+    const [roots, s, st, ip, v] = await Promise.all([
       api.scanRoots.list(),
       api.settings.get(),
       api.scans.status(),
       api.ignoredPaths.list(),
+      api.settings.version(),
     ]);
     setScanRoots(roots);
     setSettings(s);
     setStatus(st);
     setIgnoredPaths(ip);
+    setVersion(v.version);
   };
 
   const removeIgnoredPath = async (id: number) => {
@@ -506,6 +509,8 @@ export default function SettingsPage() {
           <p className="text-sm text-muted">Calculating...</p>
         )}
       </section>
+
+      {version && <p className="text-center text-xs text-muted">MemoryLane v{version}</p>}
     </div>
   );
 }

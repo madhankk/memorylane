@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.json && node scripts/copy-migrations.mjs",
+    "dev": "node scripts/generate-version.mjs && tsx watch src/server.ts",
+    "build": "node scripts/generate-version.mjs && tsc -p tsconfig.json && node scripts/copy-migrations.mjs",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
