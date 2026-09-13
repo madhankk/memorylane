@@ -28,10 +28,7 @@ const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     appBundleId: "com.memorylane.desktop",
-    // electron-packager appends .ico (Windows) / .icns (macOS) itself - only
-    // placeholder PNGs exist under this name today (see
-    // scripts/gen-placeholder-icons.mjs), so packaging will warn and fall
-    // back to Electron's default icon until real .ico/.icns assets replace them.
+    // Platform icons are rebuilt by scripts/gen-icons.mjs.
     icon: "assets/icon",
     ...(isMacRelease
       ? {
@@ -148,7 +145,7 @@ const config: ForgeConfig = {
     },
   },
   makers: [
-    new MakerSquirrel({ name: "memorylane_desktop", setupExe: "MemoryLane-Setup.exe" }),
+    new MakerSquirrel({ name: "memorylane_desktop", setupExe: "MemoryLane-Setup.exe", setupIcon: "assets/icon.ico" }),
     new MakerDMG((arch) => ({ name: `MemoryLane-${arch}`, format: "ULFO" })),
   ],
   plugins: [
