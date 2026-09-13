@@ -45,6 +45,7 @@ const buttonClass = "rounded-md border border-border px-3 py-1.5 text-sm text-in
 const accentButtonClass = "rounded-lg bg-accent px-5 py-2.5 font-semibold text-page hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 
 function ChangePasswordForm() {
+  const [expanded, setExpanded] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -73,6 +74,14 @@ function ChangePasswordForm() {
       setSubmitting(false);
     }
   };
+
+  if (!expanded) {
+    return (
+      <button onClick={() => setExpanded(true)} className="text-sm font-medium text-accent hover:underline">
+        Change password
+      </button>
+    );
+  }
 
   return (
     <form onSubmit={submit} className="flex max-w-sm flex-col gap-3">
@@ -107,9 +116,25 @@ function ChangePasswordForm() {
       />
       {error && <p className="text-sm text-red-500">{error}</p>}
       {success && <p className="text-sm text-green-600">Password changed. You'll stay signed in here; any other signed-in devices have been signed out.</p>}
-      <button type="submit" disabled={submitting} className={`self-start ${accentButtonClass}`}>
-        {submitting ? "Changing..." : "Change Password"}
-      </button>
+      <div className="flex items-center gap-3">
+        <button type="submit" disabled={submitting} className={accentButtonClass}>
+          {submitting ? "Changing..." : "Change Password"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setExpanded(false);
+            setCurrentPassword("");
+            setNewPassword("");
+            setConfirmPassword("");
+            setError(null);
+            setSuccess(false);
+          }}
+          className="text-sm text-muted hover:text-ink"
+        >
+          Cancel
+        </button>
+      </div>
     </form>
   );
 }
