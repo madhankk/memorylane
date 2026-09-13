@@ -4,78 +4,172 @@
 <meta charset="utf-8" />
 <title>MemoryLane</title>
 <style>
-  :root { color-scheme: light dark; }
+  /* Tokens ported from client/src/styles.css (light + dark only - this is a
+     small system utility window, not the full app, so it just follows the
+     OS's light/dark preference rather than offering the full in-app theme
+     picker with dusk/gallery). Keep these two files in sync if the web
+     app's palette changes. */
+  :root {
+    color-scheme: light;
+    --color-page: #ffffff;
+    --color-surface: #ffffff;
+    --color-ink: #111827;
+    --color-muted: #667085;
+    --color-accent: #2f6fed;
+    --color-hover: #f4f6f8;
+    --color-chip: #f3f5f8;
+    --color-border: rgba(0, 0, 0, 0.06);
+    --color-border-strong: rgba(0, 0, 0, 0.08);
+    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-serif: "Newsreader", Georgia, serif;
+    --status-color: var(--color-muted);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --color-page: #08090b;
+      --color-surface: #111318;
+      --color-ink: #f8fafc;
+      --color-muted: #a8b3c3;
+      --color-accent: #8cb5ff;
+      --color-hover: #1b222d;
+      --color-chip: #1a202a;
+      --color-border: rgba(255, 255, 255, 0.09);
+      --color-border-strong: rgba(255, 255, 255, 0.14);
+    }
+  }
+
+  * { box-sizing: border-box; }
   body {
     margin: 0;
-    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
-    background: #f7f7f8;
-    color: #1a1a1a;
-    padding: 20px;
+    background: var(--color-page);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    padding: 18px 20px;
   }
-  h1 { font-size: 16px; margin: 0 0 16px; }
-  .status {
+
+  h1 {
+    font-family: var(--font-serif);
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 14px;
+  }
+
+  .top-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 12px;
-    border-radius: 8px;
-    background: #eee;
-    margin-bottom: 16px;
-    font-size: 13px;
+    flex-wrap: wrap;
   }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: #999; flex-shrink: 0; }
+
+  .status-pill {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--color-border);
+    background: var(--color-chip);
+    font-size: 13px;
+    color: var(--color-ink);
+    white-space: nowrap;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-muted); flex-shrink: 0; }
   .dot.running { background: #2ea043; }
   .dot.starting, .dot.stopping { background: #d4a72c; }
   .dot.error { background: #d1242f; }
-  .row { display: flex; gap: 8px; margin-bottom: 12px; }
-  label { font-size: 13px; display: block; margin-bottom: 4px; color: #555; }
-  input[type="number"] {
-    width: 90px;
-    padding: 6px 8px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    font-size: 13px;
-  }
+
   button {
-    padding: 7px 14px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    background: white;
+    font-family: inherit;
     font-size: 13px;
+    font-weight: 500;
+    padding: 7px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-ink);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button:hover:not(:disabled) { background: var(--color-hover); }
+  button:disabled { cursor: not-allowed; opacity: 0.4; }
+  button.primary {
+    background: var(--color-accent);
+    color: white;
+    border-color: var(--color-accent);
+  }
+  button.primary:hover:not(:disabled) { opacity: 0.9; background: var(--color-accent); }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    color: var(--color-ink);
+    margin: 16px 0;
     cursor: pointer;
   }
-  button.primary { background: #2f6fed; color: white; border-color: #2f6fed; }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .checkbox-row { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 16px 0; }
+  .checkbox-row input { accent-color: var(--color-accent); cursor: pointer; }
+
+  details {
+    border-top: 1px solid var(--color-border);
+    padding-top: 12px;
+  }
+  summary {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-ink);
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::before {
+    content: "\276F";
+    font-size: 10px;
+    color: var(--color-muted);
+    transition: transform 0.15s ease;
+    display: inline-block;
+  }
+  details[open] summary::before { transform: rotate(90deg); }
+
+  .advanced-body { padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+
+  label.field-label { font-size: 12px; color: var(--color-muted); display: block; margin-bottom: 4px; }
+  input[type="number"] {
+    font-family: inherit;
+    width: 90px;
+    padding: 6px 9px;
+    border: 1px solid var(--color-border);
+    border-radius: 7px;
+    background: var(--color-page);
+    color: var(--color-ink);
+    font-size: 13px;
+    outline: none;
+  }
+  input[type="number"]:focus { border-color: var(--color-accent); }
+
   #log {
-    font-family: ui-monospace, monospace;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
     font-size: 11px;
-    background: #111;
-    color: #ccc;
-    border-radius: 6px;
-    padding: 8px;
-    height: 130px;
+    background: #111318;
+    color: #c8cfd8;
+    border-radius: 8px;
+    padding: 8px 10px;
+    height: 120px;
     overflow-y: auto;
     white-space: pre-wrap;
+    border: 1px solid var(--color-border);
   }
 </style>
 </head>
 <body>
-  <h1>MemoryLane Server</h1>
+  <h1>MemoryLane</h1>
 
-  <div class="status">
-    <span id="statusDot" class="dot"></span>
-    <span id="statusText">Checking status...</span>
-  </div>
-
-  <div class="row">
-    <div>
-      <label for="port">Port</label>
-      <input type="number" id="port" min="1" max="65535" />
-    </div>
-  </div>
-
-  <div class="row">
+  <div class="top-row">
+    <span class="status-pill"><span id="statusDot" class="dot"></span><span id="statusText">Checking status...</span></span>
     <button id="startBtn" class="primary">Start</button>
     <button id="stopBtn">Stop</button>
     <button id="openBtn">Open in Browser</button>
@@ -86,7 +180,16 @@
     Start automatically when this app opens
   </label>
 
-  <div id="log"></div>
+  <details>
+    <summary>Advanced</summary>
+    <div class="advanced-body">
+      <div>
+        <label class="field-label" for="port">Port</label>
+        <input type="number" id="port" min="1" max="65535" />
+      </div>
+      <div id="log"></div>
+    </div>
+  </details>
 
   <script src="renderer.js"></script>
 </body>

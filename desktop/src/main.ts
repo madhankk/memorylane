@@ -67,9 +67,14 @@ function showStatusWindow(): void {
     return;
   }
   statusWindow = new BrowserWindow({
-    width: 420,
-    height: 360,
-    resizable: false,
+    width: 400,
+    height: 260,
+    minWidth: 360,
+    minHeight: 220,
+    // The "Advanced" section (port, log) is collapsed by default and only
+    // needs room when expanded - resizable so it isn't clipped then, rather
+    // than permanently reserving space for content that's usually hidden.
+    resizable: true,
     title: "MemoryLane",
     icon: iconPath("icon-256.png"),
     webPreferences: {
