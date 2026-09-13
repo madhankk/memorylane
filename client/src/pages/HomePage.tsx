@@ -24,7 +24,16 @@ export default function HomePage() {
       <section className="hero">
         <h1>MemoryLane</h1>
         <p className="hero-tagline">Reconnect with the memories already sitting in your photo archive.</p>
-        <button className="surprise-button" onClick={() => navigate("/surprise")}>
+        <button
+          className="surprise-button"
+          onClick={() => {
+            // Requested synchronously inside the click handler - browsers only grant
+            // fullscreen in direct response to a user gesture, and that gesture context
+            // is gone by the time the Surprise Me route finishes fetching photos.
+            document.documentElement.requestFullscreen?.().catch(() => {});
+            navigate("/surprise");
+          }}
+        >
           Surprise Me
         </button>
       </section>

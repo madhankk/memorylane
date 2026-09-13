@@ -24,5 +24,5 @@ export default function SurprisePage() {
     );
   }
 
-  return <Viewer items={items} startIndex={0} onClose={() => navigate("/")} />;
+  return <Viewer items={items} startIndex={0} onClose={() => navigate("/")} autoPlay />;
 }

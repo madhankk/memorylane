@@ -267,7 +267,10 @@ input {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 16px;
+  max-width: 92vw;
   background: rgba(255,255,255,0.08);
   padding: 8px 16px;
   border-radius: 999px;

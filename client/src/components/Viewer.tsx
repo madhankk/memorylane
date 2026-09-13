@@ -6,6 +6,8 @@ interface ViewerProps {
   items: MediaDto[];
   startIndex: number;
   onClose: () => void;
+  // Starts the slideshow playing immediately instead of requiring a manual Play click.
+  autoPlay?: boolean;
 }
 
 const SLIDESHOW_INTERVAL_MS = 5000;
@@ -17,12 +19,14 @@ function displaySrc(media: MediaDto, useFallback: boolean): string {
   return api.media.fileUrl(media.id);
 }
 
-export default function Viewer({ items, startIndex, onClose }: ViewerProps) {
+export default function Viewer({ items, startIndex, onClose, autoPlay = false }: ViewerProps) {
   const [index, setIndex] = useState(startIndex);
   const [fallback, setFallback] = useState(false);
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(autoPlay);
   const [showInfo, setShowInfo] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
 
   const current = items[index];
 
@@ -59,6 +63,34 @@ export default function Viewer({ items, startIndex, onClose }: ViewerProps) {
     };
   }, [playing, goNext]);
 
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+    } else {
+      overlayRef.current?.requestFullscreen().catch(() => {
+        // Fullscreen can be denied (no user gesture, unsupported, iframe restrictions) - the
+        // overlay already covers the whole viewport, so the slideshow still works fine without it.
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+
+    // Auto-play implies "start the full slideshow experience" - try to go fullscreen too.
+    if (autoPlay && !document.fullscreenElement) {
+      overlayRef.current?.requestFullscreen().catch(() => {});
+    }
+
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      // Don't leave the browser stuck in fullscreen once the viewer closes.
+      if (document.fullscreenElement) void document.exitFullscreen();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Basic touch swipe support.
   const touchStartX = useRef<number | null>(null);
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -75,7 +107,7 @@ export default function Viewer({ items, startIndex, onClose }: ViewerProps) {
   if (!current) return null;
 
   return (
-    <div className="viewer-overlay" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+    <div ref={overlayRef} className="viewer-overlay" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <button className="viewer-close" onClick={onClose} aria-label="Close">
         ✕
       </button>
@@ -106,6 +138,7 @@ export default function Viewer({ items, startIndex, onClose }: ViewerProps) {
           {index + 1} / {items.length}
         </span>
         <button onClick={() => setShowInfo((s) => !s)}>Info</button>
+        <button onClick={toggleFullscreen}>{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</button>
       </div>
 
       {showInfo && (
