@@ -19,4 +19,11 @@ contextBridge.exposeInMainWorld("memorylane", {
     ipcRenderer.on("server:log", listener);
     return () => ipcRenderer.removeListener("server:log", listener);
   },
+  getUpdateStatus: () => ipcRenderer.invoke("app:get-update-status"),
+  openUpdateUrl: () => ipcRenderer.invoke("app:open-update-url"),
+  onUpdateStatusChange: (callback: (status: unknown) => void) => {
+    const listener = (_event: unknown, status: unknown) => callback(status);
+    ipcRenderer.on("update:status-changed", listener);
+    return () => ipcRenderer.removeListener("update:status-changed", listener);
+  },
 });

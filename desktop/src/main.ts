@@ -3,6 +3,7 @@ import path from "node:path";
 import { app, BrowserWindow, Menu, Tray, ipcMain, shell, nativeImage } from "electron";
 import { ServerManager, type ServerState } from "./server-manager";
 import { loadConfig, saveConfig } from "./config";
+import { checkForUpdate, type UpdateStatus } from "./update-checker";
 
 // Squirrel (the Windows installer MakerSquirrel produces) relaunches the app
 // with special --squirrel-install/--squirrel-uninstall/etc. flags during
@@ -22,6 +23,7 @@ let tray: Tray | null = null;
 let statusWindow: BrowserWindow | null = null;
 let manager: ServerManager;
 let quitting = false;
+let updateStatus: UpdateStatus = { available: false, currentVersion: app.getVersion() };
 
 function iconPath(name: string): string {
   return path.join(__dirname, "..", "assets", name);
@@ -53,6 +55,15 @@ function buildTrayMenu(): void {
     { type: "separator" },
     { label: "Open in Browser", enabled: state === "running", click: () => shell.openExternal(`http://127.0.0.1:${manager.port}`) },
     { label: "Show Status Window", click: () => showStatusWindow() },
+    ...(updateStatus.available
+      ? ([
+          { type: "separator" },
+          {
+            label: `Update available: v${updateStatus.latestVersion}`,
+            click: () => shell.openExternal(updateStatus.url ?? "https://github.com/madhankk/memorylane/releases"),
+          },
+        ] as const)
+      : []),
     { type: "separator" },
     { label: "Quit", click: () => app.quit() },
   ]);
@@ -99,6 +110,13 @@ function showStatusWindow(): void {
   });
 }
 
+function broadcastUpdateStatus(): void {
+  buildTrayMenu();
+  if (statusWindow && !statusWindow.isDestroyed()) {
+    statusWindow.webContents.send("update:status-changed", updateStatus);
+  }
+}
+
 function broadcastStatus(): void {
   // The child server process exits asynchronously after stopSync() sends the
   // kill signal during quit, so its "exit" -> log/state events can still fire
@@ -125,7 +143,10 @@ app.whenReady().then(() => {
     if (statusWindow && !statusWindow.isDestroyed()) statusWindow.webContents.send("server:log", line);
   });
 
-  tray = new Tray(nativeImage.createFromPath(iconPath("icon-32.png")));
+  const isMac = process.platform === "darwin";
+  const trayImage = nativeImage.createFromPath(iconPath(isMac ? "trayTemplate.png" : "icon-32.png"));
+  if (isMac) trayImage.setTemplateImage(true);
+  tray = new Tray(trayImage);
   buildTrayMenu();
   tray.on("click", () => showStatusWindow());
 
@@ -135,6 +156,10 @@ app.whenReady().then(() => {
     logs: manager.logs,
     autoStart: loadConfig().autoStart,
   }));
+  ipcMain.handle("app:get-update-status", () => updateStatus);
+  ipcMain.handle("app:open-update-url", () =>
+    shell.openExternal(updateStatus.url ?? "https://github.com/madhankk/memorylane/releases"),
+  );
   ipcMain.handle("server:start", (_event, port: number) => {
     saveConfig({ ...loadConfig(), port });
     manager.start(port);
@@ -151,6 +176,13 @@ app.whenReady().then(() => {
   // macOS/Linux tray-app convention: no dock icon, no window on launch -
   // it lives in the tray until the user opens the status window themselves.
   if (process.platform === "darwin") app.dock?.hide();
+
+  // Fire-and-forget - never blocks startup, and checkForUpdate() itself never
+  // throws (offline/unreachable GitHub is a normal, silent no-op outcome).
+  void checkForUpdate(app.getVersion()).then((status) => {
+    updateStatus = status;
+    broadcastUpdateStatus();
+  });
 });
 
 app.on("before-quit", () => {
