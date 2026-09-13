@@ -85,12 +85,62 @@ The database schema is versioned via numbered SQL files in `server/migrations/`,
 
 Occasionally a migration needs to invalidate existing thumbnails (e.g. to fix a rendering bug) - when that happens, affected thumbnails simply regenerate the next time a scan runs, with no action needed beyond triggering a scan (automatic on schedule, or manually from Settings).
 
+## Desktop app (Windows/macOS tray installer)
+
+`desktop/` packages MemoryLane as a tray app for non-developers: it manages the server as a background process (start/stop, launch-at-login, a small status window) and needs no separate Node.js install, since it bundles its own copy of the Node runtime rather than requiring one on the target machine.
+
+### Build sequence
+
+```bash
+# 1. From the repo root - builds shared, client, and server
+npm install
+npm run build
+
+# 2. From desktop/ - bundles the tray app, assembles the runtime folder
+#    (a copy of node.exe + step 1's server build + its production
+#    dependencies - see scripts/prepare-runtime.mjs), and produces a
+#    platform installer
+cd desktop
+npm install
+npm run make
+```
+
+`npm run make` chains `npm run build` (desktop's own tray app code), `npm run prepare-runtime`, then `electron-forge make`. Step 1 must already have run - `prepare-runtime` fails loudly if `server/dist`, `server/public`, or `shared/dist` don't exist yet, rather than silently packaging a stale or empty runtime.
+
+Output lands in `desktop/release/<version>/`:
+- Packaged app: `MemoryLane-win32-x64/` (Windows) or the `.app` (macOS)
+- Installer: `make/squirrel.windows/x64/MemoryLane-Setup.exe` (Windows) or `MemoryLane-<arch>.dmg` (macOS)
+
+Use `npm run package` instead of `make` to produce just the packaged app folder without an installer (useful for a quick sanity check without waiting on Squirrel/DMG packaging).
+
+### Signing a real release
+
+```powershell
+$env:SIGN_RELEASE = "1"
+npm run make
+```
+
+Both `memorylane-desktop.exe` **and** `node-runtime.exe` get signed (the latter is spawned as its own process, not a library loaded by the already-signed app, so it needs an independent signature or Windows SmartScreen flags it on its own), plus the `MemoryLane-Setup.exe` installer itself - see `desktop/forge.config.ts` and `desktop/scripts/sign-*.ps1`. This requires Windows code-signing infrastructure already set up on the build machine (Azure Trusted Signing via `signtool`, pointed at `C:\codesigning\metadata.json`). Without `SIGN_RELEASE=1`, `make` still produces a working installer, just unsigned - fine for local testing, but Windows will show a SmartScreen warning and macOS will block launch outright without a signed, notarized build.
+
+macOS signing/notarization is wired up in `forge.config.ts` too, but is **not yet complete**: the automatic `osxSign` pass signs the `.app` bundle's own code, but `runtime/`'s own binaries (`node-runtime.exe`, and the native `.node`/`dylib` files inside `runtime/node_modules` for `better-sqlite3`/`sharp`) still need an explicit `codesign` pass added before notarization will actually pass - see the `TODO` comment in `forge.config.ts`.
+
+### Development
+
+```bash
+cd desktop
+npm run prepare-runtime   # first time only, or after a server/shared code change
+npm run dev
+```
+
+`npm run dev` only rebuilds the tray app itself, not the runtime folder - it doesn't call `prepare-runtime`, so a fresh clone (or a change to server/shared code) needs an explicit `prepare-runtime` run first. Re-run it whenever server or shared code changes; the tray app's own code (`desktop/src`, `desktop/ui`) is picked up by `npm run dev` alone.
+
 ## Repository layout
 
 ```
 server/   Fastify + TypeScript backend: auth, scanning, thumbnails, SQLite, REST API
 client/   React + TypeScript + Vite frontend
 shared/   Shared DTOs, enums, and zod validation schemas used by both
+desktop/  Electron tray app that packages the server as a Windows/macOS installer
 ```
 
 ## License
