@@ -8,7 +8,7 @@ import type { Logger } from "pino";
 function resolveMigrationsDir(): string {
   const candidates = [
     path.resolve(import.meta.dirname, "..", "..", "migrations"), // src/db -> server/migrations (dev)
-    path.resolve(import.meta.dirname, "migrations"), // dist/db -> dist/migrations (build copies it here)
+    path.resolve(import.meta.dirname, "..", "migrations"), // dist/db -> dist/migrations (build copies it here)
   ];
   for (const dir of candidates) {
     if (fs.existsSync(dir)) return dir;
