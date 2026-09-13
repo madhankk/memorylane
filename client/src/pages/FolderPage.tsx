@@ -95,7 +95,7 @@ export default function FolderPage() {
       </div>
 
       {!showAllFiles && children.length > 0 && (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-5">
+        <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-4">
           {children.map((c) => (
             <FolderCard key={c.id} folder={c} />
           ))}

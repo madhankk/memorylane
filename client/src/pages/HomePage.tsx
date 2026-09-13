@@ -76,7 +76,7 @@ export default function HomePage() {
           <p className="text-sm text-muted">No photo folders configured yet. Head to Settings to add a folder to scan.</p>
         )}
         {folders && folders.length > 0 && (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-5">
+          <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-4">
             {folders.map((f) => (
               <FolderCard key={f.id} folder={f} />
             ))}
