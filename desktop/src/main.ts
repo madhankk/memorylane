@@ -1,6 +1,6 @@
 import started from "electron-squirrel-startup";
 import path from "node:path";
-import { app, BrowserWindow, Menu, Tray, ipcMain, shell, nativeImage } from "electron";
+import { app, BrowserWindow, Menu, Tray, ipcMain, shell, nativeImage, Notification } from "electron";
 import { ServerManager, type ServerState } from "./server-manager";
 import { loadConfig, saveConfig } from "./config";
 import { checkForUpdate, type UpdateStatus } from "./update-checker";
@@ -79,10 +79,10 @@ function showStatusWindow(): void {
     return;
   }
   statusWindow = new BrowserWindow({
-    width: 400,
-    height: 260,
-    minWidth: 360,
-    minHeight: 220,
+    width: 440,
+    height: 320,
+    minWidth: 400,
+    minHeight: 280,
     // The "Advanced" section (port, log) is collapsed by default and only
     // needs room when expanded - resizable so it isn't clipped then, rather
     // than permanently reserving space for content that's usually hidden.
@@ -138,7 +138,19 @@ app.whenReady().then(() => {
   const config = loadConfig();
   manager = new ServerManager(config.port);
 
-  manager.on("state", () => broadcastStatus());
+  manager.on("state", (state: ServerState) => {
+    broadcastStatus();
+    // The only externally-visible feedback that startup (including the
+    // silent auto-start-on-launch path) actually worked - without this,
+    // nothing indicates the server came up unless you happen to open the
+    // tray menu or status window yourself.
+    if (state === "running" && Notification.isSupported()) {
+      new Notification({
+        title: "MemoryLane",
+        body: `Server running on port ${manager.port}`,
+      }).show();
+    }
+  });
   manager.on("log", (line: string) => {
     if (quitting) return;
     if (statusWindow && !statusWindow.isDestroyed()) statusWindow.webContents.send("server:log", line);
