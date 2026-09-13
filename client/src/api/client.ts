@@ -15,6 +15,7 @@ import type {
   MediaDto,
   PaginatedResult,
   SearchResultDto,
+  HomeSummaryDto,
 } from "@memorylane/shared";
 
 class ApiError extends Error {
@@ -95,5 +96,8 @@ export const api = {
     request<PaginatedResult<SearchResultDto>>(`/api/search?q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`),
   memories: {
     random: (count = 100) => request<{ items: MediaDto[] }>(`/api/memories/random?count=${count}`),
+  },
+  home: {
+    summary: () => request<HomeSummaryDto>("/api/home/summary"),
   },
 };

@@ -153,6 +153,15 @@ export interface RunScanRequest {
   scanRootId?: number;
 }
 
+export interface HomeSummaryDto {
+  mediaCount: number;
+  folderCount: number;
+  totalSizeBytes: number;
+  yearSpan: number;
+  // A randomly picked photo to use as the hero background - null if nothing indexed yet.
+  heroMediaId: number | null;
+}
+
 export interface PaginatedResult<T> {
   items: T[];
   total: number;

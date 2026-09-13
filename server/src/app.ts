@@ -11,6 +11,7 @@ import { registerFolderRoutes } from "./api/folders-routes.js";
 import { registerMediaRoutes } from "./api/media-routes.js";
 import { registerSearchRoutes } from "./api/search-routes.js";
 import { registerMemoriesRoutes } from "./api/memories-routes.js";
+import { registerHomeRoutes } from "./api/home-routes.js";
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const isProd = process.env.NODE_ENV === "production";
@@ -40,6 +41,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   await registerMediaRoutes(app, ctx);
   await registerSearchRoutes(app, ctx);
   await registerMemoriesRoutes(app, ctx);
+  await registerHomeRoutes(app, ctx);
 
   // Serve the built client as static assets, with an SPA fallback to index.html
   // for any non-API route (client-side React Router handles the rest).
