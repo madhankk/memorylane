@@ -168,6 +168,10 @@ app.whenReady().then(() => {
     port: manager.port,
     logs: manager.logs,
     autoStart: loadConfig().autoStart,
+    // Sourced from the OS itself, not our saved config - a user can remove
+    // MemoryLane from Windows' Startup tab / macOS Login Items outside the
+    // app entirely, and the checkbox should reflect that, not silently drift.
+    launchAtLogin: app.getLoginItemSettings().openAtLogin,
   }));
   ipcMain.handle("app:get-update-status", () => updateStatus);
   ipcMain.handle("app:open-update-url", () =>
@@ -181,7 +185,9 @@ app.whenReady().then(() => {
   ipcMain.handle("server:open-in-browser", () => shell.openExternal(`http://127.0.0.1:${manager.port}`));
   ipcMain.handle("config:set-auto-start", (_event, autoStart: boolean) => {
     saveConfig({ ...loadConfig(), autoStart });
-    app.setLoginItemSettings({ openAtLogin: autoStart });
+  });
+  ipcMain.handle("config:set-launch-at-login", (_event, launchAtLogin: boolean) => {
+    app.setLoginItemSettings({ openAtLogin: launchAtLogin });
   });
 
   if (config.autoStart) manager.start(config.port);

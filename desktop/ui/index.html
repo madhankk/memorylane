@@ -108,13 +108,18 @@
   }
   button.primary:hover:not(:disabled) { opacity: 0.9; background: var(--color-accent); }
 
+  .checkbox-group {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    margin: 16px 0;
+  }
   .checkbox-row {
     display: flex;
     align-items: center;
     gap: 7px;
     font-size: 13px;
     color: var(--color-ink);
-    margin: 16px 0;
     cursor: pointer;
   }
   .checkbox-row input { accent-color: var(--color-accent); cursor: pointer; }
@@ -211,10 +216,16 @@
     <button id="openBtn">Open in Browser</button>
   </div>
 
-  <label class="checkbox-row">
-    <input type="checkbox" id="autoStart" />
-    Start automatically when this app opens
-  </label>
+  <div class="checkbox-group">
+    <label class="checkbox-row">
+      <input type="checkbox" id="launchAtLogin" />
+      Launch MemoryLane when I log in
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" id="autoStart" />
+      Start the server automatically when this app opens
+    </label>
+  </div>
 
   <details>
     <summary>Advanced</summary>

@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("memorylane", {
   stop: () => ipcRenderer.invoke("server:stop"),
   openInBrowser: () => ipcRenderer.invoke("server:open-in-browser"),
   setAutoStart: (autoStart: boolean) => ipcRenderer.invoke("config:set-auto-start", autoStart),
+  setLaunchAtLogin: (launchAtLogin: boolean) => ipcRenderer.invoke("config:set-launch-at-login", launchAtLogin),
   onStatusChange: (callback: (status: unknown) => void) => {
     const listener = (_event: unknown, status: unknown) => callback(status);
     ipcRenderer.on("server:status-changed", listener);

@@ -5,6 +5,7 @@ const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
 const openBtn = document.getElementById("openBtn");
 const autoStartCheckbox = document.getElementById("autoStart");
+const launchAtLoginCheckbox = document.getElementById("launchAtLogin");
 const logEl = document.getElementById("log");
 const updateBanner = document.getElementById("updateBanner");
 const updateBannerText = document.getElementById("updateBannerText");
@@ -41,6 +42,7 @@ async function init() {
   const status = await window.memorylane.getStatus();
   render(status);
   autoStartCheckbox.checked = status.autoStart;
+  launchAtLoginCheckbox.checked = status.launchAtLogin;
   for (const line of status.logs) appendLog(line);
 
   renderUpdateStatus(await window.memorylane.getUpdateStatus());
@@ -58,6 +60,7 @@ startBtn.addEventListener("click", () => {
 stopBtn.addEventListener("click", () => void window.memorylane.stop());
 openBtn.addEventListener("click", () => void window.memorylane.openInBrowser());
 autoStartCheckbox.addEventListener("change", () => void window.memorylane.setAutoStart(autoStartCheckbox.checked));
+launchAtLoginCheckbox.addEventListener("change", () => void window.memorylane.setLaunchAtLogin(launchAtLoginCheckbox.checked));
 updateBannerBtn.addEventListener("click", () => void window.memorylane.openUpdateUrl());
 
 window.memorylane.onStatusChange((status) => render(status));
