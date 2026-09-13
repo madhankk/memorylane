@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
+import { useAuth } from "../hooks/useAuth";
 
 export default function SetupPage() {
   const [username, setUsername] = useState("");
@@ -9,6 +10,7 @@ export default function SetupPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
+  const { refresh } = useAuth();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -20,6 +22,11 @@ export default function SetupPage() {
     setSubmitting(true);
     try {
       await api.auth.setup({ username, password });
+      // App.tsx routes "/login" back to "/setup" while needsSetup is true -
+      // that flag lives in AuthProvider's state from the initial page load,
+      // so it has to be refreshed here or the navigate below just bounces
+      // straight back to this page instead of reaching the login screen.
+      await refresh();
       // Setup deliberately logs the user out - they must log in again.
       navigate("/login", { replace: true });
     } catch (err) {
