@@ -16,6 +16,7 @@ Photos are the v1 focus; video indexing/playback is deferred.
 - **Lightweight, invisible engagement tracking** - a simple favorite star and quiet shown/viewed counters bias rediscovery toward photos you haven't seen in a while, without ever turning into an analytics dashboard.
 - **Four themes** - light, dark, dusk, and gallery, switchable at any time.
 - **Multi-folder libraries** - scan multiple folders/drives, reorder them, and trigger a rescan of just one folder at a time from Settings.
+- **Ignore folders you don't want indexed** - a global ignore list (Settings, or click "Ignore folder" while browsing one) tells the scanner to permanently skip a path - it removes that folder and its already-indexed items from your library without touching the original files.
 
 ## Requirements
 

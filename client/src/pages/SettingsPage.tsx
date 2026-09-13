@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ChevronUp, ChevronDown } from "lucide-react";
-import type { ScanRootDto, SettingsDto, ScanStatusDto, StorageStatsDto } from "@memorylane/shared";
+import { ChevronUp, ChevronDown, X } from "lucide-react";
+import type { ScanRootDto, SettingsDto, ScanStatusDto, StorageStatsDto, IgnoredPathDto } from "@memorylane/shared";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../hooks/useAuth";
 import { useTheme, THEMES, type Theme } from "../hooks/useTheme";
@@ -148,14 +148,26 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [storage, setStorage] = useState<StorageStatsDto | null>(null);
   const [storageLoading, setStorageLoading] = useState(false);
+  const [ignoredPaths, setIgnoredPaths] = useState<IgnoredPathDto[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { theme, setTheme } = useTheme();
 
   const loadAll = async () => {
-    const [roots, s, st] = await Promise.all([api.scanRoots.list(), api.settings.get(), api.scans.status()]);
+    const [roots, s, st, ip] = await Promise.all([
+      api.scanRoots.list(),
+      api.settings.get(),
+      api.scans.status(),
+      api.ignoredPaths.list(),
+    ]);
     setScanRoots(roots);
     setSettings(s);
     setStatus(st);
+    setIgnoredPaths(ip);
+  };
+
+  const removeIgnoredPath = async (id: number) => {
+    await api.ignoredPaths.remove(id);
+    setIgnoredPaths((prev) => prev.filter((p) => p.id !== id));
   };
 
   const loadStorage = async () => {
@@ -353,6 +365,35 @@ export default function SettingsPage() {
             </li>
           ))}
           {scanRoots.length === 0 && <li className="text-sm text-muted">No folders added yet.</li>}
+        </ul>
+      </section>
+
+      <section>
+        <h2 className="mb-3 font-serif text-lg font-semibold text-ink">Ignored Folders</h2>
+        <p className="mb-3 text-sm text-muted">
+          Folders MemoryLane skips during every scan - click "Ignore folder" while browsing a folder to add it here.
+          Removing one from this list doesn't restore anything; it'll be picked up fresh on the next scan.
+        </p>
+        <ul className="flex flex-col gap-2">
+          {ignoredPaths.map((p) => (
+            <li
+              key={p.id}
+              className="flex items-center justify-between gap-4 rounded-lg border border-border bg-surface px-3.5 py-2.5"
+            >
+              <span className="min-w-0 truncate text-ink" title={p.path}>
+                {p.path}
+              </span>
+              <button
+                onClick={() => removeIgnoredPath(p.id)}
+                aria-label="Remove from ignore list"
+                title="Remove from ignore list"
+                className="grid size-6 shrink-0 place-items-center rounded text-muted hover:bg-hover hover:text-ink"
+              >
+                <X size={14} strokeWidth={2} />
+              </button>
+            </li>
+          ))}
+          {ignoredPaths.length === 0 && <li className="text-sm text-muted">No ignored folders.</li>}
         </ul>
       </section>
 

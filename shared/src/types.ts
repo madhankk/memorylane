@@ -195,6 +195,21 @@ export interface RunScanRequest {
   scanRootId?: number;
 }
 
+export interface IgnoredPathDto {
+  id: number;
+  path: string;
+  createdAt: string;
+}
+
+export interface IgnoreFolderResultDto {
+  ignoredPath: string;
+  // Folder to navigate back to, since the ignored folder itself no longer
+  // exists after this - null if the ignored folder was a scan root itself.
+  parentFolderId: number | null;
+  removedFolderCount: number;
+  removedMediaCount: number;
+}
+
 export interface HomeSummaryDto {
   mediaCount: number;
   folderCount: number;

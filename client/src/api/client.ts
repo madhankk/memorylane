@@ -20,6 +20,8 @@ import type {
   StorageStatsDto,
   OnThisDayResponse,
   FavoriteResultDto,
+  IgnoredPathDto,
+  IgnoreFolderResultDto,
 } from "@memorylane/shared";
 
 class ApiError extends Error {
@@ -93,6 +95,11 @@ export const api = {
       request<PaginatedResult<MediaDto>>(
         `/api/folders/${id}/media?offset=${offset}&limit=${limit}&recursive=${recursive}`,
       ),
+    ignore: (id: number) => request<IgnoreFolderResultDto>(`/api/folders/${id}/ignore`, { method: "POST" }),
+  },
+  ignoredPaths: {
+    list: () => request<IgnoredPathDto[]>("/api/ignored-paths"),
+    remove: (id: number) => request<void>(`/api/ignored-paths/${id}`, { method: "DELETE" }),
   },
   media: {
     get: (id: number) => request<MediaDto>(`/api/media/${id}`),

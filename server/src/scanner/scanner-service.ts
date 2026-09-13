@@ -142,6 +142,11 @@ export class ScannerService {
       filesScanned: 0, filesNew: 0, filesChanged: 0, filesRemoved: 0, errorCount: 0,
       thumbnailsQueued: 0, thumbnailsProcessed: 0,
     };
+    // Snapshot once per run rather than querying per-directory - the list is
+    // small and only changes via explicit user action, never mid-scan.
+    const ignoredPaths = new Set(
+      (this.db.prepare("SELECT path FROM ignored_paths").all() as { path: string }[]).map((r) => r.path),
+    );
     const limiter = pLimit(THUMBNAIL_QUEUE_CONCURRENCY);
     let pendingJobs: Promise<void>[] = [];
 
@@ -191,7 +196,7 @@ export class ScannerService {
     try {
       for (const root of roots) {
         try {
-          await this.scanRoot(root, stats, enqueueProcessing, flushIfNeeded);
+          await this.scanRoot(root, stats, ignoredPaths, enqueueProcessing, flushIfNeeded);
         } catch (err) {
           stats.errorCount++;
           this.logger.error({ err, root: root.path }, "Failed to scan root - continuing with remaining roots");
@@ -260,6 +265,7 @@ export class ScannerService {
   private async scanRoot(
     root: ScanRootRow,
     stats: Stats,
+    ignoredPaths: Set<string>,
     enqueueProcessing: (mediaId: number, absolutePath: string, mediaType: "image" | "raw" | "video") => void,
     flushIfNeeded: (force?: boolean) => Promise<void>,
   ): Promise<void> {
@@ -277,7 +283,7 @@ export class ScannerService {
     }
 
     const rootFolder = getOrCreateFolder(this.db, root.id, null, path.basename(root.path), root.path);
-    await this.walkDirectory(root, rootFolder.id, root.path, stats, enqueueProcessing, flushIfNeeded);
+    await this.walkDirectory(root, rootFolder.id, root.path, stats, ignoredPaths, enqueueProcessing, flushIfNeeded);
   }
 
   private async walkDirectory(
@@ -285,6 +291,7 @@ export class ScannerService {
     parentFolderId: number,
     dirPath: string,
     stats: Stats,
+    ignoredPaths: Set<string>,
     enqueueProcessing: (mediaId: number, absolutePath: string, mediaType: "image" | "raw" | "video") => void,
     flushIfNeeded: (force?: boolean) => Promise<void>,
   ): Promise<void> {
@@ -301,8 +308,11 @@ export class ScannerService {
       const entryPath = path.join(dirPath, entry.name);
 
       if (entry.isDirectory()) {
+        // Ignored folders are skipped entirely - never indexed, no folder row
+        // created for them - rather than indexed then filtered out later.
+        if (ignoredPaths.has(entryPath)) continue;
         const folder = getOrCreateFolder(this.db, root.id, parentFolderId, entry.name, entryPath);
-        await this.walkDirectory(root, folder.id, entryPath, stats, enqueueProcessing, flushIfNeeded);
+        await this.walkDirectory(root, folder.id, entryPath, stats, ignoredPaths, enqueueProcessing, flushIfNeeded);
         continue;
       }
 

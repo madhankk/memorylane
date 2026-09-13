@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { EyeOff } from "lucide-react";
 import type { FolderDto, FolderBreadcrumbDto, MediaDto } from "@memorylane/shared";
 import { api } from "../api/client";
 import Breadcrumbs from "../components/Breadcrumbs";
@@ -13,6 +14,7 @@ const PAGE_SIZE = 200;
 export default function FolderPage() {
   const { id } = useParams<{ id: string }>();
   const folderId = Number(id);
+  const navigate = useNavigate();
 
   const [folder, setFolder] = useState<FolderDto | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<FolderBreadcrumbDto[]>([]);
@@ -24,6 +26,7 @@ export default function FolderPage() {
   // showing only this folder's direct children/media.
   const [showAllFiles, setShowAllFiles] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [ignoring, setIgnoring] = useState(false);
   const loadingMoreRef = useRef(false);
 
   const loadMedia = useCallback(
@@ -74,6 +77,25 @@ export default function FolderPage() {
   const hasMore = media.length < mediaTotal;
   const sentinelRef = useInfiniteScroll(loadMore, hasMore, loadingMore);
 
+  const ignoreFolder = async () => {
+    if (!folder) return;
+    const itemsPhrase = folder.recursiveMediaCount > 0 ? ` and ${folder.recursiveMediaCount.toLocaleString()} indexed item(s) in it` : "";
+    if (
+      !confirm(
+        `Ignore "${folder.name}"?\n\nMemoryLane will stop scanning this folder${itemsPhrase} will be removed from your library. Original files on disk are never touched - you can remove it from the ignore list in Settings later and rescan to bring it back.`,
+      )
+    ) {
+      return;
+    }
+    setIgnoring(true);
+    try {
+      const result = await api.folders.ignore(folder.id);
+      navigate(result.parentFolderId ? `/folder/${result.parentFolderId}` : "/");
+    } finally {
+      setIgnoring(false);
+    }
+  };
+
   if (!folder) return <p className="text-sm text-muted">Loading...</p>;
 
   return (
@@ -82,15 +104,26 @@ export default function FolderPage() {
         <Breadcrumbs items={breadcrumbs} />
         <div className="flex items-center justify-between gap-4">
           <h1 className="font-serif text-2xl font-semibold text-ink">{folder.name}</h1>
-          <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap text-sm text-muted">
-            <input
-              type="checkbox"
-              checked={showAllFiles}
-              onChange={(e) => void toggleAllFiles(e.target.checked)}
-              className="cursor-pointer accent-accent"
-            />
-            All files
-          </label>
+          <div className="flex items-center gap-4">
+            <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap text-sm text-muted">
+              <input
+                type="checkbox"
+                checked={showAllFiles}
+                onChange={(e) => void toggleAllFiles(e.target.checked)}
+                className="cursor-pointer accent-accent"
+              />
+              All files
+            </label>
+            <button
+              onClick={() => void ignoreFolder()}
+              disabled={ignoring}
+              title="Stop scanning this folder and remove it from the library"
+              className="flex items-center gap-1.5 whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <EyeOff size={14} strokeWidth={1.8} />
+              {ignoring ? "Ignoring..." : "Ignore folder"}
+            </button>
+          </div>
         </div>
       </div>
 
