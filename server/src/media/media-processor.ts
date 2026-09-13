@@ -80,8 +80,16 @@ export async function processMediaItem(
         // Two tiers from the same extracted buffer (no extra ExifTool call):
         // a small grid thumbnail, and a much larger preview for the fullscreen
         // Viewer, since RAW has no browser-viewable original to fall back on.
-        await generateThumbnailFromBuffer(preview, destPath);
-        await generatePreviewFromBuffer(preview, previewPathForMediaId(paths.previewsDir, row.id));
+        // Orientation comes from the RAW file's own EXIF (metadata.orientation)
+        // rather than the embedded preview buffer's - RAW previews frequently
+        // lack their own orientation tag, so trusting the buffer leaves
+        // portrait photos sideways.
+        await generateThumbnailFromBuffer(preview, destPath, metadata.orientation);
+        await generatePreviewFromBuffer(
+          preview,
+          previewPathForMediaId(paths.previewsDir, row.id),
+          metadata.orientation,
+        );
         thumbnailStatus = "done";
       } else {
         thumbnailStatus = "unsupported";
