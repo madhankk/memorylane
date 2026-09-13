@@ -52,8 +52,15 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
   const { db } = ctx;
 
   app.get("/api/folders", { preHandler: app.requireAuth }, async (_request, reply) => {
+    // Top-level folders mirror their scan root's manually-arranged order
+    // (Settings > Scan Folders), not alphabetical - see scan-roots-routes.ts move endpoint.
     const rows = db
-      .prepare("SELECT * FROM folders WHERE parent_id IS NULL AND status = 'active' ORDER BY name")
+      .prepare(
+        `SELECT folders.* FROM folders
+         JOIN scan_roots ON scan_roots.id = folders.scan_root_id
+         WHERE folders.parent_id IS NULL AND folders.status = 'active'
+         ORDER BY scan_roots.sort_order, scan_roots.id`,
+      )
       .all() as FolderRow[];
     return reply.send(rows.map((row) => toFolderDto(row, getFolderCounts(ctx, row.id))));
   });

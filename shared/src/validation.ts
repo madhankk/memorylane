@@ -22,6 +22,10 @@ export const updateScanRootRequestSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
+export const moveScanRootRequestSchema = z.object({
+  direction: z.enum(["up", "down"]),
+});
+
 export const updateSettingsRequestSchema = z.object({
   bindAddress: z.string().min(1).max(64).optional(),
   port: z.number().int().min(1).max(65535).optional(),

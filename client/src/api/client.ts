@@ -7,6 +7,7 @@ import type {
   ScanRootDto,
   CreateScanRootRequest,
   UpdateScanRootRequest,
+  MoveDirection,
   ScanStatusDto,
   ScanRunDto,
   FolderDto,
@@ -63,6 +64,8 @@ export const api = {
     create: (body: CreateScanRootRequest) => request<ScanRootDto>("/api/scan-roots", { method: "POST", body: JSON.stringify(body) }),
     update: (id: number, body: UpdateScanRootRequest) => request<ScanRootDto>(`/api/scan-roots/${id}`, { method: "PUT", body: JSON.stringify(body) }),
     remove: (id: number) => request<void>(`/api/scan-roots/${id}`, { method: "DELETE" }),
+    move: (id: number, direction: MoveDirection) =>
+      request<ScanRootDto[]>(`/api/scan-roots/${id}/move`, { method: "POST", body: JSON.stringify({ direction }) }),
   },
   scans: {
     run: (scanRootId?: number) =>

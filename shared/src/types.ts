@@ -42,9 +42,16 @@ export interface ScanRootDto {
   id: number;
   path: string;
   enabled: boolean;
+  sortOrder: number;
   createdAt: string;
   updatedAt: string;
   stats: ScanRootStatsDto;
+}
+
+export type MoveDirection = "up" | "down";
+
+export interface MoveScanRootRequest {
+  direction: MoveDirection;
 }
 
 export interface CreateScanRootRequest {

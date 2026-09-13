@@ -5,6 +5,7 @@ import type { FastifyInstance } from "fastify";
 import {
   createScanRootRequestSchema,
   updateScanRootRequestSchema,
+  moveScanRootRequestSchema,
   type ScanRootDto,
   type ScanRootStatsDto,
 } from "@memorylane/shared";
@@ -14,6 +15,7 @@ interface ScanRootRow {
   id: number;
   path: string;
   enabled: number;
+  sort_order: number;
   created_at: string;
   updated_at: string;
 }
@@ -71,6 +73,7 @@ function toDto(db: Database.Database, row: ScanRootRow): ScanRootDto {
     id: row.id,
     path: row.path,
     enabled: row.enabled === 1,
+    sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     stats: getScanRootStats(db, row.id),
@@ -81,7 +84,7 @@ export async function registerScanRootRoutes(app: FastifyInstance, ctx: AppConte
   const { db } = ctx;
 
   app.get("/api/scan-roots", { preHandler: app.requireAuth }, async (_request, reply) => {
-    const rows = db.prepare("SELECT * FROM scan_roots ORDER BY path").all() as ScanRootRow[];
+    const rows = db.prepare("SELECT * FROM scan_roots ORDER BY sort_order, id").all() as ScanRootRow[];
     return reply.send(rows.map((row) => toDto(db, row)));
   });
 
@@ -103,9 +106,12 @@ export async function registerScanRootRoutes(app: FastifyInstance, ctx: AppConte
     }
 
     try {
+      const nextSortOrder = (
+        db.prepare("SELECT COALESCE(MAX(sort_order), 0) + 1 as next FROM scan_roots").get() as { next: number }
+      ).next;
       const info = db
-        .prepare("INSERT INTO scan_roots (path, enabled) VALUES (?, 1)")
-        .run(resolvedPath);
+        .prepare("INSERT INTO scan_roots (path, enabled, sort_order) VALUES (?, 1, ?)")
+        .run(resolvedPath, nextSortOrder);
       const row = db.prepare("SELECT * FROM scan_roots WHERE id = ?").get(info.lastInsertRowid) as ScanRootRow;
       return reply.code(201).send(toDto(db, row));
     } catch (err) {
@@ -131,6 +137,35 @@ export async function registerScanRootRoutes(app: FastifyInstance, ctx: AppConte
     }
     const updated = db.prepare("SELECT * FROM scan_roots WHERE id = ?").get(id) as ScanRootRow;
     return reply.send(toDto(db, updated));
+  });
+
+  app.post("/api/scan-roots/:id/move", { preHandler: app.requireAuth }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id);
+    const parsed = moveScanRootRequestSchema.safeParse(request.body);
+    if (!parsed.success || Number.isNaN(id)) {
+      return reply.code(400).send({ error: "Invalid input" });
+    }
+
+    const ordered = db.prepare("SELECT * FROM scan_roots ORDER BY sort_order, id").all() as ScanRootRow[];
+    const index = ordered.findIndex((r) => r.id === id);
+    if (index === -1) return reply.code(404).send({ error: "Scan root not found" });
+
+    const swapWithIndex = parsed.data.direction === "up" ? index - 1 : index + 1;
+    if (swapWithIndex < 0 || swapWithIndex >= ordered.length) {
+      // Already at the top/bottom - not an error, just a no-op.
+      return reply.send(ordered.map((row) => toDto(db, row)));
+    }
+
+    const current = ordered[index];
+    const swapWith = ordered[swapWithIndex];
+    const swap = db.transaction(() => {
+      db.prepare("UPDATE scan_roots SET sort_order = ? WHERE id = ?").run(swapWith.sort_order, current.id);
+      db.prepare("UPDATE scan_roots SET sort_order = ? WHERE id = ?").run(current.sort_order, swapWith.id);
+    });
+    swap();
+
+    const updated = db.prepare("SELECT * FROM scan_roots ORDER BY sort_order, id").all() as ScanRootRow[];
+    return reply.send(updated.map((row) => toDto(db, row)));
   });
 
   app.delete("/api/scan-roots/:id", { preHandler: app.requireAuth }, async (request, reply) => {

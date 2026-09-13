@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ChevronUp, ChevronDown } from "lucide-react";
 import type { ScanRootDto, SettingsDto, ScanStatusDto } from "@memorylane/shared";
 import { api, ApiError } from "../api/client";
 import { useTheme, THEMES, type Theme } from "../hooks/useTheme";
@@ -112,6 +113,10 @@ export default function SettingsPage() {
     setScanRoots((prev) => prev.filter((r) => r.id !== root.id));
   };
 
+  const moveRoot = async (id: number, direction: "up" | "down") => {
+    setScanRoots(await api.scanRoots.move(id, direction));
+  };
+
   const runScanNow = async (scanRootId?: number) => {
     setError(null);
     try {
@@ -189,13 +194,34 @@ export default function SettingsPage() {
           </button>
         </div>
         {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
+        <p className="mb-2 text-xs text-muted">Order here also sets the order folders appear in on the Home page.</p>
         <ul className="flex flex-col gap-2">
-          {scanRoots.map((root) => (
+          {scanRoots.map((root, i) => (
             <li
               key={root.id}
               className="flex items-center justify-between gap-4 rounded-lg border border-border bg-surface px-3.5 py-2.5"
             >
-              <div className="flex min-w-0 flex-col gap-0.5">
+              <div className="flex shrink-0 flex-col">
+                <button
+                  onClick={() => moveRoot(root.id, "up")}
+                  disabled={i === 0}
+                  aria-label="Move up"
+                  title="Move up"
+                  className="grid h-5 w-5 place-items-center rounded text-muted hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <ChevronUp size={14} strokeWidth={2} />
+                </button>
+                <button
+                  onClick={() => moveRoot(root.id, "down")}
+                  disabled={i === scanRoots.length - 1}
+                  aria-label="Move down"
+                  title="Move down"
+                  className="grid h-5 w-5 place-items-center rounded text-muted hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <ChevronDown size={14} strokeWidth={2} />
+                </button>
+              </div>
+              <div className="mr-auto flex min-w-0 flex-col gap-0.5">
                 <span className={`truncate ${root.enabled ? "text-ink" : "text-muted"}`}>{root.path}</span>
                 <span className="text-xs text-muted">{scanRootSummary(root)}</span>
               </div>
