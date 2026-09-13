@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { EyeOff } from "lucide-react";
+import { EyeOff, MoreVertical } from "lucide-react";
 import type { FolderDto, FolderBreadcrumbDto, MediaDto } from "@memorylane/shared";
 import { api } from "../api/client";
 import Breadcrumbs from "../components/Breadcrumbs";
@@ -27,7 +27,18 @@ export default function FolderPage() {
   const [showAllFiles, setShowAllFiles] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [ignoring, setIgnoring] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const loadingMoreRef = useRef(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [menuOpen]);
 
   const loadMedia = useCallback(
     async (recursive: boolean) => {
@@ -79,6 +90,7 @@ export default function FolderPage() {
 
   const ignoreFolder = async () => {
     if (!folder) return;
+    setMenuOpen(false);
     const itemsPhrase = folder.recursiveMediaCount > 0 ? ` and ${folder.recursiveMediaCount.toLocaleString()} indexed item(s) in it` : "";
     if (
       !confirm(
@@ -114,15 +126,28 @@ export default function FolderPage() {
               />
               All files
             </label>
-            <button
-              onClick={() => void ignoreFolder()}
-              disabled={ignoring}
-              title="Stop scanning this folder and remove it from the library"
-              className="flex items-center gap-1.5 whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <EyeOff size={14} strokeWidth={1.8} />
-              {ignoring ? "Ignoring..." : "Ignore folder"}
-            </button>
+            <div ref={menuRef} className="relative">
+              <button
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-label="More options"
+                title="More options"
+                className="grid size-8 place-items-center rounded-md text-muted hover:bg-hover hover:text-ink"
+              >
+                <MoreVertical size={16} strokeWidth={1.8} />
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 top-full z-10 mt-1 w-56 rounded-lg border border-border bg-surface py-1 shadow-card">
+                  <button
+                    onClick={() => void ignoreFolder()}
+                    disabled={ignoring}
+                    className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-2 text-left text-sm text-muted hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <EyeOff size={14} strokeWidth={1.8} />
+                    {ignoring ? "Ignoring..." : "Ignore folder"}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
