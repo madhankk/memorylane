@@ -7,9 +7,30 @@ const IMAGE_EXTENSIONS = new Set([
 
 // Camera RAW formats (section 6). Kept separate from IMAGE_EXTENSIONS because
 // RAW files always go through the ExifTool embedded-preview pipeline, never
-// a direct Sharp decode.
+// a direct Sharp decode. Covers every still-camera RAW format ExifTool
+// recognizes (`exiftool -listf`) - cinema/video-only RAW formats (R3D, CRM)
+// are deliberately excluded since video is out of scope for v1.
 const RAW_EXTENSIONS = new Set([
-  "cr2", "cr3", "craw", "nef", "arw", "raf", "dng",
+  "cr2", "cr3", "craw", "crw", "ciff", // Canon
+  "nef", "nrw", // Nikon
+  "arw", "srf", "sr2", "arq", // Sony
+  "raf", // Fujifilm
+  "orf", // Olympus / OM System
+  "rw2", "raw", // Panasonic/Lumix
+  "pef", // Pentax
+  "srw", // Samsung
+  "x3f", // Sigma
+  "mrw", // Minolta
+  "dcr", "k25", "kdc", // Kodak
+  "3fr", "fff", // Hasselblad / Imacon
+  "mef", "mos", // Mamiya / Leaf
+  "iiq", // Phase One
+  "erf", // Epson
+  "cs1", // Sinar
+  "gpr", // GoPro
+  "rwl", // Leica
+  "rwz", // Rawzor-compressed RAW
+  "dng", // Adobe DNG - also native for Leica, Pentax, Ricoh, Zeiss, Pixel, etc.
 ]);
 
 // Video is out of scope for the initial build (deprioritized per product
