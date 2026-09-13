@@ -48,6 +48,21 @@ function getFolderCounts(ctx: AppContext, folderId: number): FolderCounts {
   return { mediaCount, childFolderCount, thumbnailMediaId: thumbRow?.id ?? null };
 }
 
+// Totals across a folder's entire subtree (not just direct children) - used
+// only for the top-level "Your Library" cards on Home, where seeing "600
+// items, 2.8 GB" for a whole year/scan-root folder is more useful than the
+// direct-child-only counts shown elsewhere.
+function getRecursiveFolderStats(ctx: AppContext, folderId: number): { count: number; sizeBytes: number } {
+  const row = ctx.db
+    .prepare(
+      `${DESCENDANT_FOLDERS_CTE}
+       SELECT COUNT(*) as c, COALESCE(SUM(file_size), 0) as s FROM media
+       WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active'`,
+    )
+    .get(folderId) as { c: number; s: number };
+  return { count: row.c, sizeBytes: row.s };
+}
+
 export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { db } = ctx;
 
@@ -62,7 +77,16 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
          ORDER BY scan_roots.sort_order, scan_roots.id`,
       )
       .all() as FolderRow[];
-    return reply.send(rows.map((row) => toFolderDto(row, getFolderCounts(ctx, row.id))));
+    return reply.send(
+      rows.map((row) => {
+        const recursive = getRecursiveFolderStats(ctx, row.id);
+        return toFolderDto(row, {
+          ...getFolderCounts(ctx, row.id),
+          recursiveMediaCount: recursive.count,
+          recursiveSizeBytes: recursive.sizeBytes,
+        });
+      }),
+    );
   });
 
   app.get("/api/folders/:id", { preHandler: app.requireAuth }, async (request, reply) => {

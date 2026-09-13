@@ -2,6 +2,20 @@ import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import type { FolderDto } from "@memorylane/shared";
 import { api } from "../api/client";
+import { formatBytes } from "../utils/format";
+
+function summaryFor(folder: FolderDto): string {
+  // Top-level ("Your Library") cards get whole-subtree totals; nested folder
+  // browsing keeps the direct-children-only counts - see FolderDto.recursiveMediaCount.
+  if (folder.recursiveMediaCount !== undefined) {
+    if (folder.recursiveMediaCount === 0) return "Empty";
+    const size = folder.recursiveSizeBytes ? ` · ${formatBytes(folder.recursiveSizeBytes)}` : "";
+    return `${folder.recursiveMediaCount.toLocaleString()} items${size}`;
+  }
+  if (folder.mediaCount > 0) return `${folder.mediaCount.toLocaleString()} items`;
+  if (folder.childFolderCount > 0) return `${folder.childFolderCount.toLocaleString()} folders`;
+  return "Empty";
+}
 
 // Mirrors life-archive-app's AlbumCard.tsx: cover image with a title overlaid
 // in a bottom gradient, hover lift + zoom, and a footer row with the item
@@ -30,13 +44,7 @@ export default function FolderCard({ folder }: { folder: FolderDto }) {
       </div>
 
       <div className="flex items-center justify-between p-4">
-        <span className="text-sm text-muted">
-          {folder.mediaCount > 0
-            ? `${folder.mediaCount.toLocaleString()} items`
-            : folder.childFolderCount > 0
-              ? `${folder.childFolderCount.toLocaleString()} folders`
-              : "Empty"}
-        </span>
+        <span className="text-sm text-muted">{summaryFor(folder)}</span>
         <span className="inline-flex items-center gap-2 text-sm font-medium text-ink">
           Open
           <ArrowRight size={15} strokeWidth={1.8} className="transition group-hover:translate-x-0.5" />

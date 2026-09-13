@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronUp, ChevronDown } from "lucide-react";
-import type { ScanRootDto, SettingsDto, ScanStatusDto } from "@memorylane/shared";
+import type { ScanRootDto, SettingsDto, ScanStatusDto, StorageStatsDto } from "@memorylane/shared";
 import { api, ApiError } from "../api/client";
 import { useTheme, THEMES, type Theme } from "../hooks/useTheme";
 import { formatBytes } from "../utils/format";
@@ -49,6 +49,8 @@ export default function SettingsPage() {
   const [status, setStatus] = useState<ScanStatusDto | null>(null);
   const [newPath, setNewPath] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [storage, setStorage] = useState<StorageStatsDto | null>(null);
+  const [storageLoading, setStorageLoading] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { theme, setTheme } = useTheme();
 
@@ -59,8 +61,18 @@ export default function SettingsPage() {
     setStatus(st);
   };
 
+  const loadStorage = async () => {
+    setStorageLoading(true);
+    try {
+      setStorage(await api.settings.storage());
+    } finally {
+      setStorageLoading(false);
+    }
+  };
+
   useEffect(() => {
     void loadAll();
+    void loadStorage();
   }, []);
 
   useEffect(() => {
@@ -289,6 +301,41 @@ export default function SettingsPage() {
               <p className="text-muted">Last successful scan: {new Date(status.lastSuccessfulRun.startedAt).toLocaleString()}</p>
             )}
           </div>
+        )}
+      </section>
+
+      <section>
+        <div className="mb-3 flex items-center justify-between gap-4">
+          <h2 className="font-serif text-lg font-semibold text-ink">Storage</h2>
+          <button onClick={loadStorage} disabled={storageLoading} className={buttonClass}>
+            {storageLoading ? "Calculating..." : "Refresh"}
+          </button>
+        </div>
+        <p className="mb-3 text-sm text-muted">
+          MemoryLane's own cache and index - entirely separate from your photo folders, and safe to delete and
+          rebuild via a rescan at any time.
+        </p>
+        {storage ? (
+          <ul className="flex flex-col gap-2">
+            <li className="flex items-center justify-between rounded-lg border border-border bg-surface px-3.5 py-2.5">
+              <span className="text-ink">Thumbnail cache</span>
+              <span className="text-muted">{formatBytes(storage.thumbnailCacheBytes)}</span>
+            </li>
+            <li className="flex items-center justify-between rounded-lg border border-border bg-surface px-3.5 py-2.5">
+              <span className="text-ink">Database</span>
+              <span className="text-muted">{formatBytes(storage.databaseBytes)}</span>
+            </li>
+            <li className="flex items-center justify-between rounded-lg border border-border bg-surface px-3.5 py-2.5">
+              <span className="text-ink">Logs</span>
+              <span className="text-muted">{formatBytes(storage.logsBytes)}</span>
+            </li>
+            <li className="flex items-center justify-between rounded-lg border border-accent bg-surface px-3.5 py-2.5 font-medium">
+              <span className="text-ink">Total</span>
+              <span className="text-ink">{formatBytes(storage.totalBytes)}</span>
+            </li>
+          </ul>
+        ) : (
+          <p className="text-sm text-muted">Calculating...</p>
         )}
       </section>
     </div>

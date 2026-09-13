@@ -62,6 +62,13 @@ export interface UpdateScanRootRequest {
   enabled?: boolean;
 }
 
+export interface StorageStatsDto {
+  thumbnailCacheBytes: number;
+  databaseBytes: number;
+  logsBytes: number;
+  totalBytes: number;
+}
+
 export interface SettingsDto {
   bindAddress: string;
   port: number;
@@ -87,6 +94,11 @@ export interface FolderDto {
   thumbnailMediaId: number | null;
   createdAt: string;
   updatedAt: string;
+  // Only populated for top-level folders (GET /api/folders) - totals across
+  // the entire subtree, not just this folder's direct children. Undefined
+  // for folders returned from /children or /:id, which stay direct-count-only.
+  recursiveMediaCount?: number;
+  recursiveSizeBytes?: number;
 }
 
 export interface FolderBreadcrumbDto {
