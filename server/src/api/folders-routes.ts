@@ -24,12 +24,26 @@ function getFolderCounts(ctx: AppContext, folderId: number): FolderCounts {
       .prepare("SELECT COUNT(*) as c FROM folders WHERE parent_id = ? AND status = 'active'")
       .get(folderId) as { c: number }
   ).c;
-  const thumbRow = ctx.db
+  let thumbRow = ctx.db
     .prepare(
       `SELECT id FROM media WHERE parent_folder_id = ? AND status = 'active' AND thumbnail_status = 'done'
        ORDER BY captured_date DESC, id DESC LIMIT 1`,
     )
     .get(folderId) as { id: number } | undefined;
+
+  // Folders that only contain subfolders (e.g. a year folder like "1999" with
+  // no photos directly in it) would otherwise show no cover image at all -
+  // fall back to the most recent photo anywhere in the subtree.
+  if (!thumbRow) {
+    thumbRow = ctx.db
+      .prepare(
+        `${DESCENDANT_FOLDERS_CTE}
+         SELECT media.id FROM media
+         WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND thumbnail_status = 'done'
+         ORDER BY captured_date DESC, media.id DESC LIMIT 1`,
+      )
+      .get(folderId) as { id: number } | undefined;
+  }
 
   return { mediaCount, childFolderCount, thumbnailMediaId: thumbRow?.id ?? null };
 }
