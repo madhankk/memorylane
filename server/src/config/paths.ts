@@ -25,6 +25,7 @@ export interface AppPaths {
   dataDir: string;
   dbPath: string;
   thumbnailsDir: string;
+  previewsDir: string;
   logsDir: string;
   clientDistDir: string;
 }
@@ -35,23 +36,34 @@ export function resolveAppPaths(): AppPaths {
     dataDir,
     dbPath: path.join(dataDir, "memorylane.sqlite"),
     thumbnailsDir: path.join(dataDir, "thumbnails"),
+    // Larger RAW-only previews live separately from grid thumbnails - see
+    // media/thumbnail-generator.ts PREVIEW_LONG_EDGE.
+    previewsDir: path.join(dataDir, "previews"),
     logsDir: path.join(dataDir, "logs"),
     // import.meta.dirname is server/src/config (dev, tsx) or server/dist/config
     // (built) - either way, two levels up is the server package root, where
     // the Vite client build outputs directly (see client/vite.config.ts).
     clientDistDir: path.resolve(import.meta.dirname, "..", "..", "public"),
   };
-  for (const dir of [paths.dataDir, paths.thumbnailsDir, paths.logsDir]) {
+  for (const dir of [paths.dataDir, paths.thumbnailsDir, paths.previewsDir, paths.logsDir]) {
     fs.mkdirSync(dir, { recursive: true });
   }
   return paths;
 }
 
-// Shards a numeric media id into a nested thumbnail path so no single directory
+// Shards a numeric media id into a nested path so no single directory
 // accumulates hundreds of thousands of files (NTFS/ext4 large-directory slowdown).
-export function thumbnailPathForMediaId(thumbnailsDir: string, mediaId: number): string {
+function shardedMediaPath(baseDir: string, mediaId: number): string {
   const idStr = String(mediaId).padStart(6, "0");
   const shard1 = idStr.slice(-6, -4);
   const shard2 = idStr.slice(-4, -2);
-  return path.join(thumbnailsDir, shard1, shard2, `${mediaId}.jpg`);
+  return path.join(baseDir, shard1, shard2, `${mediaId}.jpg`);
+}
+
+export function thumbnailPathForMediaId(thumbnailsDir: string, mediaId: number): string {
+  return shardedMediaPath(thumbnailsDir, mediaId);
+}
+
+export function previewPathForMediaId(previewsDir: string, mediaId: number): string {
+  return shardedMediaPath(previewsDir, mediaId);
 }

@@ -95,6 +95,7 @@ export const api = {
     get: (id: number) => request<MediaDto>(`/api/media/${id}`),
     fileUrl: (id: number) => `/api/media/${id}/file`,
     thumbnailUrl: (id: number) => `/api/media/${id}/thumbnail`,
+    previewUrl: (id: number) => `/api/media/${id}/preview`,
     setFavorite: (id: number, favorite: boolean) =>
       request<FavoriteResultDto>(`/api/media/${id}/favorite`, { method: "PUT", body: JSON.stringify({ favorite }) }),
     // Fire-and-forget engagement signals - callers should not await these on

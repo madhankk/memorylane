@@ -19,6 +19,7 @@ interface ScanRootRow {
 interface MediaLookupRow {
   id: number;
   fingerprint: string;
+  thumbnail_status: string;
 }
 
 interface ScanRunRow {
@@ -298,7 +299,7 @@ export class ScannerService {
     const fsCreatedAt = stat.birthtimeMs > 0 ? stat.birthtime.toISOString() : null;
 
     const existing = this.db
-      .prepare("SELECT id, fingerprint FROM media WHERE absolute_path = ?")
+      .prepare("SELECT id, fingerprint, thumbnail_status FROM media WHERE absolute_path = ?")
       .get(absolutePath) as MediaLookupRow | undefined;
 
     stats.filesScanned++;
@@ -337,6 +338,14 @@ export class ScannerService {
         "UPDATE media SET status = 'active', last_seen_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), parent_folder_id = ? WHERE id = ?",
       )
       .run(parentFolderId, existing.id);
+
+    // Unchanged file, but its thumbnail/preview never finished successfully
+    // (interrupted scan, failure, or - for RAW - scanned before a newer
+    // preview tier existed) - retry it even though the fingerprint matches,
+    // so problems self-heal on the next scan instead of persisting forever.
+    if (existing.thumbnail_status !== "done") {
+      enqueueProcessing(existing.id, absolutePath, mediaType);
+    }
   }
 
   // Called once at startup - if scheduled scanning is enabled and the interval

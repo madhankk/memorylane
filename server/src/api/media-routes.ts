@@ -4,7 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { updateFavoriteRequestSchema } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { toMediaDto, type MediaRow } from "./mappers.js";
-import { thumbnailPathForMediaId } from "../config/paths.js";
+import { thumbnailPathForMediaId, previewPathForMediaId } from "../config/paths.js";
 import { streamFile, mimeTypeForExtension } from "./file-streaming.js";
 import { EngagementRepo } from "../db/engagement-repo.js";
 
@@ -101,5 +101,21 @@ export async function registerMediaRoutes(app: FastifyInstance, ctx: AppContext)
     }
     reply.header("Cache-Control", "private, max-age=31536000, immutable");
     return streamFile(request, reply, thumbPath, "image/jpeg");
+  });
+
+  // Larger RAW-only preview for the fullscreen Viewer - see
+  // media/thumbnail-generator.ts PREVIEW_LONG_EDGE. Not generated for
+  // standard images (they use /file at full original resolution instead).
+  app.get("/api/media/:id/preview", { preHandler: app.requireAuth }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id);
+    const media = resolveVerifiedMedia(ctx, id);
+    if (!media) return reply.code(404).send({ error: "Media not found" });
+
+    const previewPath = previewPathForMediaId(paths.previewsDir, id);
+    if (media.thumbnail_status !== "done" || !fs.existsSync(previewPath)) {
+      return reply.code(404).send({ error: "Preview not available" });
+    }
+    reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    return streamFile(request, reply, previewPath, "image/jpeg");
   });
 }

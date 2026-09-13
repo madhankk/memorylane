@@ -1,11 +1,12 @@
 import type Database from "better-sqlite3";
 import type { Logger } from "pino";
 import type { Tags } from "exiftool-vendored";
-import { thumbnailPathForMediaId, type AppPaths } from "../config/paths.js";
+import { thumbnailPathForMediaId, previewPathForMediaId, type AppPaths } from "../config/paths.js";
 import { readTags, extractLargestEmbeddedPreview, isExifToolAvailable } from "./exiftool-client.js";
 import {
   generateThumbnailFromFile,
   generateThumbnailFromBuffer,
+  generatePreviewFromBuffer,
   readImageDimensions,
 } from "./thumbnail-generator.js";
 
@@ -76,7 +77,11 @@ export async function processMediaItem(
     if (row.media_type === "raw") {
       const preview = await extractLargestEmbeddedPreview(row.absolute_path);
       if (preview) {
+        // Two tiers from the same extracted buffer (no extra ExifTool call):
+        // a small grid thumbnail, and a much larger preview for the fullscreen
+        // Viewer, since RAW has no browser-viewable original to fall back on.
         await generateThumbnailFromBuffer(preview, destPath);
+        await generatePreviewFromBuffer(preview, previewPathForMediaId(paths.previewsDir, row.id));
         thumbnailStatus = "done";
       } else {
         thumbnailStatus = "unsupported";
