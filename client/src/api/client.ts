@@ -2,6 +2,7 @@ import type {
   UserDto,
   SetupRequest,
   LoginRequest,
+  ChangePasswordRequest,
   SettingsDto,
   UpdateSettingsRequest,
   ScanRootDto,
@@ -58,6 +59,8 @@ export const api = {
     setup: (body: SetupRequest) => request<{ ok: true }>("/api/auth/setup", { method: "POST", body: JSON.stringify(body) }),
     login: (body: LoginRequest) => request<{ user: UserDto }>("/api/auth/login", { method: "POST", body: JSON.stringify(body) }),
     logout: () => request<{ ok: true }>("/api/auth/logout", { method: "POST" }),
+    changePassword: (body: ChangePasswordRequest) =>
+      request<{ ok: true }>("/api/auth/password", { method: "PUT", body: JSON.stringify(body) }),
   },
   settings: {
     get: () => request<SettingsDto>("/api/settings"),

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import type { ScanRootDto, SettingsDto, ScanStatusDto, StorageStatsDto } from "@memorylane/shared";
 import { api, ApiError } from "../api/client";
+import { useAuth } from "../hooks/useAuth";
 import { useTheme, THEMES, type Theme } from "../hooks/useTheme";
 import { formatBytes } from "../utils/format";
 
@@ -43,7 +44,78 @@ const inputClass = "rounded-lg border border-border bg-page px-3.5 py-2.5 text-i
 const buttonClass = "rounded-md border border-border px-3 py-1.5 text-sm text-ink hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40";
 const accentButtonClass = "rounded-lg bg-accent px-5 py-2.5 font-semibold text-page hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 
+function ChangePasswordForm() {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(false);
+    if (newPassword !== confirmPassword) {
+      setError("New passwords don't match");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.auth.changePassword({ currentPassword, newPassword });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setSuccess(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not change password");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="flex max-w-sm flex-col gap-3">
+      <input
+        type="password"
+        autoComplete="current-password"
+        placeholder="Current password"
+        value={currentPassword}
+        onChange={(e) => setCurrentPassword(e.target.value)}
+        required
+        className={inputClass}
+      />
+      <input
+        type="password"
+        autoComplete="new-password"
+        placeholder="New password (min. 8 characters)"
+        value={newPassword}
+        onChange={(e) => setNewPassword(e.target.value)}
+        minLength={8}
+        required
+        className={inputClass}
+      />
+      <input
+        type="password"
+        autoComplete="new-password"
+        placeholder="Confirm new password"
+        value={confirmPassword}
+        onChange={(e) => setConfirmPassword(e.target.value)}
+        minLength={8}
+        required
+        className={inputClass}
+      />
+      {error && <p className="text-sm text-red-500">{error}</p>}
+      {success && <p className="text-sm text-green-600">Password changed. You'll stay signed in here; any other signed-in devices have been signed out.</p>}
+      <button type="submit" disabled={submitting} className={`self-start ${accentButtonClass}`}>
+        {submitting ? "Changing..." : "Change Password"}
+      </button>
+    </form>
+  );
+}
+
 export default function SettingsPage() {
+  const { user } = useAuth();
   const [scanRoots, setScanRoots] = useState<ScanRootDto[]>([]);
   const [settings, setSettings] = useState<SettingsDto | null>(null);
   const [status, setStatus] = useState<ScanStatusDto | null>(null);
@@ -149,6 +221,12 @@ export default function SettingsPage() {
   return (
     <div className="flex flex-col gap-10">
       <h1 className="font-serif text-2xl font-semibold text-ink">Settings</h1>
+
+      <section>
+        <h2 className="mb-3 font-serif text-lg font-semibold text-ink">Account</h2>
+        {user && <p className="mb-3 text-sm text-muted">Signed in as <span className="font-medium text-ink">{user.username}</span></p>}
+        <ChangePasswordForm />
+      </section>
 
       <section>
         <h2 className="mb-3 font-serif text-lg font-semibold text-ink">Appearance</h2>

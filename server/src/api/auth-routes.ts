@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { setupRequestSchema, loginRequestSchema, type UserDto } from "@memorylane/shared";
+import { setupRequestSchema, loginRequestSchema, changePasswordRequestSchema, type UserDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { hashPassword, verifyPassword } from "../auth/passwords.js";
 
@@ -59,6 +59,31 @@ export async function registerAuthRoutes(app: FastifyInstance, ctx: AppContext):
     const session = sessions.create(user.id);
     app.setSessionCookie(reply, session.id);
     return reply.send({ user: toUserDto(user) });
+  });
+
+  app.put("/api/auth/password", { preHandler: app.requireAuth }, async (request, reply) => {
+    const parsed = changePasswordRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "Invalid input", details: parsed.error.flatten() });
+    }
+
+    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(request.userId) as UserRow | undefined;
+    if (!user) return reply.code(401).send({ error: "Not authenticated" });
+
+    const { currentPassword, newPassword } = parsed.data;
+    if (!(await verifyPassword(user.password_hash, currentPassword))) {
+      return reply.code(401).send({ error: "Current password is incorrect" });
+    }
+
+    const newHash = await hashPassword(newPassword);
+    db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(newHash, user.id);
+
+    // Sign out everywhere else - the current session (which just proved
+    // knowledge of the password) stays logged in.
+    const currentSessionId = request.cookies["memorylane_session"];
+    sessions.destroyAllForUser(user.id, currentSessionId);
+
+    return reply.send({ ok: true });
   });
 
   app.post("/api/auth/logout", { preHandler: app.requireAuth }, async (request, reply) => {

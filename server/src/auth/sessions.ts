@@ -40,6 +40,15 @@ export class SessionStore {
     this.db.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
   }
 
+  // Used after a password change - signs the user out everywhere except the
+  // session that just performed the change, in case a lost/stolen session
+  // elsewhere was the reason for changing the password.
+  destroyAllForUser(userId: number, exceptSessionId?: string): void {
+    this.db
+      .prepare("DELETE FROM sessions WHERE user_id = ? AND id != ?")
+      .run(userId, exceptSessionId ?? "");
+  }
+
   destroyAllExpired(): void {
     this.db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(new Date().toISOString());
   }

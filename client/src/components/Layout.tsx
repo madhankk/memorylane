@@ -12,7 +12,7 @@ const navItems: { to: string; label: string; icon: LucideIcon; end?: boolean }[]
 ];
 
 export default function Layout() {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -59,6 +59,15 @@ export default function Layout() {
             >
               <Search aria-hidden size={16} strokeWidth={1.8} />
             </Link>
+            {user && (
+              <Link
+                to="/settings"
+                title="Signed in - go to Settings to change your password"
+                className="hidden px-2 text-xs text-nav-muted hover:text-ink sm:inline"
+              >
+                {user.username}
+              </Link>
+            )}
             <button
               onClick={handleLogout}
               aria-label="Log out"

@@ -35,6 +35,15 @@ npm start
 
 Open `http://127.0.0.1:4280`. On first launch you'll be asked to create an admin username and password - there's no default account and no public sign-up, so this is the only way in. After logging in, go to **Settings** and add one or more folders to scan; MemoryLane will index them and start generating thumbnails in the background.
 
+You can change your password anytime from **Settings → Account**. Forgot it instead? There's no email/cloud recovery flow (there's no email, no cloud) - reset it from the machine hosting MemoryLane instead:
+
+```bash
+npm run reset-password                          # lists existing usernames
+npm run reset-password -- <username> <new-password>
+```
+
+This works whether the server is running or stopped, and signs out every existing session for that user.
+
 ## Development
 
 ```bash
