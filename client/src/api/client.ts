@@ -94,8 +94,10 @@ export const api = {
   media: {
     get: (id: number) => request<MediaDto>(`/api/media/${id}`),
     fileUrl: (id: number) => `/api/media/${id}/file`,
-    thumbnailUrl: (id: number) => `/api/media/${id}/thumbnail`,
-    previewUrl: (id: number) => `/api/media/${id}/preview`,
+    // `v` busts the browser's 1-year immutable cache when the thumbnail/preview
+    // is regenerated (e.g. after an orientation fix) - see thumbnail_version.
+    thumbnailUrl: (id: number, v = 0) => `/api/media/${id}/thumbnail?v=${v}`,
+    previewUrl: (id: number, v = 0) => `/api/media/${id}/preview?v=${v}`,
     setFavorite: (id: number, favorite: boolean) =>
       request<FavoriteResultDto>(`/api/media/${id}/favorite`, { method: "PUT", body: JSON.stringify({ favorite }) }),
     // Fire-and-forget engagement signals - callers should not await these on

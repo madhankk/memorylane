@@ -14,6 +14,7 @@ export interface FolderCounts {
   mediaCount: number;
   childFolderCount: number;
   thumbnailMediaId: number | null;
+  thumbnailVersion: number;
   recursiveMediaCount?: number;
   recursiveSizeBytes?: number;
 }
@@ -28,6 +29,7 @@ export function toFolderDto(row: FolderRow, counts: FolderCounts): FolderDto {
     mediaCount: counts.mediaCount,
     childFolderCount: counts.childFolderCount,
     thumbnailMediaId: counts.thumbnailMediaId,
+    thumbnailVersion: counts.thumbnailVersion,
     recursiveMediaCount: counts.recursiveMediaCount,
     recursiveSizeBytes: counts.recursiveSizeBytes,
     createdAt: row.created_at,
@@ -51,6 +53,7 @@ export interface MediaRow {
   height: number | null;
   orientation: number | null;
   thumbnail_status: string;
+  thumbnail_version: number;
   status: string;
   camera_make: string | null;
   camera_model: string | null;
@@ -82,6 +85,7 @@ export function toMediaDto(row: MediaRow): MediaDto {
     height: row.height,
     orientation: row.orientation,
     thumbnailStatus: row.thumbnail_status as ThumbnailStatus,
+    thumbnailVersion: row.thumbnail_version,
     status: row.status as MediaStatus,
     cameraMake: row.camera_make,
     cameraModel: row.camera_model,

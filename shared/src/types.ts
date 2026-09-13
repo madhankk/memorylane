@@ -92,6 +92,7 @@ export interface FolderDto {
   mediaCount: number;
   childFolderCount: number;
   thumbnailMediaId: number | null;
+  thumbnailVersion: number;
   createdAt: string;
   updatedAt: string;
   // Only populated for top-level folders (GET /api/folders) - totals across
@@ -121,6 +122,10 @@ export interface MediaDto {
   height: number | null;
   orientation: number | null;
   thumbnailStatus: ThumbnailStatus;
+  // Bumped server-side every time the thumbnail/preview files are
+  // regenerated - append as a query param on thumbnail/preview URLs to
+  // bust the browser's long-lived immutable cache when they change.
+  thumbnailVersion: number;
   status: MediaStatus;
 
   cameraMake: string | null;

@@ -29,7 +29,7 @@ export default function FolderCard({ folder }: { folder: FolderDto }) {
       <div className="relative aspect-[4/3] overflow-hidden bg-media">
         {folder.thumbnailMediaId ? (
           <img
-            src={api.media.thumbnailUrl(folder.thumbnailMediaId)}
+            src={api.media.thumbnailUrl(folder.thumbnailMediaId, folder.thumbnailVersion)}
             alt=""
             loading="lazy"
             className="h-full w-full object-cover transition duration-500 group-hover:scale-105"

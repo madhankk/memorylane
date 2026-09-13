@@ -8,7 +8,7 @@ import { api } from "../api/client";
 // Shared by every full-size photo display (fullscreen Viewer, inline
 // slideshows) so they all get sharp, non-thumbnail images consistently.
 export function displaySrc(media: MediaDto, useFallback: boolean): string {
-  if (useFallback) return api.media.thumbnailUrl(media.id);
-  if (media.mediaType === "raw") return api.media.previewUrl(media.id);
+  if (useFallback) return api.media.thumbnailUrl(media.id, media.thumbnailVersion);
+  if (media.mediaType === "raw") return api.media.previewUrl(media.id, media.thumbnailVersion);
   return api.media.fileUrl(media.id);
 }

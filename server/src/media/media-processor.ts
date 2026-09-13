@@ -113,7 +113,8 @@ export async function processMediaItem(
         captured_date = ?, width = ?, height = ?, orientation = ?,
         camera_make = ?, camera_model = ?, lens_model = ?, focal_length = ?,
         aperture = ?, shutter_speed = ?, iso = ?, rating = ?, gps_lat = ?, gps_lon = ?,
-        thumbnail_status = ?
+        thumbnail_status = ?,
+        thumbnail_version = thumbnail_version + 1
       WHERE id = ?`,
     ).run(
       metadata.capturedDate, metadata.width, metadata.height, metadata.orientation,

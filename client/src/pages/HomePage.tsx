@@ -80,7 +80,7 @@ export default function HomePage() {
         <div className="relative min-h-[460px] overflow-hidden rounded-[8px] bg-hero-fallback shadow-hero ring-1 ring-border">
           {summary?.heroMedia && (
             <img
-              src={api.media.thumbnailUrl(summary.heroMedia.id)}
+              src={api.media.thumbnailUrl(summary.heroMedia.id, summary.heroMedia.thumbnailVersion)}
               alt=""
               className="absolute inset-0 h-full w-full object-cover"
             />

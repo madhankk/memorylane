@@ -30,10 +30,10 @@ function getFolderCounts(ctx: AppContext, folderId: number): FolderCounts {
   // "re-rolled on every load" feel.
   let thumbRow = ctx.db
     .prepare(
-      `SELECT id FROM media WHERE parent_folder_id = ? AND status = 'active' AND thumbnail_status = 'done'
+      `SELECT id, thumbnail_version FROM media WHERE parent_folder_id = ? AND status = 'active' AND thumbnail_status = 'done'
        ORDER BY RANDOM() LIMIT 1`,
     )
-    .get(folderId) as { id: number } | undefined;
+    .get(folderId) as { id: number; thumbnail_version: number } | undefined;
 
   // Folders that only contain subfolders (e.g. a year folder like "1999" with
   // no photos directly in it) would otherwise show no cover image at all -
@@ -42,14 +42,19 @@ function getFolderCounts(ctx: AppContext, folderId: number): FolderCounts {
     thumbRow = ctx.db
       .prepare(
         `${DESCENDANT_FOLDERS_CTE}
-         SELECT media.id FROM media
+         SELECT media.id, media.thumbnail_version FROM media
          WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND thumbnail_status = 'done'
          ORDER BY RANDOM() LIMIT 1`,
       )
-      .get(folderId) as { id: number } | undefined;
+      .get(folderId) as { id: number; thumbnail_version: number } | undefined;
   }
 
-  return { mediaCount, childFolderCount, thumbnailMediaId: thumbRow?.id ?? null };
+  return {
+    mediaCount,
+    childFolderCount,
+    thumbnailMediaId: thumbRow?.id ?? null,
+    thumbnailVersion: thumbRow?.thumbnail_version ?? 0,
+  };
 }
 
 // Totals across a folder's entire subtree (not just direct children) - used
