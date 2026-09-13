@@ -247,3 +247,16 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
 }
+
+/* InlineSlideshow: each photo starts zoomed in (bleeding past the frame,
+   feels full/dramatic) and settles to its true, uncropped size - never
+   actually crops the photo, just animates into the full view. Retriggers
+   automatically since the <img> is remounted (key={media.id}) on every
+   photo change. */
+@keyframes memorylane-zoom-settle {
+  from { transform: scale(1.18); }
+  to { transform: scale(1); }
+}
+.zoom-settle {
+  animation: memorylane-zoom-settle 1.8s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}

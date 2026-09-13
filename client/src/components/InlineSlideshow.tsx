@@ -55,7 +55,7 @@ export default function InlineSlideshow({ items }: { items: MediaDto[] }) {
             onError={() => {
               if (!fallback) setFallback(true);
             }}
-            className="h-full w-full object-cover"
+            className="zoom-settle h-full w-full object-contain"
           />
         </button>
 
