@@ -64,6 +64,7 @@ MemoryLane is configured entirely through environment variables (no config file)
 | `MEMORYLANE_DATA_DIR` | OS-standard app-data dir | Where the SQLite database, thumbnail cache, and logs are stored |
 | `MEMORYLANE_PORT` | `4280` | Port the server listens on |
 | `MEMORYLANE_BIND_ADDRESS` | `0.0.0.0` | Bind address - `0.0.0.0` (the default) listens on every network interface, so other devices on your LAN (phone, tablet, another computer) can reach it at `http://<this-machine's-LAN-IP>:4280`. Set to `127.0.0.1` to restrict it to this machine only. |
+| `MEMORYLANE_ALLOW_REMOTE_SETUP` | unset (disabled) | Initial admin account setup is restricted to the machine hosting MemoryLane by default - since the server is reachable on your LAN as soon as it starts, this stops someone else on the network from claiming the one admin account before you do. Set to `1` to allow completing setup from another device. |
 
 MemoryLane has no HTTPS/TLS support, so traffic (including your session cookie and the photos themselves) is unencrypted on the network - fine on a trusted home LAN, but don't expose the default `0.0.0.0` bind directly to the internet (e.g. via router port-forwarding) without putting a reverse proxy with real TLS in front of it.
 

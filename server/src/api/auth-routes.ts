@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { setupRequestSchema, loginRequestSchema, changePasswordRequestSchema, type UserDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { hashPassword, verifyPassword } from "../auth/passwords.js";
@@ -14,6 +14,21 @@ function toUserDto(row: UserRow): UserDto {
   return { id: row.id, username: row.username, createdAt: row.created_at };
 }
 
+const LOOPBACK_ADDRESSES = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+
+// Now that the server binds to every interface by default (see
+// settings-repo.ts), anyone on the LAN can reach a freshly-installed,
+// not-yet-set-up instance. Without this, whoever calls POST /api/auth/setup
+// first - not necessarily the actual owner - claims the one admin account
+// and gets full access to the library and its filesystem paths. Restrict
+// setup to the host machine itself unless explicitly opted out of.
+// trustProxy is false (app.ts), so request.ip is the raw socket address,
+// not a spoofable X-Forwarded-For header.
+function isSetupAllowedFrom(request: FastifyRequest): boolean {
+  if (process.env.MEMORYLANE_ALLOW_REMOTE_SETUP === "1") return true;
+  return LOOPBACK_ADDRESSES.has(request.ip);
+}
+
 export async function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { db, sessions } = ctx;
 
@@ -21,6 +36,14 @@ export async function registerAuthRoutes(app: FastifyInstance, ctx: AppContext):
     const existingCount = (db.prepare("SELECT COUNT(*) as c FROM users").get() as { c: number }).c;
     if (existingCount > 0) {
       return reply.code(409).send({ error: "Setup has already been completed" });
+    }
+
+    if (!isSetupAllowedFrom(request)) {
+      return reply.code(403).send({
+        error:
+          "For security, initial setup must be completed from the machine hosting MemoryLane. " +
+          "Open it there, or set MEMORYLANE_ALLOW_REMOTE_SETUP=1 to allow setup from another device.",
+      });
     }
 
     const parsed = setupRequestSchema.safeParse(request.body);
