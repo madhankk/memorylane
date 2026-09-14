@@ -248,6 +248,19 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Browsers don't give <button> a pointer cursor by default (only <a> gets
+   that) and Tailwind's preflight doesn't set one either - most of the app's
+   clickable surfaces (grid photo tiles, folder cards, every icon button) are
+   plain <button>s, so without this the whole app shows a default arrow
+   cursor over things that are obviously clickable. One global rule instead
+   of annotating every button individually, since that's easy to miss on
+   anything added later. [role="button"] covers non-<button> elements used
+   as click targets (e.g. the favorite-star toggle in MediaGrid). */
+button:not(:disabled),
+[role="button"] {
+  cursor: pointer;
+}
+
 /* InlineSlideshow: each photo starts zoomed in (bleeding past the frame,
    feels full/dramatic) and settles to its true, uncropped size - never
    actually crops the photo, just animates into the full view. Retriggers
