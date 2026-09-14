@@ -42,7 +42,24 @@ export default function InlineSlideshow({ items }: { items: MediaDto[] }) {
 
   return (
     <>
-      <div className="relative h-[70vh] min-h-[480px] overflow-hidden rounded-xl bg-photo-shell ring-1 ring-border">
+      <div
+        className="relative h-[70vh] min-h-[480px] overflow-hidden rounded-xl bg-photo-shell ring-1 ring-border"
+        tabIndex={0}
+        role="group"
+        aria-label={`Photo slideshow, currently showing ${current.filename}. Use left and right arrow keys to navigate, space to play or pause.`}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowRight") {
+            e.preventDefault();
+            goNext();
+          } else if (e.key === "ArrowLeft") {
+            e.preventDefault();
+            goPrev();
+          } else if (e.key === " ") {
+            e.preventDefault();
+            setPlaying((p) => !p);
+          }
+        }}
+      >
         <button
           className="absolute inset-0"
           onClick={() => setFullscreenOpen(true)}

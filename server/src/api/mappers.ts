@@ -75,6 +75,7 @@ export function toMediaDto(row: MediaRow): MediaDto {
     parentFolderId: row.parent_folder_id,
     scanRootId: row.scan_root_id,
     filename: row.filename,
+    absolutePath: row.absolute_path,
     extension: row.extension,
     mediaType: row.media_type as MediaType,
     fileSize: row.file_size,

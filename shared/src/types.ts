@@ -122,6 +122,11 @@ export interface MediaDto {
   parentFolderId: number;
   scanRootId: number;
   filename: string;
+  // Full path on disk - MemoryLane is a self-hosted, single-user app (the
+  // viewer is always the same person who configured the scan roots
+  // pointing at these paths in the first place), and Settings already
+  // shows raw scan-root paths directly, so this isn't a new exposure.
+  absolutePath: string;
   extension: string;
   mediaType: MediaType;
   fileSize: number;

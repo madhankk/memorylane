@@ -180,7 +180,13 @@ export default function FolderPage() {
       )}
 
       {viewerIndex !== null && (
-        <Viewer items={media} startIndex={viewerIndex} onClose={() => setViewerIndex(null)} />
+        <Viewer
+          items={media}
+          startIndex={viewerIndex}
+          onClose={() => setViewerIndex(null)}
+          total={mediaTotal}
+          onRequestMore={loadMore}
+        />
       )}
     </div>
   );

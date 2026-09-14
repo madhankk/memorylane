@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Star } from "lucide-react";
 import type { MediaDto } from "@memorylane/shared";
 import { api } from "../api/client";
@@ -12,11 +13,18 @@ interface ViewerProps {
   onClose: () => void;
   // Starts the slideshow playing immediately instead of requiring a manual Play click.
   autoPlay?: boolean;
+  // The real total item count in this set, when it's larger than `items`
+  // (a paginated folder/favorites view) - without this, reaching the end of
+  // whatever page happens to be loaded silently wraps back to photo 1
+  // instead of fetching more, since `items.length` alone can't tell the
+  // difference between "that's really all of them" and "just not loaded yet".
+  total?: number;
+  onRequestMore?: () => void | Promise<void>;
 }
 
 const SLIDESHOW_INTERVAL_MS = 5000;
 
-export default function Viewer({ items, startIndex, onClose, autoPlay = false }: ViewerProps) {
+export default function Viewer({ items, startIndex, onClose, autoPlay = false, total, onRequestMore }: ViewerProps) {
   const [index, setIndex] = useState(startIndex);
   const [fallback, setFallback] = useState(false);
   const [playing, setPlaying] = useState(autoPlay);
@@ -25,19 +33,51 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false }:
   const [favoriteOverrides, setFavoriteOverrides] = useState<Record<number, boolean>>({});
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
+  const navigate = useNavigate();
+  // Set when goNext() is waiting on more items to arrive rather than
+  // wrapping - the effect below advances the index once they land.
+  const awaitingMoreRef = useRef(false);
 
   const current = items[index];
   useEngagementTracking(current?.id);
 
+  const totalCount = total ?? items.length;
+
   const goNext = useCallback(() => {
     setFallback(false);
-    setIndex((i) => (i + 1) % items.length);
-  }, [items.length]);
+    setIndex((i) => {
+      if (i < items.length - 1) return i + 1;
+      // At the end of what's loaded - if the real set is bigger, fetch more
+      // and stay put until it arrives, rather than wrapping to photo 1.
+      if (items.length < totalCount && onRequestMore) {
+        awaitingMoreRef.current = true;
+        void onRequestMore();
+        return i;
+      }
+      return 0;
+    });
+  }, [items.length, totalCount, onRequestMore]);
 
   const goPrev = useCallback(() => {
     setFallback(false);
     setIndex((i) => (i - 1 + items.length) % items.length);
   }, [items.length]);
+
+  // Fires once the parent's items array actually grows past where we were
+  // waiting - advancing here (rather than inside goNext itself) means it
+  // still works no matter how long the fetch takes.
+  useEffect(() => {
+    if (awaitingMoreRef.current && items.length > index) {
+      awaitingMoreRef.current = false;
+      setIndex((i) => i + 1);
+    }
+  }, [items.length, index]);
+
+  const goToFolder = useCallback(() => {
+    if (!current) return;
+    onClose();
+    navigate(`/folder/${current.parentFolderId}`);
+  }, [current, navigate, onClose]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -45,6 +85,11 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false }:
       else if (e.key === "ArrowRight") goNext();
       else if (e.key === "ArrowLeft") goPrev();
       else if (e.key === " ") {
+        // Don't hijack Space when a button/input already has focus - its
+        // native behavior (activating that control) should win, not a
+        // global play/pause toggle stealing the keystroke out from under it.
+        const target = e.target as HTMLElement | null;
+        if (target && ["BUTTON", "INPUT", "TEXTAREA", "A"].includes(target.tagName)) return;
         e.preventDefault();
         setPlaying((p) => !p);
       }
@@ -180,7 +225,7 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false }:
           </button>
           <span className="max-w-[240px] truncate">{current.filename}</span>
           <span>
-            {index + 1} / {items.length}
+            {index + 1} / {totalCount}
           </span>
           <button onClick={() => setShowInfo((s) => !s)} className="text-white">
             Info
@@ -209,6 +254,13 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false }:
             </div>
           )}
           <div>Type: {current.mediaType.toUpperCase()}</div>
+          <div className="max-w-[360px] break-all text-white/70">Path: {current.absolutePath}</div>
+          <button
+            onClick={goToFolder}
+            className="mt-1 self-start text-left text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
+          >
+            Go to folder
+          </button>
         </div>
       )}
     </div>
