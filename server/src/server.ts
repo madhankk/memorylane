@@ -6,6 +6,7 @@ import { SessionStore } from "./auth/sessions.js";
 import { ScannerService } from "./scanner/scanner-service.js";
 import { SqliteRandomSelectionService } from "./media/random-selection-service.js";
 import { checkExifToolAvailable, shutdownExifTool } from "./media/exiftool-client.js";
+import { checkFfmpegAvailable } from "./media/video-client.js";
 import { buildApp } from "./app.js";
 import type { AppContext } from "./context.js";
 
@@ -23,6 +24,7 @@ async function main(): Promise<void> {
 
   await runMigrations(db, paths.dbPath, bootstrapLogger);
   await checkExifToolAvailable(bootstrapLogger);
+  await checkFfmpegAvailable(bootstrapLogger);
 
   const settingsRepo = new SettingsRepo(db);
   const settings = settingsRepo.getAll();

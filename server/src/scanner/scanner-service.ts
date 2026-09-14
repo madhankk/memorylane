@@ -150,15 +150,18 @@ export class ScannerService {
     const limiter = pLimit(THUMBNAIL_QUEUE_CONCURRENCY);
     let pendingJobs: Promise<void>[] = [];
 
-    const enqueueProcessing = (mediaId: number, absolutePath: string, mediaType: "image" | "raw" | "video") => {
+    const enqueueProcessing = (mediaId: number, absolutePath: string, mediaType: "image" | "raw" | "video", parentFolderId: number) => {
       stats.thumbnailsQueued++;
       pendingJobs.push(
         limiter(() =>
-          processMediaItem(this.db, this.paths, this.logger, { id: mediaId, absolute_path: absolutePath, media_type: mediaType }).finally(
-            () => {
-              stats.thumbnailsProcessed++;
-            },
-          ),
+          processMediaItem(this.db, this.paths, this.logger, {
+            id: mediaId,
+            parent_folder_id: parentFolderId,
+            absolute_path: absolutePath,
+            media_type: mediaType,
+          }).finally(() => {
+            stats.thumbnailsProcessed++;
+          }),
         ),
       );
     };
@@ -266,7 +269,7 @@ export class ScannerService {
     root: ScanRootRow,
     stats: Stats,
     ignoredPaths: Set<string>,
-    enqueueProcessing: (mediaId: number, absolutePath: string, mediaType: "image" | "raw" | "video") => void,
+    enqueueProcessing: (mediaId: number, absolutePath: string, mediaType: "image" | "raw" | "video", parentFolderId: number) => void,
     flushIfNeeded: (force?: boolean) => Promise<void>,
   ): Promise<void> {
     let rootStat;
@@ -292,7 +295,7 @@ export class ScannerService {
     dirPath: string,
     stats: Stats,
     ignoredPaths: Set<string>,
-    enqueueProcessing: (mediaId: number, absolutePath: string, mediaType: "image" | "raw" | "video") => void,
+    enqueueProcessing: (mediaId: number, absolutePath: string, mediaType: "image" | "raw" | "video", parentFolderId: number) => void,
     flushIfNeeded: (force?: boolean) => Promise<void>,
   ): Promise<void> {
     let entries;
@@ -322,12 +325,6 @@ export class ScannerService {
       const mediaType = classifyExtension(ext);
       if (!mediaType) continue; // unsupported file type, skip silently (not an error)
 
-      if (mediaType === "video") {
-        // Video pipeline lands in a later phase - skip indexing entirely for now
-        // rather than creating half-populated rows.
-        continue;
-      }
-
       try {
         await this.indexFile(root, parentFolderId, entryPath, entry.name, ext, mediaType, stats, enqueueProcessing);
       } catch (err) {
@@ -347,7 +344,7 @@ export class ScannerService {
     extension: string,
     mediaType: "image" | "raw" | "video",
     stats: Stats,
-    enqueueProcessing: (mediaId: number, absolutePath: string, mediaType: "image" | "raw" | "video") => void,
+    enqueueProcessing: (mediaId: number, absolutePath: string, mediaType: "image" | "raw" | "video", parentFolderId: number) => void,
   ): Promise<void> {
     const stat = await fs.stat(absolutePath);
     const fingerprint = computeFingerprint(stat.size, stat.mtimeMs);
@@ -371,7 +368,7 @@ export class ScannerService {
           stat.size, fsCreatedAt, stat.mtime.toISOString(), fingerprint,
         );
       stats.filesNew++;
-      enqueueProcessing(Number(info.lastInsertRowid), absolutePath, mediaType);
+      enqueueProcessing(Number(info.lastInsertRowid), absolutePath, mediaType, parentFolderId);
       return;
     }
 
@@ -384,7 +381,7 @@ export class ScannerService {
         )
         .run(stat.size, stat.mtime.toISOString(), fingerprint, parentFolderId, existing.id);
       stats.filesChanged++;
-      enqueueProcessing(existing.id, absolutePath, mediaType);
+      enqueueProcessing(existing.id, absolutePath, mediaType, parentFolderId);
       return;
     }
 
@@ -399,7 +396,7 @@ export class ScannerService {
     // preview tier existed) - retry it even though the fingerprint matches,
     // so problems self-heal on the next scan instead of persisting forever.
     if (existing.thumbnail_status !== "done") {
-      enqueueProcessing(existing.id, absolutePath, mediaType);
+      enqueueProcessing(existing.id, absolutePath, mediaType, parentFolderId);
     }
   }
 

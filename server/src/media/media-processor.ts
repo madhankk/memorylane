@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { Tags } from "exiftool-vendored";
 import { thumbnailPathForMediaId, previewPathForMediaId, type AppPaths } from "../config/paths.js";
 import { readTags, extractLargestEmbeddedPreview, isExifToolAvailable } from "./exiftool-client.js";
+import { probeVideo, extractPosterFrame, isFfmpegAvailable } from "./video-client.js";
 import {
   generateThumbnailFromFile,
   generateThumbnailFromBuffer,
@@ -12,6 +13,7 @@ import {
 
 export interface MediaRowForProcessing {
   id: number;
+  parent_folder_id: number;
   absolute_path: string;
   media_type: "image" | "raw" | "video";
 }
@@ -38,7 +40,8 @@ function extractMetadataFields(tags: Tags | null) {
       capturedDate: null, width: null, height: null, orientation: null,
       cameraMake: null, cameraModel: null, lensModel: null, focalLength: null,
       aperture: null, shutterSpeed: null, iso: null, rating: null,
-      gpsLat: null, gpsLon: null,
+      gpsLat: null, gpsLon: null, durationSeconds: null, codec: null,
+      contentIdentifier: null,
     };
   }
   return {
@@ -56,7 +59,46 @@ function extractMetadataFields(tags: Tags | null) {
     rating: numOrNull(tags.Rating),
     gpsLat: numOrNull(tags.GPSLatitude),
     gpsLon: numOrNull(tags.GPSLongitude),
+    // Video-specific - left null here and filled in from ffprobe (more
+    // reliable for these than ExifTool) in the video branch below.
+    durationSeconds: null as number | null,
+    codec: null as string | null,
+    // Apple Live Photos: the still half and its paired ~3s video share this
+    // identifier - used only to find each other during indexing (see
+    // linkLivePhotoPair), never exposed to the client.
+    contentIdentifier: tags.ContentIdentifier ?? null,
   };
+}
+
+// Called after a still photo or video's own metadata is saved, to complete a
+// Live Photo pairing in whichever order the two halves happened to be
+// scanned in. Best-effort: a missing/unmatched identifier just means this
+// isn't a Live Photo (or its other half hasn't been scanned yet, which
+// self-heals whenever that half is indexed and runs this same lookup from
+// its own side).
+function linkLivePhotoPair(
+  db: Database.Database,
+  mediaId: number,
+  parentFolderId: number,
+  mediaType: "image" | "raw" | "video",
+  contentIdentifier: string | null,
+): void {
+  if (!contentIdentifier) return;
+  if (mediaType === "video") {
+    db.prepare(
+      `UPDATE media SET live_photo_video_id = ?
+       WHERE parent_folder_id = ? AND content_identifier = ? AND media_type IN ('image', 'raw') AND id != ?`,
+    ).run(mediaId, parentFolderId, contentIdentifier, mediaId);
+  } else {
+    const video = db
+      .prepare(
+        `SELECT id FROM media WHERE parent_folder_id = ? AND content_identifier = ? AND media_type = 'video' AND id != ?`,
+      )
+      .get(parentFolderId, contentIdentifier, mediaId) as { id: number } | undefined;
+    if (video) {
+      db.prepare("UPDATE media SET live_photo_video_id = ? WHERE id = ?").run(video.id, mediaId);
+    }
+  }
 }
 
 // Processes one media row end-to-end: metadata extraction + thumbnail
@@ -117,8 +159,32 @@ export async function processMediaItem(
       await generateThumbnailFromFile(row.absolute_path, destPath);
       thumbnailStatus = "done";
     } else {
-      // video: thumbnail/metadata pipeline lands in a later phase.
-      thumbnailStatus = "unsupported";
+      // Thumbnail (a single poster frame) only - originals are always served
+      // as-is for playback, never transcoded. If a browser can't decode a
+      // given container/codec it simply won't play, same as any other
+      // unsupported format elsewhere in the app - no compatibility layer.
+      if (isFfmpegAvailable()) {
+        const probe = await probeVideo(row.absolute_path);
+        if (probe) {
+          metadata = {
+            ...metadata,
+            width: probe.width ?? metadata.width,
+            height: probe.height ?? metadata.height,
+            durationSeconds: probe.durationSeconds,
+            codec: probe.codec,
+          };
+        }
+        const frame = await extractPosterFrame(row.absolute_path);
+        if (frame) {
+          await generateThumbnailFromBuffer(frame, destPath, null);
+          thumbnailStatus = "done";
+        } else {
+          thumbnailStatus = "unsupported";
+          logger.warn({ mediaId: row.id, path: row.absolute_path }, "Could not extract a poster frame from video");
+        }
+      } else {
+        thumbnailStatus = "unsupported";
+      }
     }
   } catch (err) {
     logger.error({ err, mediaId: row.id, path: row.absolute_path }, "Failed to generate thumbnail");
@@ -131,6 +197,7 @@ export async function processMediaItem(
         captured_date = ?, width = ?, height = ?, orientation = ?,
         camera_make = ?, camera_model = ?, lens_model = ?, focal_length = ?,
         aperture = ?, shutter_speed = ?, iso = ?, rating = ?, gps_lat = ?, gps_lon = ?,
+        duration_seconds = ?, codec = ?, content_identifier = ?,
         thumbnail_status = ?,
         thumbnail_version = thumbnail_version + 1
       WHERE id = ?`,
@@ -138,8 +205,10 @@ export async function processMediaItem(
       metadata.capturedDate, metadata.width, metadata.height, metadata.orientation,
       metadata.cameraMake, metadata.cameraModel, metadata.lensModel, metadata.focalLength,
       metadata.aperture, metadata.shutterSpeed, metadata.iso, metadata.rating, metadata.gpsLat, metadata.gpsLon,
+      metadata.durationSeconds, metadata.codec, metadata.contentIdentifier,
       thumbnailStatus, row.id,
     );
+    linkLivePhotoPair(db, row.id, row.parent_folder_id, row.media_type, metadata.contentIdentifier);
   } catch (err) {
     logger.error({ err, mediaId: row.id, path: row.absolute_path }, "Failed to save media metadata");
   }

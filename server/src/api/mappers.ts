@@ -1,5 +1,11 @@
 import type { FolderDto, MediaDto, MediaType, ThumbnailStatus, MediaStatus } from "@memorylane/shared";
 
+// A Live Photo's paired video row must never appear as its own grid item -
+// it's reachable only via the still photo's livePhotoVideoId. Append with
+// AND to any media-listing WHERE clause.
+export const EXCLUDE_LIVE_PHOTO_VIDEOS =
+  "id NOT IN (SELECT live_photo_video_id FROM media WHERE live_photo_video_id IS NOT NULL)";
+
 export interface FolderRow {
   id: number;
   scan_root_id: number;
@@ -67,6 +73,7 @@ export interface MediaRow {
   gps_lon: number | null;
   duration_seconds: number | null;
   codec: string | null;
+  live_photo_video_id: number | null;
 }
 
 export function toMediaDto(row: MediaRow): MediaDto {
@@ -100,6 +107,7 @@ export function toMediaDto(row: MediaRow): MediaDto {
     gpsLon: row.gps_lon,
     durationSeconds: row.duration_seconds,
     codec: row.codec,
+    livePhotoVideoId: row.live_photo_video_id,
     // Populated by EngagementRepo.attachFavorites() at the route level - see
     // db/engagement-repo.ts. Defaults false here since not every call site
     // needs it (or has fetched it yet).

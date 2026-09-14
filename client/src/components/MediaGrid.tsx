@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Star } from "lucide-react";
 import type { MediaDto } from "@memorylane/shared";
 import { api } from "../api/client";
+import { formatDuration } from "../utils/format";
 
 interface MediaGridProps {
   items: MediaDto[];
@@ -9,7 +10,10 @@ interface MediaGridProps {
 }
 
 function badgeFor(media: MediaDto): string | null {
-  if (media.mediaType === "video") return "▶";
+  if (media.mediaType === "video") {
+    return media.durationSeconds != null ? formatDuration(media.durationSeconds) : "▶";
+  }
+  if (media.livePhotoVideoId != null) return "LIVE";
   if (media.mediaType === "raw") return "RAW";
   if (media.thumbnailStatus === "unsupported" || media.thumbnailStatus === "failed") return "!";
   return null;

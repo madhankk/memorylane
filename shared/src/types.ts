@@ -157,6 +157,12 @@ export interface MediaDto {
   durationSeconds: number | null;
   codec: string | null;
 
+  // Set on a still photo when it's the "live" half of an Apple Live Photo -
+  // the id of its paired video (fetchable at /api/media/:id/file for
+  // playback). The video's own row is never surfaced as a separate grid
+  // item - see the media-listing queries' live_photo_video_id exclusion.
+  livePhotoVideoId: number | null;
+
   // Engagement (media_engagement table) - separate from the imported EXIF/XMP
   // `rating` above, which is never overwritten by favoriting.
   favorite: boolean;

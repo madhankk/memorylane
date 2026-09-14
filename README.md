@@ -4,7 +4,7 @@ Self-hosted photo and video browser for rediscovering the memories already sitti
 
 MemoryLane indexes existing photo folders in place, generates thumbnails, and helps you rediscover old photos through browsing, search, and "Surprise Me" style random rediscovery - all on your own hardware, over your own files. It never renames, moves, or modifies your originals. See [PLAN.md](PLAN.md) for the full engineering plan.
 
-Photos are the v1 focus; video indexing/playback is deferred.
+Photos, RAW, video, and Apple Live Photos are all indexed and browsable.
 
 ## Features
 
@@ -12,6 +12,8 @@ Photos are the v1 focus; video indexing/playback is deferred.
 - **Read-only, filesystem-as-source-of-truth** - MemoryLane only reads your originals. It builds a disposable SQLite index and thumbnail cache alongside them; delete that cache anytime and rescan to rebuild it from scratch.
 - **Fast browsing at any library size** - folder tree navigation with infinite scroll, full-text search across folders and files, and per-scan-folder stats (item counts, cache size on disk).
 - **Broad RAW support** - every major camera maker's RAW format is indexed with embedded-preview thumbnails and a larger fullscreen preview tier, both correctly oriented from the RAW file's own EXIF: Canon (CR2/CR3/CRAW/CRW), Nikon (NEF/NRW), Sony (ARW/SRF/SR2/ARQ), Fujifilm (RAF), Olympus/OM System (ORF), Panasonic/Lumix (RW2), Pentax (PEF), Samsung (SRW), Sigma (X3F), Minolta (MRW), Kodak (DCR/K25/KDC), Hasselblad (3FR/FFF), Mamiya/Leaf (MEF/MOS), Phase One (IIQ), and Adobe DNG.
+- **Video** - indexed with a poster-frame thumbnail and duration badge; click to play the original file directly in the browser's native player (no transcoding - playback works whenever the browser itself can decode the file).
+- **Apple Live Photos** - the still and its paired ~3s video are detected automatically and shown as one grid item with a LIVE badge; open it to play the video inline.
 - **Rediscovery, not just browsing** - a home hero card surfaces a random photo with a subtle "June 2007 · Chennai · 19 years ago" caption, tabbed **Random Memory** / **This Day, Another Time** mini slideshows, and a full "Surprise Me" fullscreen mode.
 - **Lightweight, invisible engagement tracking** - a simple favorite star and quiet shown/viewed counters bias rediscovery toward photos you haven't seen in a while, without ever turning into an analytics dashboard.
 - **Four themes** - light, dark, dusk, and gallery, switchable at any time.
@@ -22,7 +24,7 @@ Photos are the v1 focus; video indexing/playback is deferred.
 
 - Node.js 20+
 - [ExifTool](https://exiftool.org/) available on PATH (RAW metadata/preview extraction; standard image browsing still works without it)
-- ffmpeg/ffprobe (optional in v1 - reserved for the later video phase)
+- ffmpeg/ffprobe - bundled automatically (via ffmpeg-static/ffprobe-static), no separate install needed; used only to extract a video's poster-frame thumbnail and duration, never to transcode
 
 ## Setup
 

@@ -5,6 +5,7 @@ import type { MediaDto } from "@memorylane/shared";
 import { api } from "../api/client";
 import { formatMemoryBlurb } from "../utils/blurb";
 import { displaySrc } from "../utils/mediaSrc";
+import { formatBytes, formatDuration } from "../utils/format";
 import { useEngagementTracking } from "../hooks/useEngagementTracking";
 
 interface ViewerProps {
@@ -28,6 +29,9 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
   const [index, setIndex] = useState(startIndex);
   const [fallback, setFallback] = useState(false);
   const [playing, setPlaying] = useState(autoPlay);
+  // A Live Photo opens on its still image - this only becomes true once the
+  // user explicitly taps the LIVE badge to play the paired ~3s video.
+  const [livePlaying, setLivePlaying] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [favoriteOverrides, setFavoriteOverrides] = useState<Record<number, boolean>>({});
@@ -40,6 +44,11 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
 
   const current = items[index];
   useEngagementTracking(current?.id);
+
+  // Always land on the still image first when navigating to a new item.
+  useEffect(() => {
+    setLivePlaying(false);
+  }, [current?.id]);
 
   const totalCount = total ?? items.length;
 
@@ -198,16 +207,47 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
         ‹
       </button>
 
-      <div className="flex max-h-[82vh] max-w-[92vw] items-center justify-center">
-        <img
-          key={current.id}
-          src={displaySrc(current, fallback)}
-          alt={current.filename}
-          onError={() => {
-            if (!fallback) setFallback(true);
-          }}
-          className="max-h-[82vh] max-w-[92vw] object-contain"
-        />
+      <div className="relative flex max-h-[82vh] max-w-[92vw] items-center justify-center">
+        {current.mediaType === "video" ? (
+          // Original file served as-is (see file-streaming.ts's Range support
+          // for seeking) - no transcoding, so playback depends entirely on
+          // what the browser's own <video> element can decode.
+          <video
+            key={current.id}
+            src={api.media.fileUrl(current.id)}
+            controls
+            autoPlay
+            className="max-h-[82vh] max-w-[92vw] object-contain"
+          />
+        ) : current.livePhotoVideoId != null && livePlaying ? (
+          <video
+            key={`${current.id}-live`}
+            src={api.media.fileUrl(current.livePhotoVideoId)}
+            autoPlay
+            controls
+            onEnded={() => setLivePlaying(false)}
+            className="max-h-[82vh] max-w-[92vw] object-contain"
+          />
+        ) : (
+          <img
+            key={current.id}
+            src={displaySrc(current, fallback)}
+            alt={current.filename}
+            onError={() => {
+              if (!fallback) setFallback(true);
+            }}
+            className="max-h-[82vh] max-w-[92vw] object-contain"
+          />
+        )}
+        {current.livePhotoVideoId != null && !livePlaying && (
+          <button
+            onClick={() => setLivePlaying(true)}
+            className="absolute top-3 left-3 flex items-center gap-1 rounded-full bg-overlay-control px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-overlay-control-hover"
+            aria-label="Play Live Photo"
+          >
+            ◉ LIVE
+          </button>
+        )}
       </div>
 
       <button
@@ -254,6 +294,8 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
             </div>
           )}
           <div>Type: {current.mediaType.toUpperCase()}</div>
+          <div>Size: {formatBytes(current.fileSize)}</div>
+          {current.durationSeconds != null && <div>Duration: {formatDuration(current.durationSeconds)}</div>}
           <div className="max-w-[360px] break-all text-white/70">Path: {current.absolutePath}</div>
           <button
             onClick={goToFolder}

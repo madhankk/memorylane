@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { paginationQuerySchema, folderMediaQuerySchema, type FolderBreadcrumbDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
-import { toFolderDto, toMediaDto, type FolderRow, type FolderCounts, type MediaRow } from "./mappers.js";
+import { toFolderDto, toMediaDto, EXCLUDE_LIVE_PHOTO_VIDEOS, type FolderRow, type FolderCounts, type MediaRow } from "./mappers.js";
 import { EngagementRepo } from "../db/engagement-repo.js";
 
 // Recursive CTE selecting a folder and every active descendant - reused by the
@@ -22,7 +22,9 @@ export function getFolderCounts(
 ): Omit<FolderCounts, "recursiveMediaCount" | "recursiveSizeBytes"> {
   const mediaCount = (
     ctx.db
-      .prepare("SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status = 'active'")
+      .prepare(
+        `SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS}`,
+      )
       .get(folderId) as { c: number }
   ).c;
   const childFolderCount = (
@@ -35,7 +37,7 @@ export function getFolderCounts(
   // "re-rolled on every load" feel.
   let thumbRow = ctx.db
     .prepare(
-      `SELECT id, thumbnail_version FROM media WHERE parent_folder_id = ? AND status = 'active' AND thumbnail_status = 'done'
+      `SELECT id, thumbnail_version FROM media WHERE parent_folder_id = ? AND status = 'active' AND thumbnail_status = 'done' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS}
        ORDER BY RANDOM() LIMIT 1`,
     )
     .get(folderId) as { id: number; thumbnail_version: number } | undefined;
@@ -48,7 +50,7 @@ export function getFolderCounts(
       .prepare(
         `${DESCENDANT_FOLDERS_CTE}
          SELECT media.id, media.thumbnail_version FROM media
-         WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND thumbnail_status = 'done'
+         WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND thumbnail_status = 'done' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS}
          ORDER BY RANDOM() LIMIT 1`,
       )
       .get(folderId) as { id: number; thumbnail_version: number } | undefined;
@@ -169,13 +171,15 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
 
     if (!recursive) {
       const total = (
-        db.prepare("SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status = 'active'").get(id) as {
+        db.prepare(
+          `SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS}`,
+        ).get(id) as {
           c: number;
         }
       ).c;
       const rows = db
         .prepare(
-          `SELECT * FROM media WHERE parent_folder_id = ? AND status = 'active'
+          `SELECT * FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS}
            ORDER BY captured_date IS NULL, captured_date, filename LIMIT ? OFFSET ?`,
         )
         .all(id, limit, offset) as MediaRow[];
@@ -189,7 +193,7 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
         .prepare(
           `${DESCENDANT_FOLDERS_CTE}
            SELECT COUNT(*) as c FROM media
-           WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active'`,
+           WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS}`,
         )
         .get(id) as { c: number }
     ).c;
@@ -197,7 +201,7 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
       .prepare(
         `${DESCENDANT_FOLDERS_CTE}
          SELECT media.* FROM media
-         WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active'
+         WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS}
          ORDER BY captured_date IS NULL, captured_date, filename LIMIT ? OFFSET ?`,
       )
       .all(id, limit, offset) as MediaRow[];
