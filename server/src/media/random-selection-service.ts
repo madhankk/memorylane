@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { EXCLUDE_PAIRED_RAW } from "../api/mappers.js";
 
 // Isolated behind an interface so the sampling strategy can be swapped (e.g.
 // for reservoir sampling or history-weighted "forgotten photos" selection)
@@ -23,7 +24,7 @@ export class SqliteRandomSelectionService implements RandomSelectionService {
       .prepare(
         `SELECT media.id FROM media
          LEFT JOIN media_engagement e ON e.media_id = media.id
-         WHERE media.status = 'active' AND media.media_type IN ('image', 'raw') AND media.thumbnail_status = 'done'
+         WHERE media.status = 'active' AND media.media_type IN ('image', 'raw') AND media.thumbnail_status = 'done' AND ${EXCLUDE_PAIRED_RAW}
            AND (e.last_shown_at IS NULL OR e.last_shown_at < datetime('now', '-${RECENTLY_SHOWN_COOLDOWN_DAYS} days'))
          ORDER BY RANDOM() LIMIT ?`,
       )
@@ -43,7 +44,7 @@ export class SqliteRandomSelectionService implements RandomSelectionService {
     const topUpRows = this.db
       .prepare(
         `SELECT media.id FROM media
-         WHERE media.status = 'active' AND media.media_type IN ('image', 'raw') AND media.thumbnail_status = 'done'
+         WHERE media.status = 'active' AND media.media_type IN ('image', 'raw') AND media.thumbnail_status = 'done' AND ${EXCLUDE_PAIRED_RAW}
            ${exclusion}
          ORDER BY RANDOM() LIMIT ?`,
       )

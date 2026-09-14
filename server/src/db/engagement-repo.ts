@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import type { FavoriteResultDto, MediaTypeFilter } from "@memorylane/shared";
-import { EXCLUDE_LIVE_PHOTO_VIDEOS, mediaTypeFilterClause } from "../api/mappers.js";
+import { EXCLUDE_LIVE_PHOTO_VIDEOS, EXCLUDE_PAIRED_RAW, mediaTypeFilterClause } from "../api/mappers.js";
 
 // All engagement state lives in one small table (media_engagement) - see
 // migrations/006_media_engagement.sql. This is intentionally just aggregate
@@ -74,7 +74,7 @@ export class EngagementRepo {
         .prepare(
           `SELECT COUNT(*) as c FROM media_engagement me
            JOIN media ON media.id = me.media_id
-           WHERE me.favorite = 1 AND media.status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${typeClause}`,
+           WHERE me.favorite = 1 AND media.status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW} AND ${typeClause}`,
         )
         .get() as { c: number }
     ).c;
@@ -82,7 +82,7 @@ export class EngagementRepo {
       .prepare(
         `SELECT me.media_id FROM media_engagement me
          JOIN media ON media.id = me.media_id
-         WHERE me.favorite = 1 AND media.status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${typeClause}
+         WHERE me.favorite = 1 AND media.status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW} AND ${typeClause}
          ORDER BY me.favorited_at DESC LIMIT ? OFFSET ?`,
       )
       .all(limit, offset) as { media_id: number }[];

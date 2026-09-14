@@ -169,6 +169,12 @@ export interface MediaDto {
   // item - see the media-listing queries' live_photo_video_id exclusion.
   livePhotoVideoId: number | null;
 
+  // Set on an image when a same-name RAW file was scanned alongside it - the
+  // id of the paired RAW (fetchable at /api/media/:id/file for viewing the
+  // original, e.g. for editing). The RAW row's own row is never surfaced as
+  // a separate grid item - see the media-listing queries' raw_pair_id exclusion.
+  rawPairId: number | null;
+
   // Engagement (media_engagement table) - separate from the imported EXIF/XMP
   // `rating` above, which is never overwritten by favoriting.
   favorite: boolean;

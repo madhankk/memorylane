@@ -14,7 +14,7 @@ function badgeFor(media: MediaDto): string | null {
     return media.durationSeconds != null ? formatDuration(media.durationSeconds) : "▶";
   }
   if (media.livePhotoVideoId != null) return "LIVE";
-  if (media.mediaType === "raw") return "RAW";
+  if (media.mediaType === "raw" || media.rawPairId != null) return "RAW";
   if (media.thumbnailStatus === "unsupported" || media.thumbnailStatus === "failed") return "!";
   return null;
 }

@@ -1,3 +1,4 @@
+import path from "node:path";
 import type Database from "better-sqlite3";
 import type { Logger } from "pino";
 import type { Tags } from "exiftool-vendored";
@@ -99,6 +100,40 @@ function linkLivePhotoPair(
     if (video) {
       db.prepare("UPDATE media SET live_photo_video_id = ? WHERE id = ?").run(video.id, mediaId);
     }
+  }
+}
+
+// Called after a RAW or image file's own row is inserted, to complete a
+// RAW+JPEG pairing in whichever order the two files happened to be scanned
+// in. Unlike linkLivePhotoPair, this needs no EXIF tag - camera-generated
+// RAW+JPEG pairs share the exact same base filename in the same folder, so a
+// straight filename comparison is enough. Best-effort: no match just means
+// this file doesn't have a same-name counterpart (or it hasn't been scanned
+// yet, which self-heals whenever that file is indexed and runs this same
+// lookup from its own side).
+function linkRawJpegPair(
+  db: Database.Database,
+  mediaId: number,
+  parentFolderId: number,
+  mediaType: "image" | "raw" | "video",
+  absolutePath: string,
+): void {
+  if (mediaType === "video") return;
+  const baseName = path.parse(absolutePath).name.toLowerCase();
+  const counterpartType = mediaType === "raw" ? "image" : "raw";
+  const siblings = db
+    .prepare(
+      `SELECT id, absolute_path FROM media
+       WHERE parent_folder_id = ? AND media_type = ? AND status = 'active' AND id != ?`,
+    )
+    .all(parentFolderId, counterpartType, mediaId) as { id: number; absolute_path: string }[];
+  const match = siblings.find((s) => path.parse(s.absolute_path).name.toLowerCase() === baseName);
+  if (!match) return;
+
+  if (mediaType === "raw") {
+    db.prepare("UPDATE media SET raw_pair_id = ? WHERE id = ?").run(mediaId, match.id);
+  } else {
+    db.prepare("UPDATE media SET raw_pair_id = ? WHERE id = ?").run(match.id, mediaId);
   }
 }
 
@@ -211,6 +246,7 @@ export async function processMediaItem(
       thumbnailStatus, row.id,
     );
     linkLivePhotoPair(db, row.id, row.parent_folder_id, row.media_type, metadata.contentIdentifier);
+    linkRawJpegPair(db, row.id, row.parent_folder_id, row.media_type, row.absolute_path);
   } catch (err) {
     logger.error({ err, mediaId: row.id, path: row.absolute_path }, "Failed to save media metadata");
   }

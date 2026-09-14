@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { HomeSummaryDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
-import { toMediaDto, type MediaRow } from "./mappers.js";
+import { toMediaDto, EXCLUDE_PAIRED_RAW, type MediaRow } from "./mappers.js";
 import { EngagementRepo } from "../db/engagement-repo.js";
 
 // Backs the Home page's hero card: library-wide totals plus a randomly
@@ -35,7 +35,7 @@ export async function registerHomeRoutes(app: FastifyInstance, ctx: AppContext):
 
     const heroRow = db
       .prepare(
-        `SELECT * FROM media WHERE status = 'active' AND media_type IN ('image', 'raw') AND thumbnail_status = 'done'
+        `SELECT * FROM media WHERE status = 'active' AND media_type IN ('image', 'raw') AND thumbnail_status = 'done' AND ${EXCLUDE_PAIRED_RAW}
          ORDER BY RANDOM() LIMIT 1`,
       )
       .get() as MediaRow | undefined;

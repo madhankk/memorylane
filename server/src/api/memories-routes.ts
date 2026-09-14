@@ -1,10 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { randomMediaQuerySchema, type OnThisDayTier } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
-import { toMediaDto, type MediaRow } from "./mappers.js";
+import { toMediaDto, EXCLUDE_PAIRED_RAW, type MediaRow } from "./mappers.js";
 import { EngagementRepo } from "../db/engagement-repo.js";
 
-const ELIGIBLE_MEDIA_FILTER = `status = 'active' AND media_type IN ('image', 'raw') AND thumbnail_status = 'done'`;
+const ELIGIBLE_MEDIA_FILTER = `status = 'active' AND media_type IN ('image', 'raw') AND thumbnail_status = 'done' AND ${EXCLUDE_PAIRED_RAW}`;
 
 export async function registerMemoriesRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { db, randomSelection } = ctx;

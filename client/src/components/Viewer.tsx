@@ -263,6 +263,22 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
             ◉ LIVE
           </button>
         )}
+        {current.rawPairId != null && (
+          // The browser can't render a RAW file inline - this just opens the
+          // original in a new tab, where the browser's own download handling
+          // takes over (no in-app RAW viewer/editor).
+          <a
+            href={api.media.fileUrl(current.rawPairId)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`absolute left-3 flex items-center gap-1 rounded-full bg-overlay-control px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-overlay-control-hover ${
+              current.livePhotoVideoId != null ? "top-12" : "top-3"
+            }`}
+            aria-label="Open original RAW file"
+          >
+            RAW
+          </a>
+        )}
       </div>
 
       <button

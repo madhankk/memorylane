@@ -16,6 +16,12 @@ import type {
 export const EXCLUDE_LIVE_PHOTO_VIDEOS =
   "id NOT IN (SELECT live_photo_video_id FROM media WHERE live_photo_video_id IS NOT NULL)";
 
+// A RAW file that's paired with a JPEG/image sibling must never appear as
+// its own grid item - it's reachable only via the paired image's
+// rawPairId. Append with AND to any media-listing WHERE clause.
+export const EXCLUDE_PAIRED_RAW =
+  "id NOT IN (SELECT raw_pair_id FROM media WHERE raw_pair_id IS NOT NULL)";
+
 // The "All / Photos / Videos" grid filter - "photo" groups RAW in with
 // regular images (same grouping as ELIGIBLE_MEDIA_FILTER elsewhere) since
 // they're both non-video stills from the user's point of view. Append with
@@ -95,6 +101,7 @@ export interface MediaRow {
   codec: string | null;
   audio_codec: string | null;
   live_photo_video_id: number | null;
+  raw_pair_id: number | null;
 }
 
 export function toMediaDto(row: MediaRow): MediaDto {
@@ -130,6 +137,7 @@ export function toMediaDto(row: MediaRow): MediaDto {
     codec: row.codec,
     audioCodec: row.audio_codec,
     livePhotoVideoId: row.live_photo_video_id,
+    rawPairId: row.raw_pair_id,
     // Populated by EngagementRepo.attachFavorites() at the route level - see
     // db/engagement-repo.ts. Defaults false here since not every call site
     // needs it (or has fetched it yet).
