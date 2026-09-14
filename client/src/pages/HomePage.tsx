@@ -6,6 +6,7 @@ import FolderCard from "../components/FolderCard";
 import InlineSlideshow from "../components/InlineSlideshow";
 import { formatBytes } from "../utils/format";
 import { formatMemoryBlurb } from "../utils/blurb";
+import { displaySrc } from "../utils/mediaSrc";
 
 type MemoryTab = "random" | "onThisDay";
 
@@ -80,7 +81,11 @@ export default function HomePage() {
         <div className="relative min-h-[460px] overflow-hidden rounded-[8px] bg-hero-fallback shadow-hero ring-1 ring-border">
           {summary?.heroMedia && (
             <img
-              src={api.media.thumbnailUrl(summary.heroMedia.id, summary.heroMedia.thumbnailVersion)}
+              // Rendered at full hero-card size (easily 700+ device px tall on
+              // a high-DPI phone) - the small 500px grid thumbnail was
+              // visibly soft here. Same full-resolution source the Viewer/
+              // InlineSlideshow already use, not the thumbnail.
+              src={displaySrc(summary.heroMedia, false)}
               alt=""
               className="absolute inset-0 h-full w-full object-cover"
             />
@@ -91,7 +96,7 @@ export default function HomePage() {
           <div className="relative flex min-h-[460px] items-end p-6 text-white sm:p-8 lg:p-10">
             <div className="max-w-[760px] pb-2">
               <p className="text-[13px] font-medium text-white/70">Photo Archive</p>
-              <h1 className="mt-2 font-serif text-[clamp(3.875rem,5.4vw,5.25rem)] font-semibold leading-[0.95] tracking-[-0.03em]">
+              <h1 className="mt-2 font-serif text-4xl font-semibold leading-[0.95] tracking-[-0.03em] sm:text-5xl lg:text-[clamp(3.875rem,5.4vw,5.25rem)]">
                 MemoryLane
               </h1>
             </div>

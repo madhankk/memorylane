@@ -25,9 +25,9 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-page text-ink">
-      <header className="sticky top-0 z-20 border-b border-border bg-nav-glass px-5 backdrop-blur-xl lg:px-8">
-        <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between">
-          <Link className="font-serif text-2xl font-semibold tracking-[-0.03em] text-ink" to="/">
+      <header className="sticky top-0 z-20 border-b border-border bg-nav-glass px-3 backdrop-blur-xl sm:px-5 lg:px-8">
+        <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between gap-2">
+          <Link className="shrink-0 font-serif text-lg font-semibold tracking-[-0.03em] text-ink sm:text-2xl" to="/">
             MemoryLane
           </Link>
           <nav className="flex items-center gap-1 rounded-full border border-border bg-nav-pill p-1 text-[13px] font-medium text-nav-muted shadow-nav">
@@ -38,14 +38,19 @@ export default function Layout() {
                   key={item.to}
                   to={item.to}
                   end={item.end}
+                  title={item.label}
+                  // Icon-only below sm (a full "Browse / Favorites / Settings"
+                  // text row plus search/logout doesn't fit a phone-width
+                  // screen at all - it was forcing the whole page to scroll
+                  // horizontally) - text labels return once there's room.
                   className={({ isActive }) =>
-                    `inline-flex h-9 items-center gap-2 rounded-full px-3.5 transition ${
+                    `flex size-9 items-center justify-center gap-2 rounded-full transition sm:w-auto sm:justify-start sm:px-3.5 ${
                       isActive ? "bg-photo-shell text-white" : "hover:bg-hover-soft hover:text-ink"
                     }`
                   }
                 >
                   <Icon aria-hidden size={15} strokeWidth={1.8} />
-                  {item.label}
+                  <span className="hidden sm:inline">{item.label}</span>
                 </NavLink>
               );
             })}
@@ -79,7 +84,7 @@ export default function Layout() {
           </nav>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-[1440px] px-5 py-8 lg:px-8">
+      <main className="mx-auto w-full max-w-[1440px] px-3 py-6 sm:px-5 sm:py-8 lg:px-8">
         <Outlet />
       </main>
     </div>
