@@ -50,8 +50,17 @@ async function main(): Promise<void> {
   // http://127.0.0.1 is reachable there just as much as an explicit
   // 127.0.0.1/localhost bind - only skip auto-open for some other specific
   // non-loopback interface a user deliberately bound to.
+  //
+  // Also skip it under `npm run dev`: tsx watch restarts this whole process
+  // on every file save, and re-popping a browser tab on every restart during
+  // active development is disruptive rather than helpful - npm sets
+  // npm_lifecycle_event to the script name for the life of the process tsx
+  // watch keeps respawning, so this stays off across every restart in a dev
+  // session, not just the first one.
+  const isDevWatch = process.env.npm_lifecycle_event === "dev";
   if (
     !process.env.MEMORYLANE_NO_OPEN &&
+    !isDevWatch &&
     (bindAddress === "127.0.0.1" || bindAddress === "localhost" || bindAddress === "0.0.0.0")
   ) {
     const url = `http://127.0.0.1:${port}`;
