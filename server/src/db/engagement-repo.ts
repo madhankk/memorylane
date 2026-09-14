@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
-import type { FavoriteResultDto } from "@memorylane/shared";
+import type { FavoriteResultDto, MediaTypeFilter } from "@memorylane/shared";
+import { EXCLUDE_LIVE_PHOTO_VIDEOS, mediaTypeFilterClause } from "../api/mappers.js";
 
 // All engagement state lives in one small table (media_engagement) - see
 // migrations/006_media_engagement.sql. This is intentionally just aggregate
@@ -63,15 +64,25 @@ export class EngagementRepo {
     return items;
   }
 
-  listFavoriteIds(offset: number, limit: number): { ids: number[]; total: number } {
+  listFavoriteIds(offset: number, limit: number, type: MediaTypeFilter = "all"): { ids: number[]; total: number } {
+    // Bare column references (id, media_type, live_photo_video_id) resolve
+    // unambiguously to the joined `media` table - media_engagement has none
+    // of those columns itself.
+    const typeClause = mediaTypeFilterClause(type);
     const total = (
-      this.db.prepare("SELECT COUNT(*) as c FROM media_engagement WHERE favorite = 1").get() as { c: number }
+      this.db
+        .prepare(
+          `SELECT COUNT(*) as c FROM media_engagement me
+           JOIN media ON media.id = me.media_id
+           WHERE me.favorite = 1 AND media.status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${typeClause}`,
+        )
+        .get() as { c: number }
     ).c;
     const rows = this.db
       .prepare(
         `SELECT me.media_id FROM media_engagement me
          JOIN media ON media.id = me.media_id
-         WHERE me.favorite = 1 AND media.status = 'active'
+         WHERE me.favorite = 1 AND media.status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${typeClause}
          ORDER BY me.favorited_at DESC LIMIT ? OFFSET ?`,
       )
       .all(limit, offset) as { media_id: number }[];

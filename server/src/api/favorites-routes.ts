@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { paginationQuerySchema } from "@memorylane/shared";
+import { favoritesQuerySchema } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { toMediaDto, type MediaRow } from "./mappers.js";
 import { EngagementRepo } from "../db/engagement-repo.js";
@@ -9,11 +9,11 @@ export async function registerFavoritesRoutes(app: FastifyInstance, ctx: AppCont
   const engagement = new EngagementRepo(db);
 
   app.get("/api/favorites", { preHandler: app.requireAuth }, async (request, reply) => {
-    const parsed = paginationQuerySchema.safeParse(request.query);
+    const parsed = favoritesQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: "Invalid query" });
-    const { offset, limit } = parsed.data;
+    const { offset, limit, type } = parsed.data;
 
-    const { ids, total } = engagement.listFavoriteIds(offset, limit);
+    const { ids, total } = engagement.listFavoriteIds(offset, limit, type);
     if (ids.length === 0) return reply.send({ items: [], total, offset, limit });
 
     const placeholders = ids.map(() => "?").join(",");

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { EyeOff, MoreVertical } from "lucide-react";
-import type { FolderDto, FolderBreadcrumbDto, MediaDto } from "@memorylane/shared";
+import type { FolderDto, FolderBreadcrumbDto, MediaDto, MediaTypeFilter as MediaTypeFilterValue } from "@memorylane/shared";
 import { api } from "../api/client";
 import Breadcrumbs from "../components/Breadcrumbs";
 import FolderCard from "../components/FolderCard";
 import MediaGrid from "../components/MediaGrid";
+import MediaTypeFilter from "../components/MediaTypeFilter";
 import Viewer from "../components/Viewer";
 import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
 
@@ -25,6 +26,7 @@ export default function FolderPage() {
   // "All files" flattens every subfolder's media into one list, instead of
   // showing only this folder's direct children/media.
   const [showAllFiles, setShowAllFiles] = useState(false);
+  const [mediaType, setMediaType] = useState<MediaTypeFilterValue>("all");
   const [loadingMore, setLoadingMore] = useState(false);
   const [ignoring, setIgnoring] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -41,8 +43,8 @@ export default function FolderPage() {
   }, [menuOpen]);
 
   const loadMedia = useCallback(
-    async (recursive: boolean) => {
-      const res = await api.folders.media(folderId, 0, PAGE_SIZE, recursive);
+    async (recursive: boolean, type: MediaTypeFilterValue) => {
+      const res = await api.folders.media(folderId, 0, PAGE_SIZE, recursive, type);
       setMedia(res.items);
       setMediaTotal(res.total);
     },
@@ -57,19 +59,25 @@ export default function FolderPage() {
     setFolder(detail.folder);
     setBreadcrumbs(detail.breadcrumbs);
     setChildren(childrenRes.items);
-    await loadMedia(false);
+    await loadMedia(false, "all");
   }, [folderId, loadMedia]);
 
   // Reset to the normal (non-flattened) view and reload whenever navigating to a different folder.
   useEffect(() => {
     setShowAllFiles(false);
+    setMediaType("all");
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderId]);
 
   const toggleAllFiles = async (checked: boolean) => {
     setShowAllFiles(checked);
-    await loadMedia(checked);
+    await loadMedia(checked, mediaType);
+  };
+
+  const changeMediaType = async (type: MediaTypeFilterValue) => {
+    setMediaType(type);
+    await loadMedia(showAllFiles, type);
   };
 
   const loadMore = useCallback(async () => {
@@ -77,13 +85,13 @@ export default function FolderPage() {
     loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
-      const res = await api.folders.media(folderId, media.length, PAGE_SIZE, showAllFiles);
+      const res = await api.folders.media(folderId, media.length, PAGE_SIZE, showAllFiles, mediaType);
       setMedia((prev) => [...prev, ...res.items]);
     } finally {
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [folderId, media.length, showAllFiles]);
+  }, [folderId, media.length, showAllFiles, mediaType]);
 
   const hasMore = media.length < mediaTotal;
   const sentinelRef = useInfiniteScroll(loadMore, hasMore, loadingMore);
@@ -117,6 +125,7 @@ export default function FolderPage() {
         <div className="flex items-center justify-between gap-4">
           <h1 className="font-serif text-2xl font-semibold text-ink">{folder.name}</h1>
           <div className="flex items-center gap-4">
+            <MediaTypeFilter value={mediaType} onChange={(t) => void changeMediaType(t)} />
             <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap text-sm text-muted">
               <input
                 type="checkbox"
@@ -163,10 +172,16 @@ export default function FolderPage() {
       {media.length > 0 && <MediaGrid items={media} onOpen={setViewerIndex} />}
 
       {!showAllFiles && children.length === 0 && media.length === 0 && (
-        <p className="text-sm text-muted">This folder is empty.</p>
+        <p className="text-sm text-muted">
+          {mediaType === "all" ? "This folder is empty." : `No ${mediaType === "photo" ? "photos" : "videos"} in this folder.`}
+        </p>
       )}
       {showAllFiles && media.length === 0 && (
-        <p className="text-sm text-muted">No files in this folder or its subfolders.</p>
+        <p className="text-sm text-muted">
+          {mediaType === "all"
+            ? "No files in this folder or its subfolders."
+            : `No ${mediaType === "photo" ? "photos" : "videos"} in this folder or its subfolders.`}
+        </p>
       )}
 
       {hasMore && (

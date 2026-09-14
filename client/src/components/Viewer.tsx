@@ -94,11 +94,12 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
       else if (e.key === "ArrowRight") goNext();
       else if (e.key === "ArrowLeft") goPrev();
       else if (e.key === " ") {
-        // Don't hijack Space when a button/input already has focus - its
-        // native behavior (activating that control) should win, not a
-        // global play/pause toggle stealing the keystroke out from under it.
+        // Don't hijack Space when a button/input (or a focused video, whose
+        // own native space-to-pause should win) already owns it - a global
+        // slideshow toggle stealing the keystroke out from under it would
+        // fire both at once.
         const target = e.target as HTMLElement | null;
-        if (target && ["BUTTON", "INPUT", "TEXTAREA", "A"].includes(target.tagName)) return;
+        if (target && ["BUTTON", "INPUT", "TEXTAREA", "A", "VIDEO"].includes(target.tagName)) return;
         e.preventDefault();
         setPlaying((p) => !p);
       }
@@ -107,14 +108,19 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
     return () => window.removeEventListener("keydown", handleKey);
   }, [goNext, goPrev, onClose]);
 
+  // A video playing (standalone, or a Live Photo's tapped-into video) drives
+  // its own advance via onEnded below instead of the fixed interval - cutting
+  // it off after 5s regardless of length wouldn't feel like part of the same
+  // slideshow, it'd feel like the video was interrupted.
+  const isVideoActive = current?.mediaType === "video" || livePlaying;
   useEffect(() => {
-    if (playing) {
+    if (playing && !isVideoActive) {
       timerRef.current = setInterval(goNext, SLIDESHOW_INTERVAL_MS);
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [playing, goNext]);
+  }, [playing, isVideoActive, goNext]);
 
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
@@ -217,6 +223,12 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
             src={api.media.fileUrl(current.id)}
             controls
             autoPlay
+            // When the slideshow is running, a video's own length stands in
+            // for the fixed photo interval - it advances when playback
+            // actually finishes rather than being cut off mid-clip.
+            onEnded={() => {
+              if (playing) goNext();
+            }}
             className="max-h-[82vh] max-w-[92vw] object-contain"
           />
         ) : current.livePhotoVideoId != null && livePlaying ? (
@@ -225,7 +237,10 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
             src={api.media.fileUrl(current.livePhotoVideoId)}
             autoPlay
             controls
-            onEnded={() => setLivePlaying(false)}
+            onEnded={() => {
+              setLivePlaying(false);
+              if (playing) goNext();
+            }}
             className="max-h-[82vh] max-w-[92vw] object-contain"
           />
         ) : (

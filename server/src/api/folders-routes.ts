@@ -1,7 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import { paginationQuerySchema, folderMediaQuerySchema, type FolderBreadcrumbDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
-import { toFolderDto, toMediaDto, EXCLUDE_LIVE_PHOTO_VIDEOS, type FolderRow, type FolderCounts, type MediaRow } from "./mappers.js";
+import {
+  toFolderDto,
+  toMediaDto,
+  EXCLUDE_LIVE_PHOTO_VIDEOS,
+  mediaTypeFilterClause,
+  type FolderRow,
+  type FolderCounts,
+  type MediaRow,
+} from "./mappers.js";
 import { EngagementRepo } from "../db/engagement-repo.js";
 
 // Recursive CTE selecting a folder and every active descendant - reused by the
@@ -167,19 +175,20 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
     const id = Number((request.params as { id: string }).id);
     const parsed = folderMediaQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: "Invalid query" });
-    const { offset, limit, recursive } = parsed.data;
+    const { offset, limit, recursive, type } = parsed.data;
+    const typeClause = mediaTypeFilterClause(type);
 
     if (!recursive) {
       const total = (
         db.prepare(
-          `SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS}`,
+          `SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${typeClause}`,
         ).get(id) as {
           c: number;
         }
       ).c;
       const rows = db
         .prepare(
-          `SELECT * FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS}
+          `SELECT * FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${typeClause}
            ORDER BY captured_date IS NULL, captured_date, filename LIMIT ? OFFSET ?`,
         )
         .all(id, limit, offset) as MediaRow[];
@@ -193,7 +202,7 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
         .prepare(
           `${DESCENDANT_FOLDERS_CTE}
            SELECT COUNT(*) as c FROM media
-           WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS}`,
+           WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${typeClause}`,
         )
         .get(id) as { c: number }
     ).c;
@@ -201,7 +210,7 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
       .prepare(
         `${DESCENDANT_FOLDERS_CTE}
          SELECT media.* FROM media
-         WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS}
+         WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${typeClause}
          ORDER BY captured_date IS NULL, captured_date, filename LIMIT ? OFFSET ?`,
       )
       .all(id, limit, offset) as MediaRow[];

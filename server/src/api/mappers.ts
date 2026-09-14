@@ -1,10 +1,20 @@
-import type { FolderDto, MediaDto, MediaType, ThumbnailStatus, MediaStatus } from "@memorylane/shared";
+import type { FolderDto, MediaDto, MediaType, ThumbnailStatus, MediaStatus, MediaTypeFilter } from "@memorylane/shared";
 
 // A Live Photo's paired video row must never appear as its own grid item -
 // it's reachable only via the still photo's livePhotoVideoId. Append with
 // AND to any media-listing WHERE clause.
 export const EXCLUDE_LIVE_PHOTO_VIDEOS =
   "id NOT IN (SELECT live_photo_video_id FROM media WHERE live_photo_video_id IS NOT NULL)";
+
+// The "All / Photos / Videos" grid filter - "photo" groups RAW in with
+// regular images (same grouping as ELIGIBLE_MEDIA_FILTER elsewhere) since
+// they're both non-video stills from the user's point of view. Append with
+// AND to any media-listing WHERE clause.
+export function mediaTypeFilterClause(type: MediaTypeFilter): string {
+  if (type === "photo") return "media_type IN ('image', 'raw')";
+  if (type === "video") return "media_type = 'video'";
+  return "1=1";
+}
 
 export interface FolderRow {
   id: number;

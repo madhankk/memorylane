@@ -51,9 +51,19 @@ const booleanQueryParam = z
   .optional()
   .transform((v) => v === "true");
 
+// "photo" covers both regular images and RAW - matches the same grouping
+// used elsewhere (e.g. ELIGIBLE_MEDIA_FILTER on the server).
+export const mediaTypeFilterSchema = z.enum(["all", "photo", "video"]).optional().default("all");
+export type MediaTypeFilter = z.infer<typeof mediaTypeFilterSchema>;
+
 export const folderMediaQuerySchema = paginationQuerySchema.extend({
   // When true, includes media from all descendant subfolders, not just this one.
   recursive: booleanQueryParam,
+  type: mediaTypeFilterSchema,
+});
+
+export const favoritesQuerySchema = paginationQuerySchema.extend({
+  type: mediaTypeFilterSchema,
 });
 
 export const searchQuerySchema = z.object({
