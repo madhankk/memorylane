@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ChevronUp, ChevronDown, X } from "lucide-react";
-import type { ScanRootDto, SettingsDto, ScanStatusDto, StorageStatsDto, IgnoredPathDto } from "@memorylane/shared";
+import type { ScanRootDto, SettingsDto, ScanStatusDto, ScanRunDto, StorageStatsDto, IgnoredPathDto } from "@memorylane/shared";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../hooks/useAuth";
 import { useTheme, THEMES, type Theme } from "../hooks/useTheme";
@@ -139,6 +139,34 @@ function ChangePasswordForm() {
   );
 }
 
+// Live progress for one scan run, shown directly under the folder it's
+// currently working on (see activeScanRootId in SettingsPage) rather than as
+// one undifferentiated block elsewhere on the page.
+function ScanProgress({ run }: { run: ScanRunDto }) {
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-border pt-2.5 text-xs text-muted">
+      <p>
+        {run.filesScanned.toLocaleString()} files scanned, {run.filesNew.toLocaleString()} new,{" "}
+        {run.errorCount.toLocaleString()} errors so far.
+      </p>
+      {run.thumbnailsQueued > 0 && (
+        <div className="flex flex-col gap-1">
+          <p>
+            {run.thumbnailsProcessed < run.thumbnailsQueued ? "Generating thumbnails: " : "Thumbnails done: "}
+            {run.thumbnailsProcessed.toLocaleString()} of {run.thumbnailsQueued.toLocaleString()}
+          </p>
+          <div className="h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-border">
+            <div
+              className="h-full rounded-full bg-accent transition-[width] duration-500"
+              style={{ width: `${Math.min(100, (run.thumbnailsProcessed / run.thumbnailsQueued) * 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { user } = useAuth();
   const [scanRoots, setScanRoots] = useState<ScanRootDto[]>([]);
@@ -246,10 +274,14 @@ export default function SettingsPage() {
     }
   };
 
-  const scanningRootPath =
-    status?.running && status.currentRun?.scanRootId != null
-      ? scanRoots.find((r) => r.id === status.currentRun!.scanRootId)?.path
-      : null;
+  // The root whose progress should be shown right now - a single-folder
+  // "Scan Now" run's own fixed scope, or (for an all-folders run) whichever
+  // root the scanner is actively walking at this moment. Either way, this is
+  // the id the per-root list below matches against to show progress inline
+  // under that specific folder instead of as one undifferentiated block.
+  const activeScanRootId = status?.running
+    ? (status.currentRun?.scanRootId ?? status.currentRun?.currentScanRootId ?? null)
+    : null;
 
   const updateSchedule = async (patch: Partial<SettingsDto>) => {
     const updated = await api.settings.update(patch);
@@ -323,48 +355,57 @@ export default function SettingsPage() {
           {scanRoots.map((root, i) => (
             <li
               key={root.id}
-              className="flex items-center justify-between gap-4 rounded-lg border border-border bg-surface px-3.5 py-2.5"
+              className="flex flex-col gap-2.5 rounded-lg border border-border bg-surface px-3.5 py-2.5"
             >
-              <div className="flex shrink-0 flex-col">
-                <button
-                  onClick={() => moveRoot(root.id, "up")}
-                  disabled={i === 0}
-                  aria-label="Move up"
-                  title="Move up"
-                  className="grid h-5 w-5 place-items-center rounded text-muted hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
-                >
-                  <ChevronUp size={14} strokeWidth={2} />
-                </button>
-                <button
-                  onClick={() => moveRoot(root.id, "down")}
-                  disabled={i === scanRoots.length - 1}
-                  aria-label="Move down"
-                  title="Move down"
-                  className="grid h-5 w-5 place-items-center rounded text-muted hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
-                >
-                  <ChevronDown size={14} strokeWidth={2} />
-                </button>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex shrink-0 flex-col">
+                  <button
+                    onClick={() => moveRoot(root.id, "up")}
+                    disabled={i === 0}
+                    aria-label="Move up"
+                    title="Move up"
+                    className="grid h-5 w-5 place-items-center rounded text-muted hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <ChevronUp size={14} strokeWidth={2} />
+                  </button>
+                  <button
+                    onClick={() => moveRoot(root.id, "down")}
+                    disabled={i === scanRoots.length - 1}
+                    aria-label="Move down"
+                    title="Move down"
+                    className="grid h-5 w-5 place-items-center rounded text-muted hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <ChevronDown size={14} strokeWidth={2} />
+                  </button>
+                </div>
+                <div className="mr-auto flex min-w-0 flex-col gap-0.5">
+                  <span className={`truncate ${root.enabled ? "text-ink" : "text-muted"}`}>{root.path}</span>
+                  <span className="text-xs text-muted">{scanRootSummary(root)}</span>
+                </div>
+                <span className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={() => runScanNow(root.id)}
+                    disabled={!root.enabled || status?.running}
+                    title={!root.enabled ? "Enable this folder to scan it" : undefined}
+                    className={buttonClass}
+                  >
+                    {status?.running && status.currentRun?.scanRootId === root.id ? "Scanning..." : "Scan Now"}
+                  </button>
+                  <button onClick={() => toggleRoot(root)} className={buttonClass}>
+                    {root.enabled ? "Disable" : "Enable"}
+                  </button>
+                  <button onClick={() => removeRoot(root)} className={buttonClass}>
+                    Remove
+                  </button>
+                </span>
               </div>
-              <div className="mr-auto flex min-w-0 flex-col gap-0.5">
-                <span className={`truncate ${root.enabled ? "text-ink" : "text-muted"}`}>{root.path}</span>
-                <span className="text-xs text-muted">{scanRootSummary(root)}</span>
-              </div>
-              <span className="flex shrink-0 items-center gap-2">
-                <button
-                  onClick={() => runScanNow(root.id)}
-                  disabled={!root.enabled || status?.running}
-                  title={!root.enabled ? "Enable this folder to scan it" : undefined}
-                  className={buttonClass}
-                >
-                  {status?.running && status.currentRun?.scanRootId === root.id ? "Scanning..." : "Scan Now"}
-                </button>
-                <button onClick={() => toggleRoot(root)} className={buttonClass}>
-                  {root.enabled ? "Disable" : "Enable"}
-                </button>
-                <button onClick={() => removeRoot(root)} className={buttonClass}>
-                  Remove
-                </button>
-              </span>
+              {/* Live progress for whichever run currently has this folder active -
+                  a single-folder "Scan Now" run's own scope, or (during an
+                  all-folders run) whichever root the scanner has reached so far -
+                  shown right under the folder it's actually working on. */}
+              {status?.running && status.currentRun && activeScanRootId === root.id && (
+                <ScanProgress run={status.currentRun} />
+              )}
             </li>
           ))}
           {scanRoots.length === 0 && <li className="text-sm text-muted">No folders added yet.</li>}
@@ -430,37 +471,11 @@ export default function SettingsPage() {
 
         {status && (
           <div className="mt-4 flex flex-col gap-3 text-sm text-muted">
-            {status.currentRun && status.running && (
-              <div className="flex flex-col gap-2">
-                <p>
-                  Scanning{scanningRootPath ? ` "${scanningRootPath}"` : " all folders"}:{" "}
-                  {status.currentRun.filesScanned} files scanned, {status.currentRun.filesNew} new,{" "}
-                  {status.currentRun.errorCount} errors so far.
-                </p>
-                {status.currentRun.thumbnailsQueued > 0 && (
-                  <div className="flex flex-col gap-1.5">
-                    <p>
-                      {status.currentRun.thumbnailsProcessed < status.currentRun.thumbnailsQueued
-                        ? "Generating thumbnails: "
-                        : "Thumbnails done: "}
-                      {status.currentRun.thumbnailsProcessed.toLocaleString()} of{" "}
-                      {status.currentRun.thumbnailsQueued.toLocaleString()}
-                    </p>
-                    <div className="h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-border">
-                      <div
-                        className="h-full rounded-full bg-accent transition-[width] duration-500"
-                        style={{
-                          width: `${Math.min(
-                            100,
-                            (status.currentRun.thumbnailsProcessed / status.currentRun.thumbnailsQueued) * 100,
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Per-folder progress is shown inline under each folder above
+                (see activeScanRootId/ScanProgress) - this only covers the
+                brief window right at the start of a run before the scanner
+                has attributed itself to a specific folder yet. */}
+            {status.running && activeScanRootId === null && <p>Starting scan...</p>}
             {status.lastRun && !status.running && (
               <p>
                 Last scan: {new Date(status.lastRun.startedAt).toLocaleString()} - {status.lastRun.status} -{" "}

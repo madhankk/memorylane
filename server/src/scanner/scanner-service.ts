@@ -34,6 +34,7 @@ interface ScanRunRow {
   error_count: number;
   trigger_source: string;
   scan_root_id: number | null;
+  current_scan_root_id: number | null;
   thumbnails_queued: number;
   thumbnails_processed: number;
 }
@@ -51,6 +52,7 @@ function toScanRunDto(row: ScanRunRow): ScanRunDto {
     errorCount: row.error_count,
     trigger: row.trigger_source as ScanTrigger,
     scanRootId: row.scan_root_id,
+    currentScanRootId: row.current_scan_root_id,
     thumbnailsQueued: row.thumbnails_queued,
     thumbnailsProcessed: row.thumbnails_processed,
   };
@@ -64,6 +66,11 @@ interface Stats {
   errorCount: number;
   thumbnailsQueued: number;
   thumbnailsProcessed: number;
+  // Which root is actively being walked right now - distinct from the run's
+  // own scan_root_id (the run's fixed scope, null for an all-folders run).
+  // Lets the client attribute live progress to a specific folder even during
+  // a multi-folder run.
+  currentScanRootId: number | null;
 }
 
 const THUMBNAIL_QUEUE_CONCURRENCY = 4;
@@ -140,7 +147,7 @@ export class ScannerService {
 
     const stats: Stats = {
       filesScanned: 0, filesNew: 0, filesChanged: 0, filesRemoved: 0, errorCount: 0,
-      thumbnailsQueued: 0, thumbnailsProcessed: 0,
+      thumbnailsQueued: 0, thumbnailsProcessed: 0, currentScanRootId: null,
     };
     // Snapshot once per run rather than querying per-directory - the list is
     // small and only changes via explicit user action, never mid-scan.
@@ -184,12 +191,12 @@ export class ScannerService {
         .prepare(
           `UPDATE scan_runs SET
             files_scanned = ?, files_new = ?, files_changed = ?, files_removed = ?, error_count = ?,
-            thumbnails_queued = ?, thumbnails_processed = ?
+            thumbnails_queued = ?, thumbnails_processed = ?, current_scan_root_id = ?
            WHERE id = ?`,
         )
         .run(
           stats.filesScanned, stats.filesNew, stats.filesChanged, stats.filesRemoved, stats.errorCount,
-          stats.thumbnailsQueued, stats.thumbnailsProcessed, runId,
+          stats.thumbnailsQueued, stats.thumbnailsProcessed, stats.currentScanRootId, runId,
         );
     };
     const progressTimer = setInterval(persistProgress, 2000);
@@ -198,6 +205,8 @@ export class ScannerService {
 
     try {
       for (const root of roots) {
+        stats.currentScanRootId = root.id;
+        persistProgress();
         try {
           await this.scanRoot(root, stats, ignoredPaths, enqueueProcessing, flushIfNeeded);
         } catch (err) {

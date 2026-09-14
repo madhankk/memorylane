@@ -189,8 +189,14 @@ export interface ScanRunDto {
   filesRemoved: number;
   errorCount: number;
   trigger: ScanTrigger;
-  // null = every enabled scan root; set = a single-folder "Scan Now".
+  // null = every enabled scan root; set = a single-folder "Scan Now". Fixed
+  // for the life of the run - this is its scope, not its live position.
   scanRootId: number | null;
+  // Which root is actively being walked right now - updates as an
+  // all-folders run moves root to root, so progress can be shown under the
+  // specific folder it's working on rather than as one undifferentiated
+  // blob. Null once the run finishes.
+  currentScanRootId: number | null;
   // Thumbnail generation is a separate, often much slower phase that follows
   // indexing - these update live while a scan runs, same as the files_*
   // counts, so a large backlog is visible instead of looking stalled.
