@@ -90,11 +90,24 @@ export const updateFavoriteRequestSchema = z.object({
 export const videoTranscodeQualitySchema = z.enum(["standard", "high"]);
 export type VideoTranscodeQuality = z.infer<typeof videoTranscodeQualitySchema>;
 
-export const startTranscodeRequestSchema = z.object({
-  mediaIds: z.array(z.number().int().positive()).min(1).max(500),
-  quality: videoTranscodeQualitySchema,
-});
+// `all` targets every eligible item in the scan root server-side (everything
+// still needing a transcode / already verified, respectively) - not just
+// whatever page of the candidate list happens to be loaded client-side, so
+// "Transcode All" and "Archive All Verified" work the same whether there are
+// 5 candidates or 5,000. `mediaIds` is for the per-row single-item actions.
+export const startTranscodeRequestSchema = z
+  .object({
+    mediaIds: z.array(z.number().int().positive()).min(1).max(500).optional(),
+    all: z.boolean().optional(),
+    quality: videoTranscodeQualitySchema,
+  })
+  .refine((v) => v.all || (v.mediaIds && v.mediaIds.length > 0), { message: "mediaIds or all is required" });
 
-export const archiveTranscodedRequestSchema = z.object({
-  mediaIds: z.array(z.number().int().positive()).min(1).max(500),
-});
+export const archiveTranscodedRequestSchema = z
+  .object({
+    mediaIds: z.array(z.number().int().positive()).min(1).max(500).optional(),
+    all: z.boolean().optional(),
+  })
+  .refine((v) => v.all || (v.mediaIds && v.mediaIds.length > 0), { message: "mediaIds or all is required" });
+
+export const transcodeCandidatesQuerySchema = paginationQuerySchema;

@@ -25,7 +25,7 @@ import type {
   VersionDto,
   MediaTypeFilter,
   VideoTranscodeQuality,
-  TranscodeCandidateDto,
+  TranscodeCandidatesResultDto,
   TranscodeJobDto,
   ArchiveTranscodedResultDto,
 } from "@memorylane/shared";
@@ -136,19 +136,24 @@ export const api = {
       request<PaginatedResult<MediaDto>>(`/api/favorites?offset=${offset}&limit=${limit}&type=${type}`),
   },
   transcode: {
-    candidates: (scanRootId: number) =>
-      request<TranscodeCandidateDto[]>(`/api/scan-roots/${scanRootId}/transcode-candidates`),
-    start: (scanRootId: number, mediaIds: number[], quality: VideoTranscodeQuality) =>
-      request<{ ok: true }>(`/api/scan-roots/${scanRootId}/transcode/start`, {
+    candidates: (scanRootId: number, offset = 0, limit = 50) =>
+      request<TranscodeCandidatesResultDto>(
+        `/api/scan-roots/${scanRootId}/transcode-candidates?offset=${offset}&limit=${limit}`,
+      ),
+    // Pass either `mediaIds` (a specific row) or `all: true` (every eligible
+    // item in the root, resolved server-side - see the route) - never both.
+    start: (scanRootId: number, target: { mediaIds: number[]; quality: VideoTranscodeQuality } | { all: true; quality: VideoTranscodeQuality }) =>
+      request<{ ok: true; count: number }>(`/api/scan-roots/${scanRootId}/transcode/start`, {
         method: "POST",
-        body: JSON.stringify({ mediaIds, quality }),
+        body: JSON.stringify(target),
       }),
     status: (scanRootId: number) => request<TranscodeJobDto[]>(`/api/scan-roots/${scanRootId}/transcode/status`),
-    archive: (scanRootId: number, mediaIds: number[]) =>
+    archive: (scanRootId: number, target: { mediaIds: number[] } | { all: true }) =>
       request<ArchiveTranscodedResultDto>(`/api/scan-roots/${scanRootId}/transcode/archive`, {
         method: "POST",
-        body: JSON.stringify({ mediaIds }),
+        body: JSON.stringify(target),
       }),
     previewUrl: (mediaId: number) => `/api/media/${mediaId}/transcode-preview`,
+    previewThumbnailUrl: (mediaId: number) => `/api/media/${mediaId}/transcode-preview-thumbnail`,
   },
 };

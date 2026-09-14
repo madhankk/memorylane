@@ -78,3 +78,10 @@ export function previewPathForMediaId(previewsDir: string, mediaId: number): str
 export function transcodingPathForMediaId(transcodingDir: string, mediaId: number): string {
   return path.join(transcodingDir, `${mediaId}.mp4`);
 }
+
+// Poster-frame preview for a transcode's local-cache output - lets the
+// candidates panel show a static thumbnail per row instead of eagerly
+// mounting a real <video> element for every row at once.
+export function transcodingThumbnailPathForMediaId(transcodingDir: string, mediaId: number): string {
+  return path.join(transcodingDir, `${mediaId}.jpg`);
+}

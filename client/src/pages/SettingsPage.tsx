@@ -179,7 +179,7 @@ export default function SettingsPage() {
   const [storageLoading, setStorageLoading] = useState(false);
   const [ignoredPaths, setIgnoredPaths] = useState<IgnoredPathDto[]>([]);
   const [version, setVersion] = useState<string | null>(null);
-  const [expandedTranscodeRootId, setExpandedTranscodeRootId] = useState<number | null>(null);
+  const [openTranscodeRootId, setOpenTranscodeRootId] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { theme, setTheme } = useTheme();
 
@@ -419,21 +419,12 @@ export default function SettingsPage() {
               {root.stats.transcodeCandidateCount > 0 && (
                 <div className="border-t border-border pt-2.5">
                   <button
-                    onClick={() => setExpandedTranscodeRootId((id) => (id === root.id ? null : root.id))}
+                    onClick={() => setOpenTranscodeRootId(root.id)}
                     className="text-xs font-medium text-accent hover:underline"
                   >
                     {root.stats.transcodeCandidateCount.toLocaleString()} video
-                    {root.stats.transcodeCandidateCount === 1 ? "" : "s"} could be modernized{" "}
-                    {expandedTranscodeRootId === root.id ? "▲" : "→"}
+                    {root.stats.transcodeCandidateCount === 1 ? "" : "s"} could be modernized →
                   </button>
-                  {expandedTranscodeRootId === root.id && (
-                    <div className="mt-2.5">
-                      <TranscodeCandidatesPanel
-                        scanRootId={root.id}
-                        onCountChange={(count) => updateTranscodeCount(root.id, count)}
-                      />
-                    </div>
-                  )}
                 </div>
               )}
             </li>
@@ -441,6 +432,14 @@ export default function SettingsPage() {
           {scanRoots.length === 0 && <li className="text-sm text-muted">No folders added yet.</li>}
         </ul>
       </section>
+
+      {openTranscodeRootId != null && (
+        <TranscodeCandidatesPanel
+          scanRootId={openTranscodeRootId}
+          onClose={() => setOpenTranscodeRootId(null)}
+          onCountChange={(count) => updateTranscodeCount(openTranscodeRootId, count)}
+        />
+      )}
 
       <section>
         <h2 className="mb-3 font-serif text-lg font-semibold text-ink">Ignored Folders</h2>

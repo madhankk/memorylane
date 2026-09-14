@@ -4,8 +4,9 @@ import type Database from "better-sqlite3";
 import type { Logger } from "pino";
 import pLimit from "p-limit";
 import type { VideoTranscodeQuality, ArchiveTranscodedResultDto } from "@memorylane/shared";
-import { transcodingPathForMediaId, type AppPaths } from "../config/paths.js";
-import { transcodeVideo, probeVideo, isFfmpegAvailable } from "./video-client.js";
+import { transcodingPathForMediaId, transcodingThumbnailPathForMediaId, type AppPaths } from "../config/paths.js";
+import { transcodeVideo, probeVideo, extractPosterFrame, isFfmpegAvailable } from "./video-client.js";
+import { generateThumbnailFromBuffer } from "./thumbnail-generator.js";
 import type { TranscodeJobRow } from "../api/mappers.js";
 import type { ScannerService } from "../scanner/scanner-service.js";
 
@@ -135,11 +136,13 @@ export class TranscodeWorker {
 
     this.markStatus(mediaId, "transcoding");
     const cachePath = transcodingPathForMediaId(this.paths.transcodingDir, mediaId);
+    const thumbPath = transcodingThumbnailPathForMediaId(this.paths.transcodingDir, mediaId);
 
     try {
       // Clean up any scrap left behind by a previous crashed attempt at this
       // same job before writing fresh output over it.
       await fs.rm(cachePath, { force: true });
+      await fs.rm(thumbPath, { force: true });
 
       if (!isFfmpegAvailable()) throw new Error("ffmpeg is not available");
       const ok = await transcodeVideo(media.absolute_path, cachePath, quality);
@@ -157,6 +160,18 @@ export class TranscodeWorker {
         media.duration_seconds != null &&
         Math.abs(probe.durationSeconds - media.duration_seconds) <= tolerance;
       const verified = outStat.size > 0 && probe?.codec != null && durationOk;
+
+      // Best-effort - a missing preview thumbnail just means the row shows a
+      // generic placeholder instead of a poster frame, never worth failing
+      // an otherwise-good transcode over.
+      if (verified) {
+        try {
+          const frame = await extractPosterFrame(cachePath);
+          if (frame) await generateThumbnailFromBuffer(frame, thumbPath, null);
+        } catch (err) {
+          this.logger.warn({ err, mediaId }, "Could not generate a preview thumbnail for the transcoded video");
+        }
+      }
 
       this.db
         .prepare(
@@ -177,10 +192,14 @@ export class TranscodeWorker {
           nowIso(),
           mediaId,
         );
-      if (!verified) await fs.rm(cachePath, { force: true });
+      if (!verified) {
+        await fs.rm(cachePath, { force: true });
+        await fs.rm(thumbPath, { force: true }).catch(() => {});
+      }
     } catch (err) {
       this.logger.error({ err, mediaId }, "Video transcode failed");
       await fs.rm(cachePath, { force: true }).catch(() => {});
+      await fs.rm(thumbPath, { force: true }).catch(() => {});
       this.markStatus(mediaId, "failed", err instanceof Error ? err.message : "Transcode failed");
     }
   }
@@ -260,6 +279,7 @@ export class TranscodeWorker {
           )
           .run(nowIso(), nowIso(), mediaId);
         await fs.rm(cachePath, { force: true }).catch(() => {});
+        await fs.rm(transcodingThumbnailPathForMediaId(this.paths.transcodingDir, mediaId), { force: true }).catch(() => {});
 
         archived.push(mediaId);
         touchedRootIds.add(media.scan_root_id);

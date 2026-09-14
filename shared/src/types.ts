@@ -299,13 +299,26 @@ export interface TranscodeCandidateDto {
   job: TranscodeJobDto | null;
 }
 
+export interface TranscodeCandidatesResultDto {
+  items: TranscodeCandidateDto[];
+  total: number;
+  offset: number;
+  limit: number;
+  // Count of done+verified candidates across the WHOLE root, not just this
+  // page - "Archive All Verified" targets this full set server-side, so its
+  // displayed count needs to match regardless of how much is loaded.
+  verifiedTotal: number;
+}
+
 export interface StartTranscodeRequest {
-  mediaIds: number[];
+  mediaIds?: number[];
+  all?: boolean;
   quality: VideoTranscodeQuality;
 }
 
 export interface ArchiveTranscodedRequest {
-  mediaIds: number[];
+  mediaIds?: number[];
+  all?: boolean;
 }
 
 export interface ArchiveTranscodedResultDto {
