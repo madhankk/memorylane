@@ -73,6 +73,14 @@ const config: ForgeConfig = {
         // it completely independently on execution. It's also literally a
         // renamed copy of the official Node.js binary, which unsigned reads
         // as exactly the kind of thing AV reputation heuristics flag.
+        // TODO: ffmpeg.exe and ffprobe.exe (added under runtime/node_modules/
+        // by ffmpeg-static/ffprobe-static - see server/src/media/video-client.ts)
+        // are spawned as their own independent processes exactly like
+        // node-runtime.exe below, and need the same signing treatment:
+        //   path.join(outputPath, "resources", "runtime", "node_modules", "ffmpeg-static", "ffmpeg.exe")
+        //   path.join(outputPath, "resources", "runtime", "node_modules", "ffprobe-static", "bin", "win32", "x64", "ffprobe.exe")
+        // TODO: exiftool.exe (and the perl.exe it spawns under
+        // exiftool_files/) has this same pre-existing gap - never added here.
         const signTargets = [
           path.join(outputPath, "memorylane-desktop.exe"),
           path.join(outputPath, "resources", "runtime", "node-runtime.exe"),
@@ -92,11 +100,15 @@ const config: ForgeConfig = {
       // TODO before a real macOS release: the automatic osxSign pass above
       // signs the .app bundle's own code, but runtime/ (added via
       // extraResource) sits under Resources/ as opaque extra files, not code
-      // osxSign recursively signs - node-runtime.exe and the native .node/
+      // osxSign recursively signs - node-runtime and the native .node/
       // dylib files inside runtime/node_modules (better-sqlite3, sharp) need
       // their own explicit `codesign` pass here before notarization will
-      // pass. Deferred until the Windows build is solid and a Mac is
-      // actually available to test against - see the desktop-packaging
+      // pass. Same requirement now also applies to the ffmpeg/ffprobe
+      // binaries (runtime/node_modules/ffmpeg-static, .../ffprobe-static/bin/darwin)
+      // and to the exiftool-vendored.exe binary - all three are unsigned
+      // executable code Apple's notarization will reject. Deferred until the
+      // Windows build is solid and a Mac is actually available to test
+      // against - see the desktop-packaging
       // investigation for the full signing requirements.
       for (const outputPath of options.outputPaths) {
         const appPath = outputPath.endsWith(".app") ? outputPath : path.join(outputPath, `${packageJson.productName}.app`);
