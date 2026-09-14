@@ -5,6 +5,7 @@ import { api, ApiError } from "../api/client";
 import { useAuth } from "../hooks/useAuth";
 import { useTheme, THEMES, type Theme } from "../hooks/useTheme";
 import { formatBytes } from "../utils/format";
+import TranscodeCandidatesPanel from "../components/TranscodeCandidatesPanel";
 
 function scanRootSummary(root: ScanRootDto): string {
   const { stats } = root;
@@ -178,6 +179,7 @@ export default function SettingsPage() {
   const [storageLoading, setStorageLoading] = useState(false);
   const [ignoredPaths, setIgnoredPaths] = useState<IgnoredPathDto[]>([]);
   const [version, setVersion] = useState<string | null>(null);
+  const [expandedTranscodeRootId, setExpandedTranscodeRootId] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { theme, setTheme } = useTheme();
 
@@ -261,6 +263,14 @@ export default function SettingsPage() {
 
   const moveRoot = async (id: number, direction: "up" | "down") => {
     setScanRoots(await api.scanRoots.move(id, direction));
+  };
+
+  // Keeps the "N videos could be modernized" count in sync with the panel's
+  // own list (e.g. right after an Archive) without waiting on a full reload.
+  const updateTranscodeCount = (rootId: number, count: number) => {
+    setScanRoots((prev) =>
+      prev.map((r) => (r.id === rootId ? { ...r, stats: { ...r.stats, transcodeCandidateCount: count } } : r)),
+    );
   };
 
   const runScanNow = async (scanRootId?: number) => {
@@ -405,6 +415,26 @@ export default function SettingsPage() {
                   shown right under the folder it's actually working on. */}
               {status?.running && status.currentRun && activeScanRootId === root.id && (
                 <ScanProgress run={status.currentRun} />
+              )}
+              {root.stats.transcodeCandidateCount > 0 && (
+                <div className="border-t border-border pt-2.5">
+                  <button
+                    onClick={() => setExpandedTranscodeRootId((id) => (id === root.id ? null : root.id))}
+                    className="text-xs font-medium text-accent hover:underline"
+                  >
+                    {root.stats.transcodeCandidateCount.toLocaleString()} video
+                    {root.stats.transcodeCandidateCount === 1 ? "" : "s"} could be modernized{" "}
+                    {expandedTranscodeRootId === root.id ? "▲" : "→"}
+                  </button>
+                  {expandedTranscodeRootId === root.id && (
+                    <div className="mt-2.5">
+                      <TranscodeCandidatesPanel
+                        scanRootId={root.id}
+                        onCountChange={(count) => updateTranscodeCount(root.id, count)}
+                      />
+                    </div>
+                  )}
+                </div>
               )}
             </li>
           ))}

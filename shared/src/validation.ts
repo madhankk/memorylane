@@ -83,3 +83,18 @@ export const runScanRequestSchema = z.object({
 export const updateFavoriteRequestSchema = z.object({
   favorite: z.boolean(),
 });
+
+// "standard" targets a small file (default - see the Settings video
+// modernization panel); "high" trades size for extra quality margin on a
+// specific clip worth it. Both preserve source resolution/frame rate.
+export const videoTranscodeQualitySchema = z.enum(["standard", "high"]);
+export type VideoTranscodeQuality = z.infer<typeof videoTranscodeQualitySchema>;
+
+export const startTranscodeRequestSchema = z.object({
+  mediaIds: z.array(z.number().int().positive()).min(1).max(500),
+  quality: videoTranscodeQualitySchema,
+});
+
+export const archiveTranscodedRequestSchema = z.object({
+  mediaIds: z.array(z.number().int().positive()).min(1).max(500),
+});

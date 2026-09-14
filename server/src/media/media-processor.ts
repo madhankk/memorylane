@@ -40,7 +40,7 @@ function extractMetadataFields(tags: Tags | null) {
       capturedDate: null, width: null, height: null, orientation: null,
       cameraMake: null, cameraModel: null, lensModel: null, focalLength: null,
       aperture: null, shutterSpeed: null, iso: null, rating: null,
-      gpsLat: null, gpsLon: null, durationSeconds: null, codec: null,
+      gpsLat: null, gpsLon: null, durationSeconds: null, codec: null, audioCodec: null,
       contentIdentifier: null,
     };
   }
@@ -63,6 +63,7 @@ function extractMetadataFields(tags: Tags | null) {
     // reliable for these than ExifTool) in the video branch below.
     durationSeconds: null as number | null,
     codec: null as string | null,
+    audioCodec: null as string | null,
     // Apple Live Photos: the still half and its paired ~3s video share this
     // identifier - used only to find each other during indexing (see
     // linkLivePhotoPair), never exposed to the client.
@@ -172,6 +173,7 @@ export async function processMediaItem(
             height: probe.height ?? metadata.height,
             durationSeconds: probe.durationSeconds,
             codec: probe.codec,
+            audioCodec: probe.audioCodec,
           };
         }
         const frame = await extractPosterFrame(row.absolute_path);
@@ -197,7 +199,7 @@ export async function processMediaItem(
         captured_date = ?, width = ?, height = ?, orientation = ?,
         camera_make = ?, camera_model = ?, lens_model = ?, focal_length = ?,
         aperture = ?, shutter_speed = ?, iso = ?, rating = ?, gps_lat = ?, gps_lon = ?,
-        duration_seconds = ?, codec = ?, content_identifier = ?,
+        duration_seconds = ?, codec = ?, audio_codec = ?, content_identifier = ?,
         thumbnail_status = ?,
         thumbnail_version = thumbnail_version + 1
       WHERE id = ?`,
@@ -205,7 +207,7 @@ export async function processMediaItem(
       metadata.capturedDate, metadata.width, metadata.height, metadata.orientation,
       metadata.cameraMake, metadata.cameraModel, metadata.lensModel, metadata.focalLength,
       metadata.aperture, metadata.shutterSpeed, metadata.iso, metadata.rating, metadata.gpsLat, metadata.gpsLon,
-      metadata.durationSeconds, metadata.codec, metadata.contentIdentifier,
+      metadata.durationSeconds, metadata.codec, metadata.audioCodec, metadata.contentIdentifier,
       thumbnailStatus, row.id,
     );
     linkLivePhotoPair(db, row.id, row.parent_folder_id, row.media_type, metadata.contentIdentifier);

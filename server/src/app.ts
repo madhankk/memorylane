@@ -14,6 +14,7 @@ import { registerMemoriesRoutes } from "./api/memories-routes.js";
 import { registerHomeRoutes } from "./api/home-routes.js";
 import { registerFavoritesRoutes } from "./api/favorites-routes.js";
 import { registerIgnoredPathsRoutes } from "./api/ignored-paths-routes.js";
+import { registerVideoTranscodeRoutes } from "./api/video-transcode-routes.js";
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const isProd = process.env.NODE_ENV === "production";
@@ -46,6 +47,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   await registerHomeRoutes(app, ctx);
   await registerFavoritesRoutes(app, ctx);
   await registerIgnoredPathsRoutes(app, ctx);
+  await registerVideoTranscodeRoutes(app, ctx);
 
   // Serve the built client as static assets, with an SPA fallback to index.html
   // for any non-API route (client-side React Router handles the rest).

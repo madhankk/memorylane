@@ -1,6 +1,8 @@
 // Shared enums and DTOs used by both server and client.
 // Keep this file free of any server-only or browser-only dependencies.
 
+import type { VideoTranscodeQuality } from "./validation.js";
+
 export type MediaType = "image" | "raw" | "video";
 
 export type ThumbnailStatus = "pending" | "done" | "failed" | "unsupported";
@@ -41,6 +43,9 @@ export interface ScanRootStatsDto {
   totalSizeBytes: number;
   pendingThumbnails: number;
   failedThumbnails: number;
+  // Videos in this root whose codec won't play in a browser natively - see
+  // the "videos could be modernized" panel in Settings.
+  transcodeCandidateCount: number;
 }
 
 export interface ScanRootDto {
@@ -156,6 +161,7 @@ export interface MediaDto {
 
   durationSeconds: number | null;
   codec: string | null;
+  audioCodec: string | null;
 
   // Set on a still photo when it's the "live" half of an Apple Live Photo -
   // the id of its paired video (fetchable at /api/media/:id/file for
@@ -267,4 +273,42 @@ export interface SearchResultDto {
 
 export interface RandomMediaRequest {
   count?: number;
+}
+
+export type TranscodeJobStatus = "pending" | "transcoding" | "done" | "failed" | "archived";
+
+export interface TranscodeJobDto {
+  mediaId: number;
+  status: TranscodeJobStatus;
+  quality: VideoTranscodeQuality;
+  error: string | null;
+  originalDurationSeconds: number | null;
+  outputDurationSeconds: number | null;
+  originalSizeBytes: number | null;
+  outputSizeBytes: number | null;
+  verified: boolean;
+  updatedAt: string;
+  archivedAt: string | null;
+}
+
+// A video in a scan root whose codec won't play natively in a browser -
+// see the "videos could be modernized" panel in Settings. `job` is null
+// until a transcode attempt has been started for it at least once.
+export interface TranscodeCandidateDto {
+  media: MediaDto;
+  job: TranscodeJobDto | null;
+}
+
+export interface StartTranscodeRequest {
+  mediaIds: number[];
+  quality: VideoTranscodeQuality;
+}
+
+export interface ArchiveTranscodedRequest {
+  mediaIds: number[];
+}
+
+export interface ArchiveTranscodedResultDto {
+  archived: number[];
+  failed: { mediaId: number; error: string }[];
 }

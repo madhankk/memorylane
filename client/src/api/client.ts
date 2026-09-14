@@ -24,6 +24,10 @@ import type {
   IgnoreFolderResultDto,
   VersionDto,
   MediaTypeFilter,
+  VideoTranscodeQuality,
+  TranscodeCandidateDto,
+  TranscodeJobDto,
+  ArchiveTranscodedResultDto,
 } from "@memorylane/shared";
 
 class ApiError extends Error {
@@ -130,5 +134,21 @@ export const api = {
   favorites: {
     list: (offset = 0, limit = 200, type: MediaTypeFilter = "all") =>
       request<PaginatedResult<MediaDto>>(`/api/favorites?offset=${offset}&limit=${limit}&type=${type}`),
+  },
+  transcode: {
+    candidates: (scanRootId: number) =>
+      request<TranscodeCandidateDto[]>(`/api/scan-roots/${scanRootId}/transcode-candidates`),
+    start: (scanRootId: number, mediaIds: number[], quality: VideoTranscodeQuality) =>
+      request<{ ok: true }>(`/api/scan-roots/${scanRootId}/transcode/start`, {
+        method: "POST",
+        body: JSON.stringify({ mediaIds, quality }),
+      }),
+    status: (scanRootId: number) => request<TranscodeJobDto[]>(`/api/scan-roots/${scanRootId}/transcode/status`),
+    archive: (scanRootId: number, mediaIds: number[]) =>
+      request<ArchiveTranscodedResultDto>(`/api/scan-roots/${scanRootId}/transcode/archive`, {
+        method: "POST",
+        body: JSON.stringify({ mediaIds }),
+      }),
+    previewUrl: (mediaId: number) => `/api/media/${mediaId}/transcode-preview`,
   },
 };

@@ -1,4 +1,14 @@
-import type { FolderDto, MediaDto, MediaType, ThumbnailStatus, MediaStatus, MediaTypeFilter } from "@memorylane/shared";
+import type {
+  FolderDto,
+  MediaDto,
+  MediaType,
+  ThumbnailStatus,
+  MediaStatus,
+  MediaTypeFilter,
+  TranscodeJobDto,
+  TranscodeJobStatus,
+  VideoTranscodeQuality,
+} from "@memorylane/shared";
 
 // A Live Photo's paired video row must never appear as its own grid item -
 // it's reachable only via the still photo's livePhotoVideoId. Append with
@@ -83,6 +93,7 @@ export interface MediaRow {
   gps_lon: number | null;
   duration_seconds: number | null;
   codec: string | null;
+  audio_codec: string | null;
   live_photo_video_id: number | null;
 }
 
@@ -117,10 +128,43 @@ export function toMediaDto(row: MediaRow): MediaDto {
     gpsLon: row.gps_lon,
     durationSeconds: row.duration_seconds,
     codec: row.codec,
+    audioCodec: row.audio_codec,
     livePhotoVideoId: row.live_photo_video_id,
     // Populated by EngagementRepo.attachFavorites() at the route level - see
     // db/engagement-repo.ts. Defaults false here since not every call site
     // needs it (or has fetched it yet).
     favorite: false,
+  };
+}
+
+export interface TranscodeJobRow {
+  id: number;
+  media_id: number;
+  status: string;
+  quality: string;
+  error: string | null;
+  original_duration_seconds: number | null;
+  output_duration_seconds: number | null;
+  original_size_bytes: number | null;
+  output_size_bytes: number | null;
+  verified: number;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+export function toTranscodeJobDto(row: TranscodeJobRow): TranscodeJobDto {
+  return {
+    mediaId: row.media_id,
+    status: row.status as TranscodeJobStatus,
+    quality: row.quality as VideoTranscodeQuality,
+    error: row.error,
+    originalDurationSeconds: row.original_duration_seconds,
+    outputDurationSeconds: row.output_duration_seconds,
+    originalSizeBytes: row.original_size_bytes,
+    outputSizeBytes: row.output_size_bytes,
+    verified: row.verified === 1,
+    updatedAt: row.updated_at,
+    archivedAt: row.archived_at,
   };
 }

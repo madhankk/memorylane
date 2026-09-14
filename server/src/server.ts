@@ -7,6 +7,7 @@ import { ScannerService } from "./scanner/scanner-service.js";
 import { SqliteRandomSelectionService } from "./media/random-selection-service.js";
 import { checkExifToolAvailable, shutdownExifTool } from "./media/exiftool-client.js";
 import { checkFfmpegAvailable } from "./media/video-client.js";
+import { TranscodeWorker } from "./media/transcode-worker.js";
 import { buildApp } from "./app.js";
 import type { AppContext } from "./context.js";
 
@@ -34,9 +35,16 @@ async function main(): Promise<void> {
 
   const scanner = new ScannerService(db, paths, bootstrapLogger);
   const randomSelection = new SqliteRandomSelectionService(db);
+  const transcodeWorker = new TranscodeWorker(db, paths, bootstrapLogger, scanner);
 
-  const ctx: AppContext = { db, paths, sessions, scanner, randomSelection };
+  const ctx: AppContext = { db, paths, sessions, scanner, randomSelection, transcodeWorker };
   const app = await buildApp(ctx);
+
+  // Reconcile any video transcode job left mid-flight by a previous process
+  // exit (crash, restart) and resume anything that was merely queued - see
+  // TranscodeWorker.reconcileAndResume for why those two cases are handled
+  // differently.
+  transcodeWorker.reconcileAndResume();
 
   scanner.scheduleFromSettings(settings.scanIntervalDays, settings.scanScheduleEnabled);
 

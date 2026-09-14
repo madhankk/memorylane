@@ -10,6 +10,7 @@ import {
   type ScanRootStatsDto,
 } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
+import { NEEDS_TRANSCODE_SQL_CLAUSE } from "../media/video-compatibility.js";
 
 interface ScanRootRow {
   id: number;
@@ -44,6 +45,15 @@ function getScanRootStats(db: Database.Database, scanRootId: number): ScanRootSt
     }
   ).c;
 
+  const transcodeCandidateCount = (
+    db
+      .prepare(
+        `SELECT COUNT(*) as c FROM media
+         WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active' AND ${NEEDS_TRANSCODE_SQL_CLAUSE}`,
+      )
+      .get(scanRootId) as { c: number }
+  ).c;
+
   const stats: ScanRootStatsDto = {
     mediaCount: 0,
     photoCount: 0,
@@ -53,6 +63,7 @@ function getScanRootStats(db: Database.Database, scanRootId: number): ScanRootSt
     totalSizeBytes: 0,
     pendingThumbnails: 0,
     failedThumbnails: 0,
+    transcodeCandidateCount,
   };
 
   for (const row of byType) {
