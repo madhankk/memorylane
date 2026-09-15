@@ -1,7 +1,7 @@
 # MemoryLane — Local & Test Deployment Playbook
 
 **For:** anyone standing up MemoryLane on their own Mac or Windows machine to develop against or test — including the optional AI sidecar.
-**Covers:** the `feature/media-intelligence-phase4-persons` branch (Phases 1–4: EXIF reports, stacks, AI similarity/search, People). Everything here also applies to `main` once the phase PRs (#1 → #2 → #3) merge.
+**Covers:** the `feature/media-intelligence-phase4-persons` branch (Phases 1–4: EXIF reports, stacks, AI similarity/search, People). Everything here also applies to `main` once the phase PRs (#1 → #2 → #3 → #4) merge.
 **Last verified:** 2026-09-15 on macOS 26 / Apple Silicon (Node 20.19, Python 3.13). Windows steps use the same code paths and prebuilt binaries verified in the design doc §16; run through them once on a Windows box and tick the checklist at the end.
 
 ---
@@ -15,7 +15,7 @@
 | **Developing the UI** | `npm run dev` + `npm run dev:client` (Vite on `:5173`) + sidecar | Hot reload; Vite proxies `/api` to `:4280`. Open `http://127.0.0.1:5173`. |
 | **Testing the Windows/macOS installer** | Desktop tray app (`desktop/`), see §8 | Only when the packaged experience itself is under test. |
 
-Two processes in every AI-enabled setup: the **MemoryLane server** (Node) and the **`memorylane-ai` sidecar** (Python). The sidecar is optional — without it the app works fully; Find similar, Describe-it search and stacks-v2 refinement just report "AI not available".
+Two processes in every AI-enabled setup: the **MemoryLane server** (Node) and the **`memorylane-ai` sidecar** (Python). The sidecar is optional — without it the app works fully; Find similar, Describe-it search, stacks-v2 refinement and People just report "AI not available".
 
 ---
 
@@ -59,7 +59,7 @@ winget install OliverBetz.ExifTool        # puts exiftool.exe on PATH
 ```bash
 git clone https://github.com/madhankk/memorylane.git
 cd memorylane
-git checkout feature/media-intelligence-phase3-embeddings   # until the phase PRs merge into main
+git checkout feature/media-intelligence-phase4-persons   # until the phase PRs merge into main
 npm install
 ```
 
@@ -87,7 +87,7 @@ py -3.12 -m venv .venv
 .venv\Scripts\memorylane-ai
 ```
 
-First start downloads the CLIP model (~350 MB); the face models (~38 MB) download on first use once People is enabled and then prints `Uvicorn running on http://127.0.0.1:4281`. Check it:
+First start downloads the CLIP model (~350 MB) and then prints `Uvicorn running on http://127.0.0.1:4281`; the face models (~38 MB) download on first use once People is enabled. Check it:
 
 ```bash
 curl http://127.0.0.1:4281/v1/health
@@ -98,7 +98,7 @@ Notes
 - CPU is the default and does ~50 images/s on an M2 Max — a 50k-photo library embeds in under 20 minutes. GPU is optional: NVIDIA → `pip install onnxruntime-gpu` + `MEMORYLANE_AI_DEVICE=cuda`; Windows without CUDA → `pip install onnxruntime-directml` + `MEMORYLANE_AI_DEVICE=dml`.
 - Docker alternative: `docker build -t memorylane-ai . && docker run -p 4281:4281 -v memorylane-hf:/root/.cache/huggingface memorylane-ai`.
 - Keep it on `127.0.0.1` unless the server runs on another machine; then bind `MEMORYLANE_AI_HOST=0.0.0.0`, set `MEMORYLANE_AI_TOKEN` on both sides, and point the server at it with `MEMORYLANE_AI_URL`.
-- Sidecar tests: `.venv/bin/pytest -q` (macOS) / `.venv\Scripts\pytest -q` (Windows) → 4 passed.
+- Sidecar tests: `.venv/bin/pytest -q` (macOS) / `.venv\Scripts\pytest -q` (Windows) → 9 passed.
 
 ---
 
@@ -173,9 +173,9 @@ Run through this after every fresh setup (≈10 minutes). All steps have passed 
 | # | Check | macOS | Windows |
 |---|---|---|---|
 | 1 | `npm test` → all green; `npm run typecheck` clean | ✅ | ☐ |
-| 2 | Sidecar `pytest -q` → 4 passed; `/v1/health` returns `ok: true` | ✅ | ☐ |
+| 2 | Sidecar `pytest -q` → 9 passed; `/v1/health` returns `ok: true` | ✅ | ☐ |
 | 3 | Setup account → add folder → scan completes; thumbnails render in Browse | ✅ | ☐ |
-| 4 | Settings › Analysis: `exif_full` / `phash` / `embed_image` reach Done = scanned count | ✅ | ☐ |
+| 4 | Settings › Analysis: `exif_full` / `phash` / `embed_image` (and `faces` once People is on) reach Done = scanned count | ✅ | ☐ |
 | 5 | **Reports**: facets populate; clicking a lens/camera narrows the grid and the URL; Export CSV downloads | ✅ | ☐ |
 | 6 | **Stacks**: a burst collapses to one tile with a count badge; panel → set cover / remove / delete work; Select mode → manual stack | ✅ | ☐ |
 | 7 | **Find similar** (Viewer ✨) shows neighbours with scores; burst siblings first | ✅ | ☐ |
@@ -229,7 +229,7 @@ Logs: server → terminal (and `<data>/logs/`); sidecar → its terminal.
 
 ## 10. Open items before calling the release "done"
 
-- Merge order: PR #1 (EXIF/Reports) → #2 (Stacks) → #3 (AI). Each retargets to `main` automatically as the previous one merges.
+- Merge order: PR #1 (EXIF/Reports) → #2 (Stacks) → #3 (AI) → #4 (People). Each retargets to `main` automatically as the previous one merges.
 - Run the §7 checklist on a Windows machine and record results.
 - Verify LanceDB loads from `desktop/runtime/` (packaged tray app) on both OSes.
 - Decide whether/how to ship the sidecar with the installer (PyInstaller `onedir` next to the tray app) — not planned for Phases 1–4.
