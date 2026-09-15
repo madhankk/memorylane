@@ -171,6 +171,28 @@ All of these are queries over data we already have (or B/C add), surfaced as pag
 
 **Effort:** small (1), medium (2), medium (3). **Data leaving the machine:** none (1–2, other than to the people you share with), sized derivatives to the chosen host (3).
 
+### M. Apple Photos library (macOS)
+
+**What:** detect `~/Pictures/*.photoslibrary` (and let the user point at another), index it read-only, and bring across what Photos already knows — so a Mac user's phone photos are in MemoryLane without exporting anything.
+
+**How it's laid out:** the package holds `originals/` (unmodified files under UUID names), `database/Photos.sqlite` (filenames, adjusted dates/time zones, camera/lens/exposure summary, favourites, keywords, titles, albums, **named people with face rectangles**, location, hidden/trashed state, local-vs-iCloud state per asset) and `resources/derivatives/` (a ~2048 px preview + thumbnail per asset).
+
+**Plugin `apple-photos`:**
+- A new **scan-root kind** (`kind: "apple-photos"`) — the one core seam this needs. The scanner walks `originals/`; a catalogue sync reads a *copy* of `Photos.sqlite` (+WAL) so Photos.app is never contended, mapping UUID files to real names, dates, GPS, and the EXIF summary. Read-only, always; edits/deletes stay in Photos.app and our trash flow is disabled for this root.
+- **People bootstrap:** Apple's person names attach to our detections by box overlap — a decade of labels for free.
+- **Albums / favourites / keywords** import into virtual albums (§K), our favourites, and full-text search.
+- **Schema drift:** Apple changes the schema with each macOS; use `osxphotos` (MIT, tracks every release) in the sidecar as a `photos-catalog` provider rather than hand-maintaining the mapping.
+- **Permissions:** reading the package needs Photos or Full Disk Access for the launching app — detect *Operation not permitted* and explain, as with network volumes.
+
+**iCloud "Optimize Mac Storage":** originals may not be on disk. Everything still works from the derivative + catalogue: thumbnails, CLIP embeddings, faces, dates, location, camera/lens/exposure facets. Only the full tag dump and full-resolution use are gated. Each media row carries `original_available`; the Viewer shows *"Original is in iCloud — showing Apple's 2048 px preview"* with:
+1. **Open in Photos** — AppleScript `spotlight media item id <uuid>`; viewing it there makes Photos fetch the original. Needs one Automation prompt, works with plain `npm start`.
+2. **Download original** — a small signed PhotoKit helper (Swift CLI shipped with the desktop app) requests the resource with network access allowed; either streamed once for viewing/editing/export, or kept in an opt-in MemoryLane originals cache. Whether Photos retains it afterwards is Apple's caching choice; we refresh `original_available` on the next catalogue sync rather than assume.
+3. **Fetch originals for this album/selection** — AppleScript export *using originals* into a folder that MemoryLane then indexes as a normal root (the way to materialise a whole trip).
+
+**Windows:** no equivalent — Microsoft Photos uses plain folders and iCloud for Windows syncs to one, both already normal scan roots.
+
+**Effort:** medium (catalogue sync + People bootstrap), plus small native work for the PhotoKit helper. **Data leaving the machine:** none.
+
 ---
 
 ## 3. Plugin architecture — the extension points
@@ -230,6 +252,7 @@ Rules that keep this from becoming a mess:
 | `edit` | recipes, Viewer editing panel, export | — | none |
 | `create` | collages, cards, slideshows (ffmpeg) | — | none |
 | `ai-transform` | `image-edit` provider slot, AI badge/provenance | image provider (API key or GPU) | pixels (cloud) |
+| `apple-photos` (macOS) | scan-root kind, catalogue sync (osxphotos in the sidecar), People/albums/favourites import, iCloud state + viewer actions, optional PhotoKit helper | Photos/Full Disk Access permission | none |
 
 The first plugin-refactor step is small and mechanical: give `people`, `stacks` and the sidecar `ai` the manifest shape and load them through the registry, so the seams are proven before new plugins land.
 
@@ -268,6 +291,7 @@ Everything runs through the existing `AnalysisWorker`, `buildMediaQuery`, `Media
 | AI transformations | Yes, with a GPU | Pixels of the chosen photo + prompt, per explicit request |
 | Housekeeping, albums | Always local | — |
 | Sharing | Yes (export, own-server links) | Sized derivatives to the chosen host, only with the hosted-sharing plugin |
+| Apple Photos library | Always local | — |
 
 ---
 
@@ -276,7 +300,7 @@ Everything runs through the existing `AnalysisWorker`, `buildMediaQuery`, `Media
 | Phase | Contents | Why this order |
 |---|---|---|
 | **5 — Plugin seams + Ask** | plugin loader/manifest/secrets, refactor `people`/`stacks`/`ai` onto it; E (filtered ranking), B (places), C (relationships/age), `llm` providers (cloud + local), Ask page | Seams first so every later feature lands as a plugin; Ask is the highest value per effort and makes decades of data *reachable*. |
-| **6 — Housekeeping & albums** | J (marks → trash → empty, hide, export), K (query + manual albums, save-as-album from people/places/trips/Ask) | The tidying tools a real library needs before "making things" is fun; both are small, local, and unblock sharing/creations targets. |
+| **6 — Housekeeping, albums & Apple Photos** | J (marks → trash → empty, hide, export), K (query + manual albums, save-as-album from people/places/trips/Ask), M (Apple Photos root, catalogue sync, People bootstrap, iCloud state) | The tidying tools a real library needs before "making things" is fun; M reuses albums and hidden state, and brings phone photos in for Mac users. |
 | **7 — Mining & sharing** | quality analyzer, Year in review, Best of, timelines, then & now, trips; L tiers 1–2 (export, own-server share links) | Exploits data now in place; share links reuse albums. |
 | **8 — Editing & creations** | G (non-destructive edits, exports), H (collages, cards, ffmpeg slideshows), Create menu | Self-contained; Sharp + bundled ffmpeg only. |
 | **9 — AI transformations & hosted sharing** | I (`image-edit` provider, provenance, AI badge), L tier 3 (hosted share plugin) | Last: the only features that must send pixels away or need a GPU/bucket; reuse the People consent UX. |
@@ -293,4 +317,5 @@ Everything runs through the existing `AnalysisWorker`, `buildMediaQuery`, `Media
 5. **Geodata licensing** — GeoNames is CC BY 4.0: attribution text in Settings › About is sufficient.
 6. **Trash location** — beside the originals (`_MemoryLane-Trash/` per folder, visible and restorable, works on any volume) or the OS trash (macOS/Windows APIs, not available for network volumes)? Recommendation: per-folder trash folder, with "Reveal in Finder/Explorer" links.
 7. **Plugin client bundling** — one Vite build that includes enabled plugins' pages, or per-plugin bundles loaded lazily? Recommendation: single build with lazy routes for Phase 5; per-plugin bundles only if third-party plugins ever ship.
-8. **Share links over the internet** — document reverse-proxy + TLS (as the README already does) or add a built-in tunnel/hosted relay later? Recommendation: document first; hosted relay is the tier-3 plugin's job.
+8. **Apple Photos originals cache** — when the user asks to download an iCloud original, stream it once or keep a full-res copy in MemoryLane's data dir (their disk-space trade-off)? Recommendation: stream by default, opt-in cache per action.
+9. **Share links over the internet** — document reverse-proxy + TLS (as the README already does) or add a built-in tunnel/hosted relay later? Recommendation: document first; hosted relay is the tier-3 plugin's job.
