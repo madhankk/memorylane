@@ -1,0 +1,94 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+MemoryLane is a self-hosted, local-first photo/video browser for photographers with large archives. It indexes existing folders **in place** (never renames/moves/modifies originals), builds a disposable SQLite index + thumbnail cache in an OS app-data dir, and surfaces "rediscovery" features (random memory, this-day-another-time, Surprise Me) biased toward photos not seen recently.
+
+The one deliberate exception to "never touch originals" is the opt-in video modernization flow, which only ever *moves* an original into a visible `_MemoryLane-Archived-Originals` sibling folder after the user has reviewed the transcode. Preserve this invariant in any change.
+
+## Commands
+
+npm workspaces monorepo: `shared`, `server`, `client`, `desktop`. Run from the repo root unless noted.
+
+```bash
+npm install
+npm run build          # shared → client → server (order matters: client emits into server/public)
+npm start              # node server/dist/server.js, serves API + built client on :4280
+npm run dev            # server only, tsx watch (regenerates server/src/version.ts first)
+npm run dev:client     # Vite on :5173, proxies /api → 127.0.0.1:4280 (run alongside `npm run dev`)
+npm run typecheck      # tsc --noEmit across shared, server, client
+npm test               # vitest in server (no test files exist yet)
+npm run reset-password -- <args>   # server/scripts/reset-password.ts
+```
+
+- `shared` must be built (`npm run build --workspace=shared`) before server/client typecheck resolves `@memorylane/shared` — it's consumed via `dist/`.
+- `server/src/version.ts` is generated from `server/package.json` by `scripts/generate-version.mjs` and is gitignored; never edit or commit it.
+- Migrations are copied to `server/dist/migrations` at build time; `migrate.ts` resolves whichever of `server/migrations` (dev) or `dist/migrations` (built) exists.
+- Set `MEMORYLANE_NO_OPEN=1` to stop the server auto-opening a browser tab (already suppressed under `npm run dev`). `MEMORYLANE_DATA_DIR` relocates the DB/thumbnail cache — useful for a throwaway dev library.
+
+Desktop (Electron tray app) — run from `desktop/`, and only after a root `npm run build`:
+
+```bash
+npm run prepare-runtime   # assembles desktop/runtime/ (node binary + server/dist + prod deps); fails loudly if root build is missing
+npm run dev               # rebuilds tray app only, NOT the runtime — re-run prepare-runtime after server/shared changes
+npm run make              # build + prepare-runtime + electron-forge make → desktop/release/<version>/
+```
+
+## Architecture
+
+### Request/data flow
+
+```
+client (React SPA) ── fetch /api/* ──▶ Fastify routes (server/src/api/*) ──▶ better-sqlite3 (sync)
+                                              │
+                    ScannerService ──▶ processMediaItem ──▶ ExifTool / ffmpeg / Sharp ──▶ thumbnails/, previews/
+```
+
+- **`server/src/context.ts`** — `AppContext` holds every app-wide singleton (db, paths, sessions, scanner, randomSelection, transcodeWorker). Built once in `server.ts`, passed to each `register*Routes(app, ctx)` in `app.ts`. New routes/services should hang off this rather than importing singletons.
+- **DB access is synchronous** (better-sqlite3, WAL mode). Routes and services run prepared statements inline; there's no ORM or repository layer beyond a few thin `*-repo.ts` helpers.
+- **`shared/src/types.ts`** holds every DTO the API returns; **`shared/src/validation.ts`** holds the zod schemas for request bodies. Routes parse with `schema.safeParse(request.body)` and map DB rows → DTOs via `server/src/api/mappers.ts`. Adding an API field means touching shared types, the mapper, and the client.
+- The client is served as static files from `server/public` with an SPA fallback for non-`/api/` paths; the client bundles its own typed API wrapper in `client/src/api/client.ts`.
+
+### Scanning & media pipeline
+
+- `ScannerService.runScan` walks each enabled `scan_roots` row, upserts `folders`/`media` rows, and detects change via `fingerprint = size:mtime` (deliberately not a content hash). Rows not touched during a run are marked `status='missing'` — but only within the roots that run covered (a single-root scan must never mark other roots missing).
+- Thumbnail/metadata work is queued through `p-limit(4)` and flushed in batches of 200 while the walk continues; progress is persisted to `scan_runs` every 2s so the client can poll `/api/scans/status`.
+- `processMediaItem` (media-processor.ts) never throws: metadata extraction and thumbnail generation are guarded independently so a Sharp failure doesn't discard EXIF data already read. Outcome lands in `media.thumbnail_status` (`pending|done|failed|unsupported`); anything not `done` is retried on the next scan even if the fingerprint is unchanged.
+- **Per-type handling:** standard images → Sharp from file (BMP decoded via bmp-js first, since libvips can't read it); RAW → ExifTool extracts the largest embedded preview, from which both a 500px thumbnail and a 1800px `previews/` tier are produced, oriented by the RAW file's *own* EXIF orientation (embedded previews often lack/lie about theirs); video → ffprobe for codec/duration + one ffmpeg poster frame. Originals are streamed as-is with Range support; there is no on-the-fly transcoding.
+- Thumbnails/previews are sharded on disk by media id (`paths.ts`) and served with a 1-year immutable cache header; `media.thumbnail_version` is bumped on every regeneration and appended as a query param by the client to cache-bust.
+
+### Pairing (Live Photos, RAW+JPEG)
+
+Two "hide the companion" relationships live on `media`:
+- `live_photo_video_id` — still ↔ video sharing an EXIF `ContentIdentifier` in the same folder.
+- `raw_pair_id` — RAW ↔ image sharing a base filename in the same folder.
+
+Both are linked best-effort from whichever side is processed second. Every media-listing query must append `EXCLUDE_LIVE_PHOTO_VIDEOS` and `EXCLUDE_PAIRED_RAW` (mappers.ts) so companions never appear as their own grid items. `NEEDS_TRANSCODE_SQL_CLAUSE` (video-compatibility.ts) is likewise the single source of truth for "which videos need modernizing" so stats and candidate lists can't drift.
+
+### Rediscovery & engagement
+
+`media_engagement` stores only aggregate counters (favorite, shown_count/last_shown_at, view_count) — intentionally not an event log. `SqliteRandomSelectionService` excludes anything shown in the last 7 days, then tops up from the full pool. Shown/viewed are posted only from full-size viewers (Viewer, InlineSlideshow), never from grids.
+
+### Migrations
+
+Numbered `server/migrations/NNN_*.sql`, applied in filename order on every startup inside individual transactions, tracked in `schema_migrations`. A SQLite online backup (`memorylane.sqlite.pre-migration-*.bak`, last 5 kept) is taken automatically before any pending migration. To add schema: create the next-numbered file; never edit an already-shipped one. If a migration invalidates thumbnails, reset `thumbnail_status` so the next scan regenerates them (see 007/008 for the pattern).
+
+### Auth & file safety
+
+Single-user, cookie sessions (`SessionStore`, 7-day sliding TTL, `secure: false` because the app never serves TLS). Routes gate with `preHandler: app.requireAuth`. Initial setup is loopback-only unless `MEMORYLANE_ALLOW_REMOTE_SETUP=1`. File-serving routes must resolve paths **only from the DB by media id** via `resolveVerifiedMedia` (enabled root, active status, path inside root) — never from request input.
+
+### Video modernization (transcode)
+
+`TranscodeWorker` runs jobs at concurrency 1, encodes into `<data-dir>/transcoding/` (never the library), and only on explicit user Archive copies the result next to the original and moves the original into `_MemoryLane-Archived-Originals` (auto-added to `ignored_paths`). On startup, jobs stuck at `transcoding` are marked failed (not auto-retried, to avoid poison-file loops); `pending` jobs resume.
+
+### Client
+
+React 18 + React Router 6 + Tailwind 4 (Vite plugin). `App.tsx` routes: `/setup`, `/login`, then `Layout`-wrapped `/`, `/folder/:id`, `/search`, `/settings`, `/surprise`, `/favorites`. Context hooks: `useAuth` (setup/login state drives redirects), `useTheme` (light/dark/dusk/gallery, tokens in `styles.css`). `utils/mediaSrc.ts::displaySrc` decides full-size source: RAW → `/preview`, else `/file`, fallback `/thumbnail`.
+
+## Notes
+
+- README.md and several code comments reference `PLAN.md` (spec section numbers); that file is not in the repo.
+- ExifTool must be on PATH for RAW/metadata; ffmpeg/ffprobe are bundled via `ffmpeg-static`/`ffprobe-static`. Both are detected at startup and degrade gracefully (thumbnail_status `unsupported`) when missing.
+- macOS signing/notarization in `desktop/forge.config.ts` is incomplete (runtime binaries need an explicit codesign pass — see the TODO there).
