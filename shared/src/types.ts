@@ -102,6 +102,9 @@ export interface SettingsDto {
   faceAssignThreshold: number;
   // Minimum faces for discovery to create a new "Person N".
   faceMinClusterSize: number;
+  // Cosine at/above which two unassigned faces are linked during discovery.
+  // Higher = stricter grouping (more, smaller persons - merge is cheap).
+  faceLinkThreshold: number;
 }
 
 export interface UpdateSettingsRequest {
@@ -116,6 +119,7 @@ export interface UpdateSettingsRequest {
   personsEnabled?: boolean;
   faceAssignThreshold?: number;
   faceMinClusterSize?: number;
+  faceLinkThreshold?: number;
 }
 
 export interface FolderDto {

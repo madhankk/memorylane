@@ -129,3 +129,24 @@ describe("PersonService discovery + assignment", () => {
     expect(await S.svc.discover()).toEqual({ persons: 0, assigned: 0 });
   });
 });
+
+describe("PersonService.regroup", () => {
+  it("redoes automatic groupings but keeps names, confirmed faces and rejections", async () => {
+    const S = await setup();
+    const a1 = await S.addFace(vec(0, 0.1)), a2 = await S.addFace(vec(0, 0.15)), b1 = await S.addFace(vec(1, 0.1)), b2 = await S.addFace(vec(1, 0.15));
+    await S.svc.discover();
+    const [pA, pB] = S.svc.listPersons(false);
+    S.svc.rename(pA.id, "Maya");
+    S.svc.assignFace(a1, pA.id); // user-confirmed
+    S.svc.rejectFace(b2, pA.id);
+    const r = await S.svc.regroup();
+    expect(r.assigned).toBeGreaterThanOrEqual(3);
+    const maya = S.svc.listPersons(true).find((p) => p.name === "Maya")!;
+    expect(maya).toBeDefined();
+    expect(S.faces.get(a1)).toMatchObject({ person_id: maya.id, assigned_by: "user" });
+    expect(S.faces.get(a2)!.person_id).toBe(maya.id);
+    expect(S.faces.get(b1)!.person_id).not.toBe(maya.id);
+    expect(S.faces.rejectionsFor(b2).has(maya.id)).toBe(true);
+    expect(S.svc.getPerson(pB.id)).toBeNull(); // unnamed auto person was rebuilt under a new id
+  });
+});

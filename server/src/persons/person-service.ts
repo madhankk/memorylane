@@ -27,10 +27,11 @@ interface PersonRow {
   media_count: number;
 }
 
-// Cosine threshold used when linking faces during discovery and when
-// matching a new cluster against an existing person's centroid.
-const DISCOVERY_LINK_THRESHOLD = 0.5;
 const KNN = 20;
+// A single look-alike frame must not pull a face into a person: besides the
+// nearest assigned face, the person's average face has to be at least this
+// close too (a little below the assign threshold to allow pose variety).
+const CENTROID_MARGIN = 0.08;
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
 
 function normalize(v: Float32Array): Float32Array {
@@ -94,16 +95,27 @@ export class PersonService {
     if (assigned.size === 0) return 0;
     const threshold = this.settings.getAll().faceAssignThreshold;
     const space = spaceFor("faces", model);
+    const centroids = new Map<number, Float32Array | null>();
+    const centroidOf = (personId: number) => {
+      if (!centroids.has(personId)) {
+        const vs = this.faces.personVectors(personId);
+        centroids.set(personId, vs.length ? centroid(vs) : null);
+      }
+      return centroids.get(personId) ?? null;
+    };
     let count = 0;
     for (const row of this.faces.listByIds(faceIds)) {
       if (row.person_id !== null) continue;
       const rejected = this.faces.rejectionsFor(row.id);
-      const hits = await this.index.search(space, this.faces.vector(row), KNN, { excludeIds: [row.id] });
+      const vector = this.faces.vector(row);
+      const hits = await this.index.search(space, vector, KNN, { excludeIds: [row.id] });
       const best = hits.find((h) => assigned.has(h.id) && !rejected.has(assigned.get(h.id) as number));
-      if (best && best.score >= threshold) {
-        this.faces.setAssignment(row.id, assigned.get(best.id) as number, "auto", best.score);
-        count++;
-      }
+      if (!best || best.score < threshold) continue;
+      const personId = assigned.get(best.id) as number;
+      const c = centroidOf(personId);
+      if (c && cosine(vector, c) < threshold - CENTROID_MARGIN) continue;
+      this.faces.setAssignment(row.id, personId, "auto", best.score);
+      count++;
     }
     return count;
   }
@@ -119,11 +131,11 @@ export class PersonService {
     const model = this.model();
     const provider = this.provider();
     if (!model || !provider || !this.enabled()) return { persons: 0, assigned: 0 };
-    const { faceMinClusterSize, faceAssignThreshold } = this.settings.getAll();
+    const { faceMinClusterSize, faceAssignThreshold, faceLinkThreshold } = this.settings.getAll();
     const rows = this.faces.unassignedQuality(model);
     if (rows.length === 0) return { persons: 0, assigned: 0 };
     const vectors = rows.map((r) => this.faces.vector(r));
-    const labels = await provider.cluster(vectors, { threshold: DISCOVERY_LINK_THRESHOLD, minClusterSize: faceMinClusterSize });
+    const labels = await provider.cluster(vectors, { threshold: faceLinkThreshold, minClusterSize: faceMinClusterSize });
 
     const existing = (this.db.prepare("SELECT id FROM persons WHERE merged_into IS NULL").all() as { id: number }[]).map((p) => ({
       id: p.id,
@@ -170,6 +182,38 @@ export class PersonService {
     tx();
     if (persons || assigned) this.logger.info({ persons, assigned, considered: rows.length }, "Person discovery finished");
     return { persons, assigned };
+  }
+
+  // Throws away every *automatic* grouping decision and regroups with the
+  // current thresholds. Names, user-confirmed faces and rejections survive;
+  // persons left with no user-confirmed face are removed (their label was
+  // never chosen by the user). Used to tune strictness without re-detecting.
+  async regroup(): Promise<{ persons: number; assigned: number }> {
+    const tx = this.db.transaction(() => {
+      this.db.prepare("UPDATE faces SET person_id = NULL, assigned_by = NULL, assign_score = NULL, discovered_at = NULL WHERE assigned_by = 'auto'").run();
+      this.db.prepare("UPDATE faces SET discovered_at = NULL WHERE person_id IS NULL").run();
+      this.db
+        .prepare(
+          `DELETE FROM persons WHERE merged_into IS NULL
+             AND NOT EXISTS (SELECT 1 FROM faces f WHERE f.person_id = persons.id)
+             AND name IS NULL`,
+        )
+        .run();
+      this.db.prepare("UPDATE persons SET cover_face_id = NULL WHERE cover_face_id IS NOT NULL AND cover_face_id NOT IN (SELECT id FROM faces WHERE person_id = persons.id)").run();
+    });
+    tx();
+    const model = this.model();
+    let reattached = 0;
+    if (model) {
+      // Faces the user confirmed stay; re-attach the rest to them first, then discover the remainder.
+      const unassigned = this.faces.unassignedQuality(model).map((f) => f.id);
+      reattached = await this.assignNewFaces(unassigned);
+    }
+    const d = await this.discover();
+    for (const p of this.listPersons(true)) this.fixCover(p.id);
+    const r = { persons: d.persons, assigned: d.assigned + reattached };
+    this.logger.info(r, "Regrouped persons");
+    return r;
   }
 
   // Called from the worker's idle hook; cheap when there's nothing to do.

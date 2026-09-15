@@ -89,6 +89,10 @@ export async function registerPersonRoutes(app: FastifyInstance, ctx: AppContext
     return reply.send(await persons.discover());
   });
 
+  app.post("/api/persons/regroup", guards, async (_request, reply) => {
+    return reply.send(await persons.regroup());
+  });
+
   app.delete("/api/persons/data", { preHandler: app.requireAuth }, async (_request, reply) => {
     await persons.deleteAllFaceData();
     return reply.code(204).send();

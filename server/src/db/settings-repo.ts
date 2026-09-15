@@ -13,6 +13,7 @@ const DEFAULTS: SettingsDto = {
   personsEnabled: false,
   faceAssignThreshold: 0.45,
   faceMinClusterSize: 3,
+  faceLinkThreshold: 0.5,
 };
 
 export class SettingsRepo {
@@ -43,6 +44,7 @@ export class SettingsRepo {
       personsEnabled: map.has("personsEnabled") ? map.get("personsEnabled") === "true" : DEFAULTS.personsEnabled,
       faceAssignThreshold: map.has("faceAssignThreshold") ? Number(map.get("faceAssignThreshold")) : DEFAULTS.faceAssignThreshold,
       faceMinClusterSize: map.has("faceMinClusterSize") ? Number(map.get("faceMinClusterSize")) : DEFAULTS.faceMinClusterSize,
+      faceLinkThreshold: map.has("faceLinkThreshold") ? Number(map.get("faceLinkThreshold")) : DEFAULTS.faceLinkThreshold,
     };
   }
 
@@ -68,6 +70,7 @@ export class SettingsRepo {
     if (patch.personsEnabled !== undefined) entries.push(["personsEnabled", String(patch.personsEnabled)]);
     if (patch.faceAssignThreshold !== undefined) entries.push(["faceAssignThreshold", String(patch.faceAssignThreshold)]);
     if (patch.faceMinClusterSize !== undefined) entries.push(["faceMinClusterSize", String(patch.faceMinClusterSize)]);
+    if (patch.faceLinkThreshold !== undefined) entries.push(["faceLinkThreshold", String(patch.faceLinkThreshold)]);
 
     if (entries.length > 0) tx(entries);
     return this.getAll();

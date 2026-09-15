@@ -610,6 +610,11 @@ export default function SettingsPage() {
           />
           Find and group faces (needs the AI sidecar)
         </label>
+        <p className="mb-2 text-xs text-muted">
+          Siblings and young children look alike to the model - if one person collects several kids, raise both strictness values
+          (0.55-0.6 is a good start) and press Regroup. Stricter means more small "Person N" entries to merge, which is cheaper than
+          un-mixing a wrong one face by face.
+        </p>
         <div className="flex flex-wrap items-end gap-4 text-sm text-ink">
           <label className="flex flex-col gap-1">
             <span className="text-muted">Match strictness (min similarity, 0.3-0.9)</span>
@@ -641,6 +646,33 @@ export default function SettingsPage() {
               className={`w-24 ${inputClass}`}
             />
           </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">Grouping strictness (0.3-0.9)</span>
+            <input
+              type="number"
+              min={0.3}
+              max={0.9}
+              step={0.05}
+              defaultValue={settings.faceLinkThreshold}
+              onBlur={(e) => {
+                const v = Number(e.target.value);
+                if (v >= 0.3 && v <= 0.9 && v !== settings.faceLinkThreshold) void updateSchedule({ faceLinkThreshold: v });
+              }}
+              className={`w-24 ${inputClass}`}
+            />
+          </label>
+          <button
+            className={buttonClass}
+            title="Regroup all automatically grouped faces with the current settings. Names and your ✓/✗ answers are kept."
+            onClick={async () => {
+              if (window.confirm("Regroup faces with the current strictness? Names and your confirmed/rejected faces are kept; automatic groupings are redone.")) {
+                const r = await api.persons.regroup();
+                window.alert(`Regrouped: ${r.persons} new people, ${r.assigned} faces assigned.`);
+              }
+            }}
+          >
+            Regroup with these settings
+          </button>
           <button
             className={`${buttonClass} text-red-600`}
             onClick={async () => {

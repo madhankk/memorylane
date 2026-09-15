@@ -190,6 +190,7 @@ export const api = {
     setHidden: (id: number, hidden: boolean) => request<PersonDto>(`/api/persons/${id}`, { method: "PATCH", body: JSON.stringify({ hidden }) }),
     merge: (id: number, personId: number) => request<PersonDto>(`/api/persons/${id}/merge`, { method: "POST", body: JSON.stringify({ personId }) }),
     discover: () => request<{ persons: number; assigned: number }>("/api/persons/discover", { method: "POST" }),
+    regroup: () => request<{ persons: number; assigned: number }>("/api/persons/regroup", { method: "POST" }),
     deleteAllData: () => request<void>("/api/persons/data", { method: "DELETE" }),
   },
   faces: {

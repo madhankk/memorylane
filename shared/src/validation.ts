@@ -43,6 +43,7 @@ export const updateSettingsRequestSchema = z.object({
   personsEnabled: z.boolean().optional(),
   faceAssignThreshold: z.number().min(0.3).max(0.9).optional(),
   faceMinClusterSize: z.number().int().min(2).max(20).optional(),
+  faceLinkThreshold: z.number().min(0.3).max(0.9).optional(),
 });
 
 export const paginationQuerySchema = z.object({
