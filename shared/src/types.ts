@@ -416,6 +416,8 @@ export interface AnalyzerStatusDto {
   backoffUntil: string | null;
   // False when switched off in Settings (aiEnabled) - rows stay pending.
   enabled: boolean;
+  // Most recent failure message, so the UI can say *why* instead of guessing.
+  lastError: string | null;
 }
 
 // The inference sidecar (memorylane-ai) as last seen by the server.

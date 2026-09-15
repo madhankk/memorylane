@@ -131,6 +131,17 @@ export class AnalysisRepo {
     return (analyzerKey ? stmt.run(analyzerKey) : stmt.run()).changes;
   }
 
+  lastErrors(): Map<string, string> {
+    const rows = this.db
+      .prepare(
+        `SELECT analyzer, error FROM media_analysis m
+         WHERE status = 'failed' AND error IS NOT NULL
+           AND updated_at = (SELECT MAX(updated_at) FROM media_analysis WHERE analyzer = m.analyzer AND status = 'failed' AND error IS NOT NULL)`,
+      )
+      .all() as { analyzer: string; error: string }[];
+    return new Map(rows.map((r) => [r.analyzer, r.error]));
+  }
+
   counts(): { analyzer: string; status: AnalysisStatus; count: number }[] {
     return this.db
       .prepare("SELECT analyzer, status, COUNT(*) as count FROM media_analysis GROUP BY analyzer, status ORDER BY analyzer, status")

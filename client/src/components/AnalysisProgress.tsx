@@ -23,6 +23,9 @@ function state(a: AnalyzerStatusDto, paused: boolean): { label: string; tone: "m
   if (!a.enabled) return { label: "Off", tone: "muted" };
   if (a.backoffUntil) return { label: "Waiting for sidecar", tone: "amber" };
   if (paused && left > 0) return { label: "Paused during scan", tone: "muted" };
+  // Mostly failing while still "working" means something systemic (a volume
+  // that can't be read) - say so instead of promising an ETA.
+  if (left > 0 && c.failed > c.done && c.failed >= 20) return { label: "Failing", tone: "red" };
   if (left > 0) return { label: "Working", tone: "accent" };
   if (c.failed > 0) return { label: `${c.failed.toLocaleString()} failed`, tone: "red" };
   return { label: "Done", tone: "green" };
@@ -121,6 +124,7 @@ export default function AnalysisProgress({ only, onStatus, pollMs = 3000, hideWh
               <span className="flex items-center gap-2 text-xs tabular-nums text-muted">
                 {finished.toLocaleString()} / {n.toLocaleString()} · {pct}%
                 {s.label === "Working" && eta[a.key] !== undefined && <span>· {formatEta(eta[a.key])} left</span>}
+                {a.counts.failed > 0 && <span className="text-red-600">· {a.counts.failed.toLocaleString()} failed</span>}
                 <span className={`rounded-full px-2 py-0.5 font-medium ${toneClass[s.tone]}`}>{s.label}</span>
               </span>
             </div>
@@ -136,8 +140,16 @@ export default function AnalysisProgress({ only, onStatus, pollMs = 3000, hideWh
             {!a.enabled && a.key === "embed_image" && <p className="text-xs text-muted">AI analysis is switched off above.</p>}
             {a.counts.failed > 0 && (
               <p className="text-xs text-muted">
-                {a.counts.failed.toLocaleString()} file{a.counts.failed === 1 ? "" : "s"} couldn't be read - usually an unmounted or
-                permission-restricted volume. Fix access, then use Retry failed under Settings › Analysis.
+                {a.counts.failed.toLocaleString()} file{a.counts.failed === 1 ? "" : "s"} failed
+                {a.lastError && (
+                  <>
+                    {" "}- last error: <code className="text-ink">{a.lastError}</code>
+                  </>
+                )}
+                . {/opening file|permission|EPERM|EACCES|ENOENT/i.test(a.lastError ?? "")
+                  ? "The files exist but this process can't open them - on macOS, the app you started MemoryLane from needs access to that volume (System Settings › Privacy & Security › Files and Folders › Network/Removable Volumes), or start it from Terminal. "
+                  : ""}
+                Fix the cause, then use Retry failed under Settings › Analysis.
               </p>
             )}
           </div>

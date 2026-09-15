@@ -131,6 +131,7 @@ export class AnalysisWorker {
   }
 
   getStatus(): AnalysisStatusDto {
+    const errors = this.repo.lastErrors();
     const byKey = new Map(
       this.analyzers.map((a) => {
         const b = this.backoff.get(a.key);
@@ -142,6 +143,7 @@ export class AnalysisWorker {
             counts: EMPTY_COUNTS(),
             backoffUntil: b && b.until > Date.now() ? new Date(b.until).toISOString() : null,
             enabled: a.isEnabled ? a.isEnabled() : true,
+            lastError: errors.get(a.key) ?? null,
           },
         ];
       }),
