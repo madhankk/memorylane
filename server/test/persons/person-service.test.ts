@@ -79,8 +79,11 @@ describe("PersonService discovery + assignment", () => {
     await S.svc.discover();
     const person = S.svc.listPersons(false)[0];
     // User says a2 is NOT this person -> unassigned + rejected; discovery must not re-add it.
+    // Make a2 the cover first so the cover has to move to a remaining face.
+    S.db.prepare("UPDATE persons SET cover_face_id = ? WHERE id = ?").run(a2, person.id);
     S.svc.rejectFace(a2, person.id);
     expect(S.faces.get(a2)!.person_id).toBeNull();
+    expect(S.svc.getPerson(person.id)!.coverFaceId).toBe(a1);
     const a3 = await S.addFace(vec(0, 0.12));
     await S.svc.discover();
     expect(S.faces.get(a2)!.person_id).toBeNull();

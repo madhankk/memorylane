@@ -179,6 +179,17 @@ export class PersonService {
     return r.persons + r.assigned + 1;
   }
 
+  // Keeps cover_face_id pointing at one of the person's own faces (highest
+  // quality) after a face is unassigned/rejected/moved.
+  private fixCover(personId: number): void {
+    const p = this.db.prepare("SELECT cover_face_id FROM persons WHERE id = ?").get(personId) as { cover_face_id: number | null } | undefined;
+    if (!p) return;
+    const owner = p.cover_face_id === null ? null : (this.db.prepare("SELECT person_id FROM faces WHERE id = ?").get(p.cover_face_id) as { person_id: number | null } | undefined);
+    if (owner && owner.person_id === personId) return;
+    const best = this.db.prepare("SELECT id FROM faces WHERE person_id = ? ORDER BY quality DESC, id LIMIT 1").get(personId) as { id: number } | undefined;
+    this.db.prepare("UPDATE persons SET cover_face_id = ? WHERE id = ?").run(best?.id ?? null, personId);
+  }
+
   private createPerson(coverFaceId: number | null): number {
     const next = ((this.db.prepare("SELECT COALESCE(MAX(id), 0) AS m FROM persons").get() as { m: number }).m ?? 0) + 1;
     const info = this.db.prepare("INSERT INTO persons (auto_label, cover_face_id) VALUES (?, ?)").run(`Person ${next}`, coverFaceId);
@@ -267,6 +278,7 @@ export class PersonService {
       this.db.prepare("INSERT OR IGNORE INTO face_person_rejections (face_id, person_id) SELECT face_id, ? FROM face_person_rejections WHERE person_id = ?").run(intoId, fromId);
       this.db.prepare("DELETE FROM face_person_rejections WHERE person_id = ?").run(fromId);
       this.db.prepare(`UPDATE persons SET merged_into = ?, hidden = 1, updated_at = ${NOW} WHERE id = ?`).run(intoId, fromId);
+      this.fixCover(intoId);
     });
     tx();
     return this.requirePerson(intoId);
@@ -281,6 +293,8 @@ export class PersonService {
       if (personId === null && face.person_id !== null) this.faces.addRejection(faceId, face.person_id);
       if (personId !== null) this.db.prepare("DELETE FROM face_person_rejections WHERE face_id = ? AND person_id = ?").run(faceId, personId);
       this.faces.setAssignment(faceId, personId, personId === null ? null : "user", personId === null ? null : 1);
+      if (face.person_id !== null) this.fixCover(face.person_id);
+      if (personId !== null) this.fixCover(personId);
     });
     tx();
     return this.toFace(this.faces.get(faceId) as FaceRow);
@@ -292,7 +306,10 @@ export class PersonService {
     if (!face) throw new PersonError(404, "Face not found");
     const tx = this.db.transaction(() => {
       this.faces.addRejection(faceId, personId);
-      if (face.person_id === personId) this.faces.setAssignment(faceId, null, null, null);
+      if (face.person_id === personId) {
+        this.faces.setAssignment(faceId, null, null, null);
+        this.fixCover(personId);
+      }
     });
     tx();
     return this.toFace(this.faces.get(faceId) as FaceRow);

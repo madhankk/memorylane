@@ -23,7 +23,7 @@ Photos, RAW, video, and Apple Live Photos are all indexed and browsable.
 
 ## AI features (optional)
 
-Find similar, "describe it" search, and smarter burst stacks use a small local model served by the `memorylane-ai` sidecar (CLIP, ONNX Runtime, ~350 MB download on first start, CPU is plenty). It runs on Windows, macOS (Apple Silicon) and Linux and never sees your file paths - the server sends it thumbnails and stores the resulting vectors in its own data directory. See [memorylane-ai/README.md](memorylane-ai/README.md). Without it, everything else works exactly as before.
+Find similar, "describe it" search, smarter burst stacks, and (opt-in) People — faces grouped into identities you can name — use small local models served by the `memorylane-ai` sidecar (CLIP, ONNX Runtime, ~350 MB download on first start, CPU is plenty). It runs on Windows, macOS (Apple Silicon) and Linux and never sees your file paths - the server sends it thumbnails and stores the resulting vectors in its own data directory. See [memorylane-ai/README.md](memorylane-ai/README.md). Without it, everything else works exactly as before.
 
 ## Requirements
 

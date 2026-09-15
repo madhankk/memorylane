@@ -1,7 +1,7 @@
 # MemoryLane — Local & Test Deployment Playbook
 
 **For:** anyone standing up MemoryLane on their own Mac or Windows machine to develop against or test — including the optional AI sidecar.
-**Covers:** the `feature/media-intelligence-phase3-embeddings` branch (Phases 1–3: EXIF reports, stacks, AI similarity/search). Everything here also applies to `main` once the phase PRs (#1 → #2 → #3) merge.
+**Covers:** the `feature/media-intelligence-phase4-persons` branch (Phases 1–4: EXIF reports, stacks, AI similarity/search, People). Everything here also applies to `main` once the phase PRs (#1 → #2 → #3) merge.
 **Last verified:** 2026-09-15 on macOS 26 / Apple Silicon (Node 20.19, Python 3.13). Windows steps use the same code paths and prebuilt binaries verified in the design doc §16; run through them once on a Windows box and tick the checklist at the end.
 
 ---
@@ -87,7 +87,7 @@ py -3.12 -m venv .venv
 .venv\Scripts\memorylane-ai
 ```
 
-First start downloads the model (~350 MB) and then prints `Uvicorn running on http://127.0.0.1:4281`. Check it:
+First start downloads the CLIP model (~350 MB); the face models (~38 MB) download on first use once People is enabled and then prints `Uvicorn running on http://127.0.0.1:4281`. Check it:
 
 ```bash
 curl http://127.0.0.1:4281/v1/health
@@ -184,6 +184,7 @@ Run through this after every fresh setup (≈10 minutes). All steps have passed 
 | 10 | Delete `<data>/vectors/`, restart server → log line `Rebuilt vector index`, Find similar still works | ✅ | ☐ |
 | 11 | RAW (CR3/NEF/ARW…) thumbnails and previews render; RAW+JPEG pairs show as one tile | ✅ (existing) | ☐ |
 | 12 | Windows only: paths with spaces/Unicode and a scan root on a second drive (`D:\Photos`) index correctly | – | ☐ |
+| 13 | **People** (Settings › People on, min faces 2 for a small library): faces detected, persons appear after the queue drains, rename / ✗ not-them / merge work, "Delete all face data" empties the page | ✅ | ☐ |
 
 Tests: `npm test` (server, in-memory SQLite, needs no sidecar), `npm run typecheck`, `memorylane-ai/.venv/bin/pytest -q`.
 
@@ -232,4 +233,4 @@ Logs: server → terminal (and `<data>/logs/`); sidecar → its terminal.
 - Run the §7 checklist on a Windows machine and record results.
 - Verify LanceDB loads from `desktop/runtime/` (packaged tray app) on both OSes.
 - Decide whether/how to ship the sidecar with the installer (PyInstaller `onedir` next to the tray app) — not planned for Phases 1–4.
-- Phase 4 (Persons) and the optional Phase 5 (captions) are not started — see the design doc §10, §11, §13.
+- The optional Phase 5 (LLM captions/keywords) is not started — see the design doc §11.
