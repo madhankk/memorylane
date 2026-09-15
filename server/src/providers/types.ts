@@ -10,6 +10,8 @@ export interface ProviderInfo {
   reachable: boolean;
   model: string | null;
   dim: number | null;
+  faceModel: string | null;
+  faceModels: { name: string; id: string; dim: number; license: string; label: string }[];
   device: string | null;
   lastError: string | null;
   checkedAt: string | null;
@@ -33,7 +35,32 @@ export interface TextEmbeddingProvider {
   embedText(texts: string[]): Promise<EmbeddingBatch>;
 }
 
+export interface FaceDetection {
+  bbox: [number, number, number, number]; // x, y, w, h normalised to the sent image
+  landmarks: [number, number][];
+  detScore: number;
+  embedding: Float32Array;
+}
+
+export interface FaceBatch {
+  model: string;
+  dim: number;
+  images: FaceDetection[][];
+}
+
+// Face model names the sidecar knows, and the ids it reports for them.
+export const FACE_MODEL_IDS: Record<string, string> = { "yunet-sface": "yunet-sface@1", buffalo_l: "buffalo_l@1" };
+
+export interface FaceProvider {
+  // Sends `model` and refuses a response reporting a different id.
+  detectFaces(jpegs: Buffer[], model: string): Promise<FaceBatch>;
+  cluster(vectors: Float32Array[], opts: { threshold: number; minClusterSize: number }): Promise<number[]>;
+}
+
 export interface EmbeddingProvider extends ImageEmbeddingProvider, TextEmbeddingProvider {
   health(force?: boolean): Promise<ProviderInfo>;
   getInfo(): ProviderInfo;
 }
+
+// Everything the sidecar offers, behind one health check.
+export interface AiProvider extends EmbeddingProvider, FaceProvider {}

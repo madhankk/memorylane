@@ -16,15 +16,17 @@ import { buildMediaQuery, mediaCountSql, type MediaQueryParams } from "../query/
 export interface MediaFilterQuery extends ExifFilterQuery {
   type: MediaTypeFilter;
   scanRootId?: number;
+  personIds?: number[];
 }
 
 // Shared by /api/media, facets and export so all three see the same set.
 export function toMediaQueryParams(q: MediaFilterQuery, extra: Partial<MediaQueryParams> = {}): MediaQueryParams {
-  const { type, scanRootId, ...exif } = q;
+  const { type, scanRootId, personIds, ...exif } = q;
   return {
     scope: scanRootId !== undefined ? { kind: "scanRoot", scanRootId } : undefined,
     type,
     exif,
+    personIds,
     ...extra,
   };
 }

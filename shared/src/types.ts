@@ -74,9 +74,28 @@ export interface UpdateScanRootRequest {
 
 export interface StorageStatsDto {
   thumbnailCacheBytes: number;
+  previewsBytes: number;
+  vectorsBytes: number;
+  facesBytes: number;
   databaseBytes: number;
   logsBytes: number;
   totalBytes: number;
+  // Where all of it lives, and why (env var, Settings move, or the OS default).
+  dataDir: string;
+  dataDirSource: "env" | "pointer" | "default";
+  // Set after a successful Move until the server restarts into the new location.
+  pendingMoveTo: string | null;
+}
+
+export interface MoveDataDirRequest {
+  path: string;
+}
+
+export interface MoveDataDirResultDto {
+  from: string;
+  to: string;
+  copiedBytes: number;
+  restartRequired: true;
 }
 
 export interface VersionDto {
@@ -94,8 +113,33 @@ export interface SettingsDto {
   stackMaxHamming: number;
   // Stacks v2: embedding cosine similarity that also counts as "same moment".
   stackMinCosine: number;
+  // Stacks v3: max gap for tripod/long-exposure series of near-identical frames.
+  stackSeriesGapSeconds: number;
   // Master switch for provider-backed analysis (embeddings today, faces later).
   aiEnabled: boolean;
+  // People (design doc §10) is opt-in: faces are biometric data.
+  personsEnabled: boolean;
+  // Cosine at/above which a new face joins the nearest known person.
+  faceAssignThreshold: number;
+  // Minimum faces for discovery to create a new "Person N".
+  faceMinClusterSize: number;
+  // Cosine at/above which two unassigned faces are linked during discovery.
+  // Higher = stricter grouping (more, smaller persons - merge is cheap).
+  faceLinkThreshold: number;
+  // Which face model the sidecar should use (see FaceModelName). Changing it
+  // re-detects every photo under the new model; names and corrections survive.
+  faceModel: FaceModelName;
+}
+
+export type FaceModelName = "yunet-sface" | "buffalo_l";
+
+// One of the face models the sidecar can serve (from its health report).
+export interface FaceModelInfoDto {
+  name: FaceModelName | string;
+  id: string;
+  dim: number;
+  license: string;
+  label: string;
 }
 
 export interface UpdateSettingsRequest {
@@ -106,7 +150,13 @@ export interface UpdateSettingsRequest {
   stackGapSeconds?: number;
   stackMaxHamming?: number;
   stackMinCosine?: number;
+  stackSeriesGapSeconds?: number;
   aiEnabled?: boolean;
+  personsEnabled?: boolean;
+  faceAssignThreshold?: number;
+  faceMinClusterSize?: number;
+  faceLinkThreshold?: number;
+  faceModel?: FaceModelName;
 }
 
 export interface FolderDto {
@@ -369,6 +419,8 @@ export interface AnalyzerStatusDto {
   backoffUntil: string | null;
   // False when switched off in Settings (aiEnabled) - rows stay pending.
   enabled: boolean;
+  // Most recent failure message, so the UI can say *why* instead of guessing.
+  lastError: string | null;
 }
 
 // The inference sidecar (memorylane-ai) as last seen by the server.
@@ -377,6 +429,8 @@ export interface ProviderStatusDto {
   reachable: boolean;
   model: string | null;
   dim: number | null;
+  faceModel: string | null;
+  faceModels: FaceModelInfoDto[];
   device: string | null;
   lastError: string | null;
   checkedAt: string | null;
@@ -462,4 +516,47 @@ export interface MergeStacksRequest {
 }
 export interface RecomputeStacksRequest {
   folderId?: number;
+}
+
+// People (design doc §10.3).
+export interface PersonDto {
+  id: number;
+  name: string | null;
+  autoLabel: string; // "Person 12"
+  displayName: string; // name ?? autoLabel
+  coverFaceId: number | null;
+  faceCount: number;
+  mediaCount: number;
+  hidden: boolean;
+}
+
+export interface FaceDto {
+  id: number;
+  mediaId: number;
+  bbox: [number, number, number, number];
+  detScore: number;
+  quality: number;
+  personId: number | null;
+  assignedBy: "auto" | "user" | null;
+}
+
+export interface PersonDetailDto {
+  person: PersonDto;
+  faces: FaceDto[];
+}
+
+export interface RenamePersonRequest {
+  name: string | null;
+}
+export interface HidePersonRequest {
+  hidden: boolean;
+}
+export interface MergePersonsRequest {
+  personId: number;
+}
+export interface AssignFaceRequest {
+  personId: number | null;
+}
+export interface RejectFaceRequest {
+  personId: number;
 }

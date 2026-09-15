@@ -34,7 +34,7 @@ const stackOf = (db: Database.Database, mediaId: number) =>
 describe("StackService.recomputeFolder", () => {
   it("creates burst stacks with the first shot as cover and leaves singles", async () => {
     const { db, folder, svc, shot } = await setup();
-    const a = shot(0), b = shot(100, H1), c = shot(200), d = shot(10_000);
+    const a = shot(0), b = shot(100, H1), c = shot(200), d = shot(10_000, HFAR);
     expect(svc.recomputeFolder(folder)).toBe(1);
     const s = svc.getStack(stackOf(db, a)!)!;
     expect(s).toMatchObject({ kind: "burst", coverMediaId: a, count: 3, userModified: false });

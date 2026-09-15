@@ -2,7 +2,10 @@ import { hammingHex } from "./phash.js";
 
 // Bump when the grouping rule changes so existing auto stacks are recomputed.
 // v2: embedding cosine similarity also counts as "same moment" (design §8.4).
-export const STACK_RULE_VERSION = "burst-v2";
+// v3: tripod/long-exposure series - a long gap is allowed when the frames
+// are visually near-identical, and gaps are measured from the end of the
+// previous exposure rather than its start.
+export const STACK_RULE_VERSION = "burst-v3";
 
 export interface StackCandidate {
   id: number;
@@ -13,6 +16,8 @@ export interface StackCandidate {
   burstId: string | null; // maker-note burst UUID when present
   // CLIP image embedding (L2-normalised) when the AI sidecar has run; null otherwise.
   embedding?: Float32Array | null;
+  // Exposure length; a 30s frame "ends" 30s after its capture time.
+  shutterSeconds?: number | null;
 }
 
 export interface StackerOptions {
@@ -21,9 +26,13 @@ export interface StackerOptions {
   // Cosine similarity at or above which two frames count as the same scene
   // even when their hashes differ (subject moved, hash broke).
   minCosine: number;
+  // Tripod / long-exposure series: frames this far apart still group, but
+  // only when they are visually near-identical (half the hash distance, or
+  // cosine >= the midpoint between minCosine and 1).
+  seriesGapSeconds: number;
 }
 
-export const DEFAULT_STACKER_OPTIONS: StackerOptions = { gapSeconds: 2, maxHamming: 14, minCosine: 0.9 };
+export const DEFAULT_STACKER_OPTIONS: StackerOptions = { gapSeconds: 2, maxHamming: 14, minCosine: 0.9, seriesGapSeconds: 120 };
 
 export function cosine(a: Float32Array, b: Float32Array): number {
   let s = 0;
@@ -61,11 +70,18 @@ export function groupBursts(rows: StackCandidate[], opts: StackerOptions = DEFAU
     const prev = current[current.length - 1];
     if (prev) {
       const sameBody = prev.body === r.body;
-      const closeInTime = r.ms - prev.ms <= opts.gapSeconds * 1000;
+      const prevEnd = prev.ms + Math.max(0, prev.shutterSeconds ?? 0) * 1000;
+      const gap = r.ms - prevEnd;
       const sameBurst = !!r.burstId && r.burstId === prev.burstId;
-      const hashClose = !!r.phash && !!prev.phash && hammingHex(r.phash, prev.phash) <= opts.maxHamming;
-      const embedClose = !!r.embedding && !!prev.embedding && cosine(r.embedding, prev.embedding) >= opts.minCosine;
-      if (sameBody && closeInTime && (sameBurst || hashClose || embedClose)) {
+      const hamming = r.phash && prev.phash ? hammingHex(r.phash, prev.phash) : null;
+      const cos = r.embedding && prev.embedding ? cosine(r.embedding, prev.embedding) : null;
+      const hashClose = hamming !== null && hamming <= opts.maxHamming;
+      const embedClose = cos !== null && cos >= opts.minCosine;
+      const burstJoin = gap <= opts.gapSeconds * 1000 && (sameBurst || hashClose || embedClose);
+      const hashTight = hamming !== null && hamming <= Math.floor(opts.maxHamming / 2);
+      const embedTight = cos !== null && cos >= (1 + opts.minCosine) / 2;
+      const seriesJoin = gap <= opts.seriesGapSeconds * 1000 && (hashTight || embedTight);
+      if (sameBody && (burstJoin || seriesJoin)) {
         current.push(r);
         continue;
       }

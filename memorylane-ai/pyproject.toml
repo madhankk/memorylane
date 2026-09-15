@@ -12,6 +12,7 @@ dependencies = [
   "tokenizers>=0.19",
   "huggingface_hub>=0.24",
   "python-multipart>=0.0.9",
+  "certifi>=2024.2",
 ]
 
 [project.optional-dependencies]

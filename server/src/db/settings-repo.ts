@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { SettingsDto } from "@memorylane/shared";
+import type { SettingsDto, FaceModelName } from "@memorylane/shared";
 
 const DEFAULTS: SettingsDto = {
   bindAddress: "0.0.0.0",
@@ -9,7 +9,13 @@ const DEFAULTS: SettingsDto = {
   stackGapSeconds: 2,
   stackMaxHamming: 14,
   stackMinCosine: 0.9,
+  stackSeriesGapSeconds: 120,
   aiEnabled: true,
+  personsEnabled: false,
+  faceAssignThreshold: 0.45,
+  faceMinClusterSize: 3,
+  faceLinkThreshold: 0.5,
+  faceModel: "yunet-sface",
 };
 
 export class SettingsRepo {
@@ -36,7 +42,13 @@ export class SettingsRepo {
       stackGapSeconds: map.has("stackGapSeconds") ? Number(map.get("stackGapSeconds")) : DEFAULTS.stackGapSeconds,
       stackMaxHamming: map.has("stackMaxHamming") ? Number(map.get("stackMaxHamming")) : DEFAULTS.stackMaxHamming,
       stackMinCosine: map.has("stackMinCosine") ? Number(map.get("stackMinCosine")) : DEFAULTS.stackMinCosine,
+      stackSeriesGapSeconds: map.has("stackSeriesGapSeconds") ? Number(map.get("stackSeriesGapSeconds")) : DEFAULTS.stackSeriesGapSeconds,
       aiEnabled: map.has("aiEnabled") ? map.get("aiEnabled") === "true" : DEFAULTS.aiEnabled,
+      personsEnabled: map.has("personsEnabled") ? map.get("personsEnabled") === "true" : DEFAULTS.personsEnabled,
+      faceAssignThreshold: map.has("faceAssignThreshold") ? Number(map.get("faceAssignThreshold")) : DEFAULTS.faceAssignThreshold,
+      faceMinClusterSize: map.has("faceMinClusterSize") ? Number(map.get("faceMinClusterSize")) : DEFAULTS.faceMinClusterSize,
+      faceLinkThreshold: map.has("faceLinkThreshold") ? Number(map.get("faceLinkThreshold")) : DEFAULTS.faceLinkThreshold,
+      faceModel: (map.get("faceModel") as FaceModelName | undefined) ?? DEFAULTS.faceModel,
     };
   }
 
@@ -58,7 +70,13 @@ export class SettingsRepo {
     if (patch.stackGapSeconds !== undefined) entries.push(["stackGapSeconds", String(patch.stackGapSeconds)]);
     if (patch.stackMaxHamming !== undefined) entries.push(["stackMaxHamming", String(patch.stackMaxHamming)]);
     if (patch.stackMinCosine !== undefined) entries.push(["stackMinCosine", String(patch.stackMinCosine)]);
+    if (patch.stackSeriesGapSeconds !== undefined) entries.push(["stackSeriesGapSeconds", String(patch.stackSeriesGapSeconds)]);
     if (patch.aiEnabled !== undefined) entries.push(["aiEnabled", String(patch.aiEnabled)]);
+    if (patch.personsEnabled !== undefined) entries.push(["personsEnabled", String(patch.personsEnabled)]);
+    if (patch.faceAssignThreshold !== undefined) entries.push(["faceAssignThreshold", String(patch.faceAssignThreshold)]);
+    if (patch.faceMinClusterSize !== undefined) entries.push(["faceMinClusterSize", String(patch.faceMinClusterSize)]);
+    if (patch.faceLinkThreshold !== undefined) entries.push(["faceLinkThreshold", String(patch.faceLinkThreshold)]);
+    if (patch.faceModel !== undefined) entries.push(["faceModel", patch.faceModel]);
 
     if (entries.length > 0) tx(entries);
     return this.getAll();

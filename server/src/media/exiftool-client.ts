@@ -41,13 +41,30 @@ export function getExifToolVersion(): string {
   return cachedVersion;
 }
 
+// ExifTool reports a file it couldn't open as a *successful* read whose
+// only content is an Error tag (e.g. an unmounted NAS volume). Treat that
+// as a failed read so callers retry later instead of storing an empty result.
+export class ExifReadError extends Error {}
+
+export function exifReadError(tags: Tags | null): string | null {
+  if (!tags) return null;
+  const t = tags as { Error?: unknown; errors?: unknown };
+  if (typeof t.Error === "string") return t.Error;
+  if (Array.isArray(t.errors) && t.errors.length > 0) return String(t.errors[0]);
+  return null;
+}
+
 export async function readTags(filePath: string): Promise<Tags | null> {
   if (!isAvailable) return null;
+  let tags: Tags;
   try {
-    return await getExifTool().read(filePath);
-  } catch {
-    return null;
+    tags = await getExifTool().read(filePath);
+  } catch (err) {
+    throw new ExifReadError(err instanceof Error ? err.message : String(err));
   }
+  const problem = exifReadError(tags);
+  if (problem) throw new ExifReadError(problem);
+  return tags;
 }
 
 // Returns the largest embedded preview image found in a RAW file, if any.
