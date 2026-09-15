@@ -178,6 +178,33 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [storage, setStorage] = useState<StorageStatsDto | null>(null);
   const [storageLoading, setStorageLoading] = useState(false);
+  const [movePath, setMovePath] = useState("");
+  const [moving, setMoving] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const [moveDone, setMoveDone] = useState<{ from: string; to: string; bytes: number } | null>(null);
+
+  const moveData = async () => {
+    const target = movePath.trim();
+    if (!target) return;
+    if (
+      !window.confirm(
+        `Copy MemoryLane's cache and index to\n${target}\n\nThe copy runs now (a minute or two per GB); MemoryLane keeps working meanwhile. You'll then restart it to use the new location. The old copy stays until you delete it.`,
+      )
+    )
+      return;
+    setMoving(true);
+    setMoveError(null);
+    try {
+      const r = await api.settings.moveDataDir(target);
+      setMoveDone({ from: r.from, to: r.to, bytes: r.copiedBytes });
+      setMovePath("");
+      await loadStorage();
+    } catch (err) {
+      setMoveError(err instanceof ApiError ? err.message : "Move failed");
+    } finally {
+      setMoving(false);
+    }
+  };
   const [ignoredPaths, setIgnoredPaths] = useState<IgnoredPathDto[]>([]);
   const [version, setVersion] = useState<string | null>(null);
   const [openTranscodeRootId, setOpenTranscodeRootId] = useState<number | null>(null);
@@ -788,24 +815,64 @@ export default function SettingsPage() {
           rebuild via a rescan at any time.
         </p>
         {storage ? (
-          <ul className="flex flex-col gap-2">
-            <li className="flex items-center justify-between rounded-lg border border-border bg-surface px-3.5 py-2.5">
-              <span className="text-ink">Thumbnail cache</span>
-              <span className="text-muted">{formatBytes(storage.thumbnailCacheBytes)}</span>
-            </li>
-            <li className="flex items-center justify-between rounded-lg border border-border bg-surface px-3.5 py-2.5">
-              <span className="text-ink">Database</span>
-              <span className="text-muted">{formatBytes(storage.databaseBytes)}</span>
-            </li>
-            <li className="flex items-center justify-between rounded-lg border border-border bg-surface px-3.5 py-2.5">
-              <span className="text-ink">Logs</span>
-              <span className="text-muted">{formatBytes(storage.logsBytes)}</span>
-            </li>
-            <li className="flex items-center justify-between rounded-lg border border-accent bg-surface px-3.5 py-2.5 font-medium">
-              <span className="text-ink">Total</span>
-              <span className="text-ink">{formatBytes(storage.totalBytes)}</span>
-            </li>
-          </ul>
+          <>
+            <div className="mb-3 rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm">
+              <div className="text-xs uppercase tracking-wide text-muted">Location</div>
+              <code className="break-all text-ink">{storage.dataDir}</code>
+              <div className="mt-1 text-xs text-muted">
+                {storage.dataDirSource === "env" && "Set by MEMORYLANE_DATA_DIR in the environment."}
+                {storage.dataDirSource === "pointer" && "Chosen under Settings (the default location holds a pointer to it)."}
+                {storage.dataDirSource === "default" && "The OS default location."}
+              </div>
+              {storage.pendingMoveTo && (
+                <p className="mt-2 rounded-md bg-amber-500/15 px-2.5 py-1.5 text-xs text-amber-700">
+                  Data was copied to <code>{storage.pendingMoveTo}</code>. Restart MemoryLane to use it; the copy here can be deleted afterwards.
+                </p>
+              )}
+            </div>
+            <ul className="flex flex-col gap-2">
+              {[
+                ["Previews (RAW fullscreen)", storage.previewsBytes],
+                ["Thumbnail cache", storage.thumbnailCacheBytes],
+                ["Database (index, EXIF, embeddings)", storage.databaseBytes],
+                ["Vector index", storage.vectorsBytes],
+                ["Face crops", storage.facesBytes],
+                ["Logs", storage.logsBytes],
+              ].map(([label, bytes]) => (
+                <li key={label as string} className="flex items-center justify-between rounded-lg border border-border bg-surface px-3.5 py-2.5">
+                  <span className="text-ink">{label}</span>
+                  <span className="text-muted tabular-nums">{formatBytes(bytes as number)}</span>
+                </li>
+              ))}
+              <li className="flex items-center justify-between rounded-lg border border-accent bg-surface px-3.5 py-2.5 font-medium">
+                <span className="text-ink">Total</span>
+                <span className="text-ink tabular-nums">{formatBytes(storage.totalBytes)}</span>
+              </li>
+            </ul>
+            {storage.dataDirSource !== "env" && (
+              <div className="mt-4 flex flex-col gap-2 text-sm">
+                <span className="text-muted">Move to another disk (an empty folder, e.g. <code>/Volumes/External/MemoryLane</code> or <code>D:\\MemoryLane</code>)</span>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    value={movePath}
+                    onChange={(e) => setMovePath(e.target.value)}
+                    placeholder="/absolute/path/to/empty/folder"
+                    className={`min-w-[320px] flex-1 ${inputClass}`}
+                  />
+                  <button onClick={() => void moveData()} disabled={moving || !movePath.trim()} className={buttonClass}>
+                    {moving ? "Copying…" : "Move data here"}
+                  </button>
+                </div>
+                {moveError && <p className="text-red-600">{moveError}</p>}
+                {moveDone && (
+                  <p className="text-muted">
+                    Copied {formatBytes(moveDone.bytes)} to <code>{moveDone.to}</code>. <strong className="text-ink">Restart MemoryLane</strong> to switch;
+                    then delete <code>{moveDone.from}</code> to free the space.
+                  </p>
+                )}
+              </div>
+            )}
+          </>
         ) : (
           <p className="text-sm text-muted">Calculating...</p>
         )}

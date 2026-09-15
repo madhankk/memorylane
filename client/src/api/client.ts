@@ -33,6 +33,7 @@ import type {
   AnalysisStatusDto,
   StackDto,
   StackDetailDto,
+  MoveDataDirResultDto,
   SimilarResultDto,
   SearchMode,
   PersonDto,
@@ -97,6 +98,7 @@ export const api = {
     get: () => request<SettingsDto>("/api/settings"),
     update: (body: UpdateSettingsRequest) => request<SettingsDto>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
     storage: () => request<StorageStatsDto>("/api/settings/storage"),
+    moveDataDir: (path: string) => request<MoveDataDirResultDto>("/api/settings/data-dir", { method: "POST", body: JSON.stringify({ path }) }),
     version: () => request<VersionDto>("/api/settings/version"),
   },
   scanRoots: {

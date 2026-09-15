@@ -28,6 +28,7 @@ export async function createTestApp(opts: { provider?: AiProvider | null } = {})
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "memorylane-test-"));
   const paths: AppPaths = {
     dataDir,
+    dataDirSource: "default",
     dbPath: path.join(dataDir, "db.sqlite"),
     thumbnailsDir: path.join(dataDir, "thumbnails"),
     previewsDir: path.join(dataDir, "previews"),

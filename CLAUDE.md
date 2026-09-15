@@ -27,7 +27,7 @@ npm run reset-password -- <args>   # server/scripts/reset-password.ts
 - `shared` must be built (`npm run build --workspace=shared`) before server/client typecheck resolves `@memorylane/shared` — it's consumed via `dist/`.
 - `server/src/version.ts` is generated from `server/package.json` by `scripts/generate-version.mjs` and is gitignored; never edit or commit it.
 - Migrations are copied to `server/dist/migrations` at build time; `migrate.ts` resolves whichever of `server/migrations` (dev) or `dist/migrations` (built) exists.
-- Set `MEMORYLANE_NO_OPEN=1` to stop the server auto-opening a browser tab (already suppressed under `npm run dev`). `MEMORYLANE_DATA_DIR` relocates the DB/thumbnail cache — useful for a throwaway dev library.
+- Set `MEMORYLANE_NO_OPEN=1` to stop the server auto-opening a browser tab (already suppressed under `npm run dev`). `MEMORYLANE_DATA_DIR` relocates the DB/thumbnail cache — useful for a throwaway dev library. Without it, `resolveAppDataDir` honours a `data-location.txt` pointer in the platform default dir, written by Settings › Storage › Move (`config/data-dir-move.ts`: SQLite online backup + recursive copy, restart to switch, old copy left in place).
 
 Desktop (Electron tray app) — run from `desktop/`, and only after a root `npm run build`:
 

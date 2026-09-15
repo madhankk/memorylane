@@ -74,9 +74,28 @@ export interface UpdateScanRootRequest {
 
 export interface StorageStatsDto {
   thumbnailCacheBytes: number;
+  previewsBytes: number;
+  vectorsBytes: number;
+  facesBytes: number;
   databaseBytes: number;
   logsBytes: number;
   totalBytes: number;
+  // Where all of it lives, and why (env var, Settings move, or the OS default).
+  dataDir: string;
+  dataDirSource: "env" | "pointer" | "default";
+  // Set after a successful Move until the server restarts into the new location.
+  pendingMoveTo: string | null;
+}
+
+export interface MoveDataDirRequest {
+  path: string;
+}
+
+export interface MoveDataDirResultDto {
+  from: string;
+  to: string;
+  copiedBytes: number;
+  restartRequired: true;
 }
 
 export interface VersionDto {

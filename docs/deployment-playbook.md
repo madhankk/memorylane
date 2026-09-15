@@ -131,7 +131,7 @@ npm run dev:client     # optional, Vite UI on :5173 with hot reload
 | Windows | `%LOCALAPPDATA%\MemoryLane` |
 | Linux | `~/.local/share/MemoryLane` |
 
-Contents: `memorylane.sqlite` (index, EXIF, stacks, embeddings), `thumbnails/`, `previews/`, `vectors/` (LanceDB cache — rebuilt from the DB on startup if missing), `logs/`. Override with `MEMORYLANE_DATA_DIR` — handy for a throwaway test library:
+Contents: `memorylane.sqlite` (index, EXIF, stacks, embeddings, faces), `thumbnails/`, `previews/` (usually the largest — RAW fullscreen tier), `vectors/` (LanceDB cache — rebuilt from the DB on startup if missing), `faces/` (crop cache), `logs/`. **Settings › Storage** shows the location and per-folder sizes and has **Move data here** to relocate everything to another disk (copies, then asks for a restart; the old copy stays until you delete it). Override with `MEMORYLANE_DATA_DIR` — handy for a throwaway test library:
 
 ```bash
 MEMORYLANE_DATA_DIR=/tmp/ml-test MEMORYLANE_PORT=4299 npm start
@@ -146,7 +146,7 @@ $env:MEMORYLANE_DATA_DIR="$env:TEMP\ml-test"; $env:MEMORYLANE_PORT="4299"; npm s
 
 | Variable | Default | Notes |
 |---|---|---|
-| `MEMORYLANE_DATA_DIR` | OS app-data dir | DB, thumbnails, vectors, logs |
+| `MEMORYLANE_DATA_DIR` | OS app-data dir (or the folder chosen under Settings › Storage) | DB, thumbnails, previews, vectors, face crops, logs. When set, it wins over the Settings choice. |
 | `MEMORYLANE_PORT` | `4280` | |
 | `MEMORYLANE_BIND_ADDRESS` | `0.0.0.0` | Reachable on the LAN by default; `127.0.0.1` to restrict |
 | `MEMORYLANE_ALLOW_REMOTE_SETUP` | unset | `1` to allow first-run setup from another device |

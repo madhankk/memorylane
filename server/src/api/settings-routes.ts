@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { updateSettingsRequestSchema, type StorageStatsDto, type VersionDto } from "@memorylane/shared";
+import { updateSettingsRequestSchema, moveDataDirRequestSchema, type StorageStatsDto, type VersionDto, type MoveDataDirResultDto } from "@memorylane/shared";
+import { moveDataDir, pendingMoveTarget, DataDirMoveError } from "../config/data-dir-move.js";
 import type { AppContext } from "../context.js";
 import { SettingsRepo } from "../db/settings-repo.js";
 import { getDirectorySize, getFileSize } from "../util/dir-size.js";
@@ -32,8 +33,11 @@ export async function registerSettingsRoutes(app: FastifyInstance, ctx: AppConte
   // cache, database, logs) - entirely separate from the source photo library.
   app.get("/api/settings/storage", { preHandler: app.requireAuth }, async (_request, reply) => {
     const { paths } = ctx;
-    const [thumbnailCacheBytes, databaseBytes, walBytes, shmBytes, logsBytes] = await Promise.all([
+    const [thumbnailCacheBytes, previewsBytes, vectorsBytes, facesBytes, databaseBytes, walBytes, shmBytes, logsBytes] = await Promise.all([
       getDirectorySize(paths.thumbnailsDir),
+      getDirectorySize(paths.previewsDir),
+      getDirectorySize(paths.vectorsDir),
+      getDirectorySize(paths.facesDir),
       getFileSize(paths.dbPath),
       getFileSize(`${paths.dbPath}-wal`),
       getFileSize(`${paths.dbPath}-shm`),
@@ -43,11 +47,36 @@ export async function registerSettingsRoutes(app: FastifyInstance, ctx: AppConte
 
     const stats: StorageStatsDto = {
       thumbnailCacheBytes,
+      previewsBytes,
+      vectorsBytes,
+      facesBytes,
       databaseBytes: databaseTotal,
       logsBytes,
-      totalBytes: thumbnailCacheBytes + databaseTotal + logsBytes,
+      totalBytes: thumbnailCacheBytes + previewsBytes + vectorsBytes + facesBytes + databaseTotal + logsBytes,
+      dataDir: paths.dataDir,
+      dataDirSource: paths.dataDirSource,
+      pendingMoveTo: pendingMoveTarget(paths),
     };
     return reply.send(stats);
+  });
+
+  // Copies the whole data directory somewhere else (another disk) and makes
+  // that the location for the next start. Refused while a scan is running.
+  app.post("/api/settings/data-dir", { preHandler: app.requireAuth }, async (request, reply) => {
+    const parsed = moveDataDirRequestSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "Invalid input" });
+    if (ctx.scanner.isRunning()) return reply.code(409).send({ error: "Wait for the running scan to finish first" });
+    try {
+      const { copiedBytes } = await moveDataDir(ctx.db, ctx.paths, parsed.data.path, app.log, {
+        pause: () => ctx.analysisWorker.stop(),
+        resume: () => ctx.analysisWorker.start(),
+      });
+      const result: MoveDataDirResultDto = { from: ctx.paths.dataDir, to: parsed.data.path, copiedBytes, restartRequired: true };
+      return reply.send(result);
+    } catch (err) {
+      if (err instanceof DataDirMoveError) return reply.code(err.status).send({ error: err.message });
+      throw err;
+    }
   });
 
   app.get("/api/settings/version", { preHandler: app.requireAuth }, async (_request, reply) => {

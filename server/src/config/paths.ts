@@ -2,12 +2,9 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 
-// Resolves MemoryLane's application-data directory (database, thumbnails, logs).
-// This directory is entirely disposable/rebuildable from the source media - see PLAN.md section 12.
-export function resolveAppDataDir(): string {
-  const override = process.env.MEMORYLANE_DATA_DIR;
-  if (override) return path.resolve(override);
-
+// The OS-standard location. Also where the "data lives elsewhere" pointer
+// file is kept, so it can be found without any configuration.
+export function platformDefaultDataDir(): string {
   const platform = process.platform;
   if (platform === "win32") {
     const base = process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local");
@@ -21,8 +18,31 @@ export function resolveAppDataDir(): string {
   return path.join(xdgDataHome, "MemoryLane");
 }
 
+export const DATA_LOCATION_FILE = "data-location.txt";
+
+export type DataDirSource = "env" | "pointer" | "default";
+
+// Resolves MemoryLane's application-data directory (database, thumbnails, logs).
+// Precedence: MEMORYLANE_DATA_DIR env var > pointer file written by
+// Settings › Storage › Move (lives in the platform default dir) > default.
+// This directory is entirely disposable/rebuildable from the source media.
+export function resolveAppDataDir(): { dataDir: string; source: DataDirSource } {
+  const override = process.env.MEMORYLANE_DATA_DIR;
+  if (override) return { dataDir: path.resolve(override), source: "env" };
+  const defaultDir = platformDefaultDataDir();
+  const pointer = path.join(defaultDir, DATA_LOCATION_FILE);
+  try {
+    const target = fs.readFileSync(pointer, "utf8").trim();
+    if (target && fs.existsSync(target) && fs.statSync(target).isDirectory()) return { dataDir: target, source: "pointer" };
+  } catch {
+    // no pointer - use the default
+  }
+  return { dataDir: defaultDir, source: "default" };
+}
+
 export interface AppPaths {
   dataDir: string;
+  dataDirSource: DataDirSource;
   dbPath: string;
   thumbnailsDir: string;
   previewsDir: string;
@@ -40,9 +60,10 @@ export interface AppPaths {
 }
 
 export function resolveAppPaths(): AppPaths {
-  const dataDir = resolveAppDataDir();
+  const { dataDir, source } = resolveAppDataDir();
   const paths: AppPaths = {
     dataDir,
+    dataDirSource: source,
     dbPath: path.join(dataDir, "memorylane.sqlite"),
     thumbnailsDir: path.join(dataDir, "thumbnails"),
     // Larger RAW-only previews live separately from grid thumbnails - see

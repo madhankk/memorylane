@@ -190,3 +190,5 @@ export const assignFaceRequestSchema = z.object({ personId: z.number().int().pos
 export const rejectFaceRequestSchema = z.object({ personId: z.number().int().positive() });
 export const personFacesQuerySchema = paginationQuerySchema;
 export const personsListQuerySchema = z.object({ includeHidden: booleanQueryParam });
+
+export const moveDataDirRequestSchema = z.object({ path: z.string().min(1).max(4096) });
