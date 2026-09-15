@@ -9,6 +9,7 @@ import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
 import SurprisePage from "./pages/SurprisePage";
 import FavoritesPage from "./pages/FavoritesPage";
+import ReportsPage from "./pages/ReportsPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, needsSetup, loading } = useAuth();
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/surprise" element={<SurprisePage />} />
         <Route path="/favorites" element={<FavoritesPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

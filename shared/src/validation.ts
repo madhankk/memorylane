@@ -111,3 +111,38 @@ export const archiveTranscodedRequestSchema = z
   .refine((v) => v.all || (v.mediaIds && v.mediaIds.length > 0), { message: "mediaIds or all is required" });
 
 export const transcodeCandidatesQuerySchema = paginationQuerySchema;
+
+export const retryAnalysisRequestSchema = z.object({
+  analyzer: z.string().min(1).max(64).optional(),
+});
+
+// EXIF report filters - shared by GET /api/media, /api/reports/facets and
+// /api/reports/export.csv so a facet click, the grid, and the CSV all agree.
+export const exifFilterQuerySchema = z.object({
+  lens: z.string().min(1).max(200).optional(),
+  camera: z.string().min(1).max(200).optional(),
+  make: z.string().min(1).max(200).optional(),
+  apertureMin: z.coerce.number().positive().optional(),
+  apertureMax: z.coerce.number().positive().optional(),
+  isoMin: z.coerce.number().int().min(0).optional(),
+  isoMax: z.coerce.number().int().min(0).optional(),
+  focalMin: z.coerce.number().min(0).optional(),
+  focalMax: z.coerce.number().min(0).optional(),
+  year: z.coerce.number().int().min(1800).max(2200).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+export type ExifFilterQuery = z.infer<typeof exifFilterQuerySchema>;
+
+export const mediaListQuerySchema = paginationQuerySchema.merge(exifFilterQuerySchema).extend({
+  type: mediaTypeFilterSchema,
+  scanRootId: z.coerce.number().int().positive().optional(),
+});
+
+export const REPORT_FACET_FIELDS = ["lens", "camera", "make", "aperture", "iso", "focal", "year"] as const;
+export type ReportFacetField = (typeof REPORT_FACET_FIELDS)[number];
+
+export const reportFacetsQuerySchema = exifFilterQuerySchema.extend({
+  type: mediaTypeFilterSchema,
+  scanRootId: z.coerce.number().int().positive().optional(),
+});

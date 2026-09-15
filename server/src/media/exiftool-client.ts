@@ -7,6 +7,7 @@ import type { Logger } from "pino";
 let sharedInstance: ExifTool | null = null;
 let availabilityChecked = false;
 let isAvailable = false;
+let cachedVersion = "unavailable";
 
 export function getExifTool(): ExifTool {
   if (!sharedInstance) {
@@ -19,7 +20,7 @@ export async function checkExifToolAvailable(logger: Logger): Promise<boolean> {
   if (availabilityChecked) return isAvailable;
   try {
     const et = getExifTool();
-    await et.version();
+    cachedVersion = await et.version();
     isAvailable = true;
     logger.info("ExifTool is available");
   } catch (err) {
@@ -32,6 +33,12 @@ export async function checkExifToolAvailable(logger: Logger): Promise<boolean> {
 
 export function isExifToolAvailable(): boolean {
   return isAvailable;
+}
+
+// Recorded on every media_exif row so a future ExifTool upgrade can be
+// targeted for re-extraction if it starts reading tags an older one missed.
+export function getExifToolVersion(): string {
+  return cachedVersion;
 }
 
 export async function readTags(filePath: string): Promise<Tags | null> {

@@ -9,6 +9,7 @@ import { classifyExtension } from "./media-types.js";
 import { computeFingerprint } from "./fingerprint.js";
 import { getOrCreateFolder } from "./folder-repo.js";
 import { processMediaItem } from "../media/media-processor.js";
+import { AnalysisRepo } from "../analysis/analysis-repo.js";
 
 interface ScanRootRow {
   id: number;
@@ -79,15 +80,25 @@ const THUMBNAIL_QUEUE_FLUSH_SIZE = 200;
 export class ScannerService {
   private running = false;
   private scheduleTimer: NodeJS.Timeout | null = null;
+  private finishedListeners: (() => void)[] = [];
+  private analysisRepo: AnalysisRepo;
 
   constructor(
     private db: Database.Database,
     private paths: AppPaths,
     private logger: Logger,
-  ) {}
+  ) {
+    this.analysisRepo = new AnalysisRepo(db);
+  }
 
   isRunning(): boolean {
     return this.running;
+  }
+
+  // Fired after every run (completed or failed) - the AnalysisWorker uses
+  // this to queue newly indexed media without the scanner importing it.
+  onScanFinished(cb: () => void): void {
+    this.finishedListeners.push(cb);
   }
 
   getStatus(): ScanStatusDto {
@@ -271,6 +282,13 @@ export class ScannerService {
     } finally {
       clearInterval(progressTimer);
       this.running = false;
+      for (const cb of this.finishedListeners) {
+        try {
+          cb();
+        } catch (err) {
+          this.logger.error({ err }, "Scan-finished listener failed");
+        }
+      }
     }
   }
 
@@ -389,6 +407,8 @@ export class ScannerService {
            WHERE id = ?`,
         )
         .run(stat.size, stat.mtime.toISOString(), fingerprint, parentFolderId, existing.id);
+      // Every analyzer's stored result was computed from the old bytes.
+      this.analysisRepo.resetForMedia(existing.id);
       stats.filesChanged++;
       enqueueProcessing(existing.id, absolutePath, mediaType, parentFolderId);
       return;

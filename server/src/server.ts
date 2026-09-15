@@ -8,6 +8,8 @@ import { SqliteRandomSelectionService } from "./media/random-selection-service.j
 import { checkExifToolAvailable, shutdownExifTool } from "./media/exiftool-client.js";
 import { checkFfmpegAvailable } from "./media/video-client.js";
 import { TranscodeWorker } from "./media/transcode-worker.js";
+import { AnalysisWorker } from "./analysis/analysis-worker.js";
+import { createAnalyzers } from "./analysis/registry.js";
 import { buildApp } from "./app.js";
 import type { AppContext } from "./context.js";
 
@@ -37,7 +39,9 @@ async function main(): Promise<void> {
   const randomSelection = new SqliteRandomSelectionService(db);
   const transcodeWorker = new TranscodeWorker(db, paths, bootstrapLogger, scanner);
 
-  const ctx: AppContext = { db, paths, sessions, scanner, randomSelection, transcodeWorker };
+  const analysisWorker = new AnalysisWorker(db, bootstrapLogger, createAnalyzers(db, bootstrapLogger), () => scanner.isRunning());
+
+  const ctx: AppContext = { db, paths, sessions, scanner, randomSelection, transcodeWorker, analysisWorker };
   const app = await buildApp(ctx);
 
   // Reconcile any video transcode job left mid-flight by a previous process
@@ -45,6 +49,12 @@ async function main(): Promise<void> {
   // TranscodeWorker.reconcileAndResume for why those two cases are handled
   // differently.
   transcodeWorker.reconcileAndResume();
+
+  // Background analysis (full EXIF backfill today; embeddings/faces later)
+  // trails the scanner: it re-queues anything a scan touched and yields
+  // entirely while a scan is running.
+  analysisWorker.start();
+  scanner.onScanFinished(() => analysisWorker.kick());
 
   scanner.scheduleFromSettings(settings.scanIntervalDays, settings.scanScheduleEnabled);
 
@@ -82,6 +92,7 @@ async function main(): Promise<void> {
 
   const shutdown = async (signal: string) => {
     app.log.info({ signal }, "Shutting down");
+    await analysisWorker.stop();
     await app.close();
     await shutdownExifTool();
     db.close();

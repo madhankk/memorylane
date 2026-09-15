@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import type { FavoriteResultDto, MediaTypeFilter } from "@memorylane/shared";
-import { EXCLUDE_LIVE_PHOTO_VIDEOS, EXCLUDE_PAIRED_RAW, mediaTypeFilterClause } from "../api/mappers.js";
+import { buildMediaQuery, mediaCountSql } from "../query/media-query.js";
 
 // All engagement state lives in one small table (media_engagement) - see
 // migrations/006_media_engagement.sql. This is intentionally just aggregate
@@ -65,27 +65,11 @@ export class EngagementRepo {
   }
 
   listFavoriteIds(offset: number, limit: number, type: MediaTypeFilter = "all"): { ids: number[]; total: number } {
-    // Bare column references (id, media_type, live_photo_video_id) resolve
-    // unambiguously to the joined `media` table - media_engagement has none
-    // of those columns itself.
-    const typeClause = mediaTypeFilterClause(type);
-    const total = (
-      this.db
-        .prepare(
-          `SELECT COUNT(*) as c FROM media_engagement me
-           JOIN media ON media.id = me.media_id
-           WHERE me.favorite = 1 AND media.status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW} AND ${typeClause}`,
-        )
-        .get() as { c: number }
-    ).c;
+    const q = buildMediaQuery({ favoritesOnly: true, type });
+    const total = (this.db.prepare(mediaCountSql(q)).get(...q.bindings) as { c: number }).c;
     const rows = this.db
-      .prepare(
-        `SELECT me.media_id FROM media_engagement me
-         JOIN media ON media.id = me.media_id
-         WHERE me.favorite = 1 AND media.status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW} AND ${typeClause}
-         ORDER BY me.favorited_at DESC LIMIT ? OFFSET ?`,
-      )
-      .all(limit, offset) as { media_id: number }[];
-    return { ids: rows.map((r) => r.media_id), total };
+      .prepare(`SELECT media.id FROM media ${q.joins} WHERE ${q.where} ORDER BY me.favorited_at DESC LIMIT ? OFFSET ?`)
+      .all(...q.bindings, limit, offset) as { id: number }[];
+    return { ids: rows.map((r) => r.id), total };
   }
 }

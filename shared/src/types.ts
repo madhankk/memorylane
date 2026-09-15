@@ -1,7 +1,7 @@
 // Shared enums and DTOs used by both server and client.
 // Keep this file free of any server-only or browser-only dependencies.
 
-import type { VideoTranscodeQuality } from "./validation.js";
+import type { VideoTranscodeQuality, ReportFacetField } from "./validation.js";
 
 export type MediaType = "image" | "raw" | "video";
 
@@ -330,4 +330,51 @@ export interface ArchiveTranscodedRequest {
 export interface ArchiveTranscodedResultDto {
   archived: number[];
   failed: { mediaId: number; error: string }[];
+}
+
+// Background analysis pipeline (design doc §6) - per-analyzer queue counts
+// shown under Settings > Analysis, polled like scan status.
+export type AnalysisStatus = "pending" | "running" | "done" | "failed" | "unsupported";
+
+export interface AnalyzerStatusDto {
+  key: string;
+  version: string;
+  counts: Record<AnalysisStatus, number>;
+}
+
+export interface AnalysisStatusDto {
+  // True while a scan is running - the worker yields to it.
+  paused: boolean;
+  analyzers: AnalyzerStatusDto[];
+}
+
+export interface RetryAnalysisRequest {
+  analyzer?: string;
+}
+
+// Focal-length report buckets (mm). Shared so the facet value the server
+// emits is exactly the key the client sends back as focalMin/focalMax.
+export const FOCAL_BUCKETS: { key: string; label: string; min: number; max: number }[] = [
+  { key: "0-24", label: "≤ 24 mm", min: 0, max: 24 },
+  { key: "25-35", label: "25–35 mm", min: 25, max: 35 },
+  { key: "36-50", label: "36–50 mm", min: 36, max: 50 },
+  { key: "51-85", label: "51–85 mm", min: 51, max: 85 },
+  { key: "86-135", label: "86–135 mm", min: 86, max: 135 },
+  { key: "136-200", label: "136–200 mm", min: 136, max: 200 },
+  { key: "201-400", label: "201–400 mm", min: 201, max: 400 },
+  { key: "401-9999", label: "> 400 mm", min: 401, max: 9999 },
+];
+
+export interface FacetBucketDto {
+  // The filter value to send back (lens string, "2.8", "400", focal bucket key, "2019").
+  value: string;
+  label: string;
+  count: number;
+}
+
+// Each facet is computed with its own filter removed (standard faceted
+// search): selecting a lens narrows every other panel but still shows all lenses.
+export interface ReportFacetsDto {
+  total: number;
+  facets: Record<ReportFacetField, FacetBucketDto[]>;
 }

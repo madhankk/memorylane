@@ -1,12 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
-import { updateFavoriteRequestSchema } from "@memorylane/shared";
+import { updateFavoriteRequestSchema, mediaListQuerySchema } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { toMediaDto, type MediaRow } from "./mappers.js";
 import { thumbnailPathForMediaId, previewPathForMediaId } from "../config/paths.js";
 import { streamFile, mimeTypeForExtension } from "./file-streaming.js";
 import { EngagementRepo } from "../db/engagement-repo.js";
+import { buildMediaQuery, mediaCountSql, mediaSelectSql } from "../query/media-query.js";
+import { toMediaQueryParams } from "./reports-routes.js";
 
 interface MediaWithRootRow extends MediaRow {
   scan_root_path: string;
@@ -37,6 +39,18 @@ function resolveVerifiedMedia(ctx: AppContext, id: number): MediaWithRootRow | n
 export async function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { db, paths } = ctx;
   const engagement = new EngagementRepo(db);
+
+  // Library-wide filtered listing - backs the Reports grid. Same filter
+  // vocabulary as /api/reports/facets and export.csv (see reports-routes.ts).
+  app.get("/api/media", { preHandler: app.requireAuth }, async (request, reply) => {
+    const parsed = mediaListQuerySchema.safeParse(request.query);
+    if (!parsed.success) return reply.code(400).send({ error: "Invalid query" });
+    const { offset, limit, ...filters } = parsed.data;
+    const q = buildMediaQuery(toMediaQueryParams(filters));
+    const total = (db.prepare(mediaCountSql(q)).get(...q.bindings) as { c: number }).c;
+    const rows = db.prepare(mediaSelectSql(q)).all(...q.bindings, limit, offset) as MediaRow[];
+    return reply.send({ items: engagement.attachFavorites(rows.map(toMediaDto)), total, offset, limit });
+  });
 
   app.get("/api/media/:id", { preHandler: app.requireAuth }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);

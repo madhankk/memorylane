@@ -28,6 +28,9 @@ import type {
   TranscodeCandidatesResultDto,
   TranscodeJobDto,
   ArchiveTranscodedResultDto,
+  ReportFacetsDto,
+  ExifFilterQuery,
+  AnalysisStatusDto,
 } from "@memorylane/shared";
 
 class ApiError extends Error {
@@ -60,6 +63,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export { ApiError };
+
+export type ReportFilters = ExifFilterQuery & { type?: MediaTypeFilter };
+
+// Serialises only defined filter values, so the same object drives the
+// grid request, the facets request, and the CSV link.
+export function toQueryString(params: Record<string, string | number | undefined>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== "" && !(k === "type" && v === "all")) sp.set(k, String(v));
+  }
+  const s = sp.toString();
+  return s ? `?${s}` : "";
+}
 
 export const api = {
   auth: {
@@ -109,6 +125,8 @@ export const api = {
     remove: (id: number) => request<void>(`/api/ignored-paths/${id}`, { method: "DELETE" }),
   },
   media: {
+    list: (filters: ReportFilters, offset = 0, limit = 200) =>
+      request<PaginatedResult<MediaDto>>(`/api/media${toQueryString({ ...filters, offset, limit })}`),
     get: (id: number) => request<MediaDto>(`/api/media/${id}`),
     fileUrl: (id: number) => `/api/media/${id}/file`,
     // `v` busts the browser's 1-year immutable cache when the thumbnail/preview
@@ -130,6 +148,15 @@ export const api = {
   },
   home: {
     summary: () => request<HomeSummaryDto>("/api/home/summary"),
+  },
+  reports: {
+    facets: (filters: ReportFilters) => request<ReportFacetsDto>(`/api/reports/facets${toQueryString(filters)}`),
+    exportUrl: (filters: ReportFilters) => `/api/reports/export.csv${toQueryString(filters)}`,
+  },
+  analysis: {
+    status: () => request<AnalysisStatusDto>("/api/analysis/status"),
+    retryFailed: (analyzer?: string) =>
+      request<{ requeued: number }>("/api/analysis/retry", { method: "POST", body: JSON.stringify(analyzer ? { analyzer } : {}) }),
   },
   favorites: {
     list: (offset = 0, limit = 200, type: MediaTypeFilter = "all") =>

@@ -3,7 +3,11 @@ import type Database from "better-sqlite3";
 import type { Logger } from "pino";
 import type { Tags } from "exiftool-vendored";
 import { thumbnailPathForMediaId, previewPathForMediaId, type AppPaths } from "../config/paths.js";
-import { readTags, extractLargestEmbeddedPreview, isExifToolAvailable } from "./exiftool-client.js";
+import { readTags, extractLargestEmbeddedPreview, isExifToolAvailable, getExifToolVersion } from "./exiftool-client.js";
+import { ExifRepo } from "../exif/exif-repo.js";
+import { EXIF_PROMOTE_VERSION, parseLeadingNumber } from "../exif/promote.js";
+import { AnalysisRepo } from "../analysis/analysis-repo.js";
+import { EXIF_FULL_KEY } from "../analysis/analyzers/exif-full.js";
 import { probeVideo, extractPosterFrame, isFfmpegAvailable } from "./video-client.js";
 import {
   generateThumbnailFromFile,
@@ -53,7 +57,9 @@ function extractMetadataFields(tags: Tags | null) {
     cameraMake: tags.Make ?? null,
     cameraModel: tags.Model ?? null,
     lensModel: tags.LensModel ?? tags.LensID ?? null,
-    focalLength: numOrNull(tags.FocalLength),
+    // ExifTool renders this as "100.0 mm" (a string), so a plain numeric
+    // check would always yield null here.
+    focalLength: parseLeadingNumber(tags.FocalLength),
     aperture: numOrNull(tags.FNumber),
     shutterSpeed: tags.ShutterSpeed != null ? String(tags.ShutterSpeed) : null,
     iso: numOrNull(tags.ISO),
@@ -155,9 +161,11 @@ export async function processMediaItem(
 ): Promise<void> {
   const destPath = thumbnailPathForMediaId(paths.thumbnailsDir, row.id);
 
+  let tags: Tags | null = null;
   let metadata: ReturnType<typeof extractMetadataFields>;
   try {
-    metadata = extractMetadataFields(isExifToolAvailable() ? await readTags(row.absolute_path) : null);
+    tags = isExifToolAvailable() ? await readTags(row.absolute_path) : null;
+    metadata = extractMetadataFields(tags);
   } catch (err) {
     logger.error({ err, mediaId: row.id, path: row.absolute_path }, "Failed to read metadata");
     metadata = extractMetadataFields(null);
@@ -247,6 +255,13 @@ export async function processMediaItem(
     );
     linkLivePhotoPair(db, row.id, row.parent_folder_id, row.media_type, metadata.contentIdentifier);
     linkRawJpegPair(db, row.id, row.parent_folder_id, row.media_type, row.absolute_path);
+
+    // Full EXIF capture (design doc §7.2) - written here because we already
+    // hold the Tags, so the backfill analyzer never has to re-read this file.
+    if (tags) {
+      new ExifRepo(db).upsertFromTags(row.id, tags, getExifToolVersion());
+      new AnalysisRepo(db).markDone(row.id, EXIF_FULL_KEY, EXIF_PROMOTE_VERSION);
+    }
   } catch (err) {
     logger.error({ err, mediaId: row.id, path: row.absolute_path }, "Failed to save media metadata");
   }

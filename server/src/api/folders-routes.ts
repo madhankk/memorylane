@@ -6,11 +6,11 @@ import {
   toMediaDto,
   EXCLUDE_LIVE_PHOTO_VIDEOS,
   EXCLUDE_PAIRED_RAW,
-  mediaTypeFilterClause,
   type FolderRow,
   type FolderCounts,
   type MediaRow,
 } from "./mappers.js";
+import { buildMediaQuery, mediaCountSql, mediaSelectSql } from "../query/media-query.js";
 import { EngagementRepo } from "../db/engagement-repo.js";
 
 // Recursive CTE selecting a folder and every active descendant - reused by the
@@ -177,45 +177,10 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
     const parsed = folderMediaQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: "Invalid query" });
     const { offset, limit, recursive, type } = parsed.data;
-    const typeClause = mediaTypeFilterClause(type);
 
-    if (!recursive) {
-      const total = (
-        db.prepare(
-          `SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW} AND ${typeClause}`,
-        ).get(id) as {
-          c: number;
-        }
-      ).c;
-      const rows = db
-        .prepare(
-          `SELECT * FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW} AND ${typeClause}
-           ORDER BY captured_date IS NULL, captured_date, filename LIMIT ? OFFSET ?`,
-        )
-        .all(id, limit, offset) as MediaRow[];
-
-      return reply.send({ items: engagement.attachFavorites(rows.map(toMediaDto)), total, offset, limit });
-    }
-
-    // Flat view: every active media file under this folder and all of its subfolders.
-    const total = (
-      db
-        .prepare(
-          `${DESCENDANT_FOLDERS_CTE}
-           SELECT COUNT(*) as c FROM media
-           WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW} AND ${typeClause}`,
-        )
-        .get(id) as { c: number }
-    ).c;
-    const rows = db
-      .prepare(
-        `${DESCENDANT_FOLDERS_CTE}
-         SELECT media.* FROM media
-         WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW} AND ${typeClause}
-         ORDER BY captured_date IS NULL, captured_date, filename LIMIT ? OFFSET ?`,
-      )
-      .all(id, limit, offset) as MediaRow[];
-
+    const q = buildMediaQuery({ scope: { kind: "folder", folderId: id, recursive }, type });
+    const total = (db.prepare(mediaCountSql(q)).get(...q.bindings) as { c: number }).c;
+    const rows = db.prepare(mediaSelectSql(q)).all(...q.bindings, limit, offset) as MediaRow[];
     return reply.send({ items: engagement.attachFavorites(rows.map(toMediaDto)), total, offset, limit });
   });
 }
