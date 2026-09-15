@@ -1,8 +1,10 @@
-# Mining a Lifetime of Photos: Roadmap for Phases 5–8
+# Mining a Lifetime of Photos: Roadmap for Phases 5–9
 
 **Status:** Draft for discussion — 2026-09-15
 **Builds on:** `2026-09-14-media-intelligence-design.md` (Phases 1–4, all merged to `main`: full EXIF, stacks, CLIP similarity/search, People).
-**Theme:** A library that spans decades is only valuable if you can *ask it things* and *make things from it*. This document lays out the features that turn the index we now have into that — conversational search, places, timelines and "best of" mining, light editing, collages and slideshows, and opt-in AI transformations — with the architecture each needs and what, if anything, has to leave the machine.
+**Theme:** A library that spans decades is only valuable if you can *ask it things*, *keep it tidy*, and *make things from it*. This document lays out the features that turn the index we now have into that — conversational search, places, timelines and "best of" mining, housekeeping (delete/hide/export), virtual albums, sharing, light editing, collages and slideshows, and opt-in AI transformations — with the architecture each needs and what, if anything, has to leave the machine.
+
+**Structure:** the core stays small (index, analysis pipeline, query builder, UI shell); everything in §2 is delivered as a **plugin** against the extension points in §3, so capabilities can be added — including ones that need paid API keys or a GPU — without the core growing.
 
 ---
 
@@ -12,6 +14,8 @@
 2. **Local by default, cloud by explicit choice.** Everything in Phases 1–4 runs on the user's machine. Where a feature is better with a hosted model (query understanding, image generation), it is a provider the user configures, labelled with precisely what is sent: *question text and metadata* vs. *pixels*.
 3. **Same pipeline, new analyzers.** Places, quality scores and captions are just more `Analyzer`s on the existing `media_analysis` worker; they get progress bars, retries and versioning for free.
 4. **People data stays special.** Anything that sends a face crop or a name off-machine is a separate, explicit opt-in.
+5. **Plugins, not a bigger core.** A feature is a plugin that declares what it *provides* (analyzers, providers, pages, actions) and what it *requires* (API keys, sidecar models, GPU, network). The core loads, configures and shows them; it doesn't know what they do. Disabling a plugin removes its UI and stops its work without leaving the library in a broken state.
+6. **Deletion is a user act, staged and reversible.** Nothing is ever unlinked by the app on its own. "Delete" means *mark → review → move to a visible trash folder next to the originals*; emptying that folder is a separate, explicit step.
 
 ---
 
@@ -132,9 +136,104 @@ All of these are queries over data we already have (or B/C add), surfaced as pag
 
 **Effort:** medium (cloud) / large (local). **Data leaving the machine:** pixels, for the cloud option — explicitly consented per use.
 
+### J. Housekeeping — delete, hide, export
+
+**What:** the tidying tools a large archive needs: get rid of the 19 rejected frames of a burst, drop a whole folder of screenshots, hide the photos you never want to see again, and export a selection in a chosen format and size for a website, a frame, or a friend.
+
+**Delete — staged, reviewable, reversible:**
+- **Mark for deletion** from anywhere: one photo, the non-cover frames of a stack ("keep the cover, delete the rest"), everything in a selection, or a whole folder. A mark is a row in `deletion_marks(media_id, marked_at, reason)`; the grid shows a 🗑 badge; nothing on disk changes.
+- **Review** on a *Marked for deletion* page (count, total size, grouped by folder, with a filmstrip so you see exactly what goes). From here: unmark, or **Move to trash**.
+- **Move to trash** moves each original (and its companions — RAW pair, Live Photo video, XMP sidecar) into `<same folder>/_MemoryLane-Trash/`, a plain visible folder next to where it was, and removes the rows from the index. Reversible by moving the files back and rescanning (a **Restore** action does this from the trash view). Folder-level delete is the same flow with the folder's items pre-selected; it never removes the folder itself.
+- **Empty trash** permanently deletes files in `_MemoryLane-Trash/` folders — a second confirmation that states the count and size, and the only place the app ever unlinks anything. Disabled while a scan is running.
+- The scanner ignores `_MemoryLane-Trash/` like it ignores `_MemoryLane-Archived-Originals/`.
+
+**Hide:** `hidden` on `media` (per photo, per stack, or per folder subtree). Hidden items leave every listing (`buildMediaQuery` gets `includeHidden`), are skipped by analyzers, and are not re-added by rescans (the scanner keeps the row, just hidden). A *Hidden* page under Settings lists them with unhide. Folder-level hide is the existing "Ignore folder", surfaced in the same place.
+
+**Export:** a **Create › Export** action for any selection/album: choose format (JPEG / PNG / WebP / HEIC where supported / original), long-edge size or exact dimensions, quality, whether to apply edit recipes (G), keep or strip EXIF/GPS, and a filename pattern (`{date}_{person}_{n}`). Sharp renders; output goes to a folder the user picks (or a zip for download from a remote browser). RAW exports use the embedded preview until a RAW decoder is added (open decision 2).
+
+**Effort:** medium. **Data leaving the machine:** none.
+
+### K. Virtual albums — saved queries
+
+**What:** any filter combination the app can express becomes an album: "Arjun, 2008–2010", "Iceland trips", "R5 + 100-500 wildlife", an Ask result, or a hand-picked set. People and Places are already albums of this kind; this makes the concept explicit and user-owned.
+
+**How:** `albums(id, name, kind, query_json | null, cover_media_id, sort, created_at)` + `album_items(album_id, media_id, position)` for manual/mixed albums. `kind = "query"` albums re-run `buildMediaQuery(query_json)` on open (always current: new photos of Arjun join automatically); `kind = "manual"` is a pinned list; a query album can be **frozen** into a manual one. Albums appear in the nav, on Home, and as a share/export/create target. **Smart suggestions**: trips (B), "best of {year}" (F) and person timelines offer *Save as album*.
+
+**Effort:** small–medium. **Data leaving the machine:** none.
+
+### L. Sharing
+
+**What:** show one photo or an album to someone else. Three tiers, because "sharing" means different things for a self-hosted app:
+
+1. **Export & send** (always available): the export flow (J) produces sized JPEGs or a zip — the user sends them however they like. Zero infrastructure.
+2. **Share links on your own server** (core): a `shares(token, album_id | media_id, expires_at, password_hash | null, allow_download, view_count)` table and a public `/s/<token>` page that renders a stripped-down gallery/slideshow **without login**, sized derivatives only (no originals unless *allow download* is on), optional password and expiry, revocable from a Shares list. Works on the LAN out of the box; over the internet it needs the user's existing reverse-proxy/TLS setup (documented; the app still never ships without-TLS-to-the-internet defaults).
+3. **Hosted sharing** (plugin, optional, paid infra): a plugin that uploads the sized derivatives of a share to a hosting bucket (the user's own S3/R2/B2 with their keys, or a MemoryLane-provided service later) and returns a public URL — for people without a reachable server. Clearly labelled: *these derivatives leave your machine*.
+
+**Effort:** small (1), medium (2), medium (3). **Data leaving the machine:** none (1–2, other than to the people you share with), sized derivatives to the chosen host (3).
+
 ---
 
-## 3. Architecture additions
+## 3. Plugin architecture — the extension points
+
+The core owns: scanning, the SQLite index, the `AnalysisWorker`, `buildMediaQuery`, the vector index, the UI shell (nav, grid, viewer, Settings), auth, and the plugin loader. Everything else is a plugin — including features already merged, which get refactored onto these seams as each roadmap phase touches them (People, stacks and the AI sidecar first).
+
+**A plugin is a package** under `plugins/<name>/` (server + optional client bundle) with a manifest:
+
+```ts
+export interface PluginManifest {
+  id: string; name: string; version: string; description: string;
+  // What the plugin adds. Each kind maps to a core extension point.
+  provides: {
+    analyzers?: AnalyzerFactory[];        // rows on media_analysis, progress bars for free
+    providers?: ProviderFactory[];        // llm | image-embed | face | image-edit | geocode | share-host …
+    routes?: RouteRegistrar[];            // /api/plugins/<id>/…
+    pages?: PageDescriptor[];             // nav entry + lazy-loaded client module
+    actions?: ActionDescriptor[];         // entries in the selection "Create…" / "…" menus and the Viewer
+    facets?: FacetDescriptor[];           // extra Reports facets backed by columns the plugin adds
+    settings?: SettingsSchema;            // zod schema → auto-rendered Settings section
+    migrations?: string;                  // plugin-owned tables, namespaced <id>_*
+  };
+  // What must be true for the plugin to run. The core shows unmet
+  // requirements in Settings and keeps the plugin inert until they are met.
+  requires: {
+    secrets?: { key: string; label: string; help: string; url?: string }[];   // e.g. an API key, stored encrypted at rest
+    sidecarModels?: string[];             // e.g. "clip-vit-base-patch32@1", "yunet-sface@1"
+    gpu?: boolean; network?: boolean; minCoreVersion?: string;
+  };
+  // Honest disclosure rendered next to the enable switch.
+  dataEgress: "none" | "metadata" | "pixels";
+  license?: string;
+}
+```
+
+Rules that keep this from becoming a mess:
+- **Namespaces.** Tables `<id>_*`, routes `/api/plugins/<id>/`, settings keys `<id>.*`, analyzer keys `<id>:<analyzer>`.
+- **Core-provided services only.** Plugins get a `PluginContext` (db, paths, query builder, vector index, provider registry, settings, secrets, logger, media renderers) — never raw access to other plugins' tables.
+- **Secrets** are stored encrypted at rest (key derived from a machine secret in the data dir), never logged, never sent to the client; Settings shows "set / not set".
+- **Enable/disable** is a runtime switch: disabling stops the plugin's analyzers (rows stay `pending`), hides its pages/actions, and leaves its data in place; **uninstall** offers to drop its tables.
+- **Trust model:** plugins run in-process (same as today's code) and are installed from the repo's `plugins/` directory or a reviewed registry — this is not a sandbox for untrusted third-party code; that would be a later, separate design.
+- **Paid capabilities** are just providers with `requires.secrets` and `dataEgress` set; the core never contains a paid API call.
+
+**Mapping this roadmap to plugins:**
+
+| Plugin | Provides | Requires | Egress |
+|---|---|---|---|
+| `ask` | page, routes, `llm` provider slot | one configured LLM provider | metadata |
+| `llm-claude`, `llm-openai`, `llm-local` | `llm` provider | API key (cloud) / URL (local) | metadata / none |
+| `places` | `places` analyzer, facet, bundled geodata, trip albums | — | none |
+| `people-context` | person fields, age captions, timelines page | `people` | none |
+| `captions` | `caption` analyzer (local VLM or cloud vision) | sidecar model or API key | none / pixels |
+| `mining` | quality analyzer, Year in review / Best of / Then & now pages | — | none |
+| `housekeeping` | deletion marks, trash, hidden, export action + page | — | none |
+| `albums` | albums tables, page, save-as-album action | — | none |
+| `share` | share links, `/s/<token>` public page; `share-host` provider slot | — (host plugins need bucket keys) | none / derivatives |
+| `edit` | recipes, Viewer editing panel, export | — | none |
+| `create` | collages, cards, slideshows (ffmpeg) | — | none |
+| `ai-transform` | `image-edit` provider slot, AI badge/provenance | image provider (API key or GPU) | pixels (cloud) |
+
+The first plugin-refactor step is small and mechanical: give `people`, `stacks` and the sidecar `ai` the manifest shape and load them through the registry, so the seams are proven before new plugins land.
+
+### Core additions
 
 | Addition | Where | Notes |
 |---|---|---|
@@ -145,7 +244,11 @@ All of these are queries over data we already have (or B/C add), surfaced as pag
 | `caption` analyzer | `analyzers/caption.ts` | Optional; local VLM or cloud vision. |
 | `edits`, `creations`, `derived_from` | migrations | Recipes and provenance; exports are normal indexed media. |
 | Filtered ranking | `vectors/` | `rankByText(ids, text)`, `rankByVector(ids, v)`. |
-| Ask routes + page | `api/ask-routes.ts`, `client/src/pages/AskPage.tsx` | Tool loop server-side; streaming optional later. |
+| Ask routes + page | `plugins/ask/` | Tool loop server-side; streaming optional later. |
+| Plugin loader, `PluginContext`, secrets store | `server/src/plugins/` | Manifest validation, namespacing, enable/disable, encrypted secrets, Settings auto-sections, client lazy-loading of plugin pages/actions. |
+| `deletion_marks`, `media.hidden`, trash/restore, export renderer | `plugins/housekeeping/` | Trash = move to `_MemoryLane-Trash/` beside the original; empty-trash is the only unlink in the app. |
+| `albums`, `album_items` | `plugins/albums/` | Query albums re-run `buildMediaQuery`; manual albums are pinned lists. |
+| `shares`, public `/s/<token>` | `plugins/share/` | Sized derivatives, expiry, password, revoke; hosted upload via provider. |
 | Create menu + renderers | `server/src/creations/` | Sharp compositing; ffmpeg slideshow. |
 
 Everything runs through the existing `AnalysisWorker`, `buildMediaQuery`, `MediaGrid`/`Viewer` and the Settings patterns — no new subsystems beyond the two providers.
@@ -163,6 +266,8 @@ Everything runs through the existing `AnalysisWorker`, `buildMediaQuery`, `Media
 | Mining features | Always local | — |
 | Editing, collages, slideshows | Always local | — |
 | AI transformations | Yes, with a GPU | Pixels of the chosen photo + prompt, per explicit request |
+| Housekeeping, albums | Always local | — |
+| Sharing | Yes (export, own-server links) | Sized derivatives to the chosen host, only with the hosted-sharing plugin |
 
 ---
 
@@ -170,10 +275,11 @@ Everything runs through the existing `AnalysisWorker`, `buildMediaQuery`, `Media
 
 | Phase | Contents | Why this order |
 |---|---|---|
-| **5 — Ask** | E (filtered ranking), B (places), C (relationships/age), `LlmProvider` (cloud + local), Ask page | Highest value per effort; makes decades of data *reachable*. Places and age captions are visible wins on their own. |
-| **6 — Mining** | quality analyzer, Year in review, Best of, growing-up timelines, then & now, trips, slideshow export (ffmpeg) | Pure exploitation of data now in place; slideshow is the first "make something" feature and needs no new model. |
-| **7 — Editing & creations** | non-destructive edits, exports, collages/cards, Create menu | Self-contained; Sharp only. |
-| **8 — AI transformations** | `ImageEditProvider` (cloud first, local for GPU owners), provenance, AI badge | Last because it is the only feature that must send pixels away or needs a GPU; the consent UX from People is reused. |
+| **5 — Plugin seams + Ask** | plugin loader/manifest/secrets, refactor `people`/`stacks`/`ai` onto it; E (filtered ranking), B (places), C (relationships/age), `llm` providers (cloud + local), Ask page | Seams first so every later feature lands as a plugin; Ask is the highest value per effort and makes decades of data *reachable*. |
+| **6 — Housekeeping & albums** | J (marks → trash → empty, hide, export), K (query + manual albums, save-as-album from people/places/trips/Ask) | The tidying tools a real library needs before "making things" is fun; both are small, local, and unblock sharing/creations targets. |
+| **7 — Mining & sharing** | quality analyzer, Year in review, Best of, timelines, then & now, trips; L tiers 1–2 (export, own-server share links) | Exploits data now in place; share links reuse albums. |
+| **8 — Editing & creations** | G (non-destructive edits, exports), H (collages, cards, ffmpeg slideshows), Create menu | Self-contained; Sharp + bundled ffmpeg only. |
+| **9 — AI transformations & hosted sharing** | I (`image-edit` provider, provenance, AI badge), L tier 3 (hosted share plugin) | Last: the only features that must send pixels away or need a GPU/bucket; reuse the People consent UX. |
 | optional | D (captions) | Slot in after 5 for users who want text-only retrieval or album naming. |
 
 ---
@@ -185,3 +291,6 @@ Everything runs through the existing `AnalysisWorker`, `buildMediaQuery`, `Media
 3. **Where creations live** — data dir only, or also offered "save into the library" so they appear in Browse? Recommendation: both, default data dir.
 4. **AI transformations provider** — which hosted image model(s), and whether to gate face-containing photos more strictly. Decide at Phase 8 with the market at that time.
 5. **Geodata licensing** — GeoNames is CC BY 4.0: attribution text in Settings › About is sufficient.
+6. **Trash location** — beside the originals (`_MemoryLane-Trash/` per folder, visible and restorable, works on any volume) or the OS trash (macOS/Windows APIs, not available for network volumes)? Recommendation: per-folder trash folder, with "Reveal in Finder/Explorer" links.
+7. **Plugin client bundling** — one Vite build that includes enabled plugins' pages, or per-plugin bundles loaded lazily? Recommendation: single build with lazy routes for Phase 5; per-plugin bundles only if third-party plugins ever ship.
+8. **Share links over the internet** — document reverse-proxy + TLS (as the README already does) or add a built-in tunnel/hosted relay later? Recommendation: document first; hosted relay is the tier-3 plugin's job.
