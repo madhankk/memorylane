@@ -27,7 +27,7 @@ function state(a: AnalyzerStatusDto, paused: boolean): { label: string; tone: "m
   // that can't be read) - say so instead of promising an ETA.
   if (left > 0 && c.failed > c.done && c.failed >= 20) return { label: "Failing", tone: "red" };
   if (left > 0) return { label: "Working", tone: "accent" };
-  if (c.failed > 0) return { label: `${c.failed.toLocaleString()} failed`, tone: "red" };
+  if (c.failed > 0) return { label: "Needs retry", tone: "red" };
   return { label: "Done", tone: "green" };
 }
 
@@ -111,7 +111,8 @@ export default function AnalysisProgress({ only, onStatus, pollMs = 3000, hideWh
       {status.paused && <p className="text-xs text-muted">A scan is running - analysis resumes when it finishes.</p>}
       {rows.map((a) => {
         const n = total(a);
-        const finished = a.counts.done + a.counts.failed + a.counts.unsupported;
+        // Only successes count toward the bar - "100%" with thousands failed is a lie.
+        const finished = a.counts.done + a.counts.unsupported;
         const pct = n === 0 ? 0 : Math.round((finished / n) * 100);
         const s = state(a, status.paused);
         const left = a.counts.pending + a.counts.running;

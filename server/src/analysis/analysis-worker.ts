@@ -49,6 +49,11 @@ export class AnalysisWorker {
     this.stopped = false;
     const reset = this.repo.resetRunning();
     if (reset > 0) this.logger.warn({ count: reset }, "Re-queued analysis rows interrupted by a restart");
+    // Failures are usually environmental (unmounted volume, missing
+    // permission, sidecar down) and a restart is when those get fixed - give
+    // every failed row another round; a truly bad file fails again quickly.
+    const retried = this.repo.retryFailed();
+    if (retried > 0) this.logger.info({ count: retried }, "Re-queued previously failed analysis rows for another attempt");
     this.requeueStale();
     this.enqueueAll();
     this.loopPromise = this.loop();
