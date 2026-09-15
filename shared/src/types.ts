@@ -351,3 +351,16 @@ export interface AnalysisStatusDto {
 export interface RetryAnalysisRequest {
   analyzer?: string;
 }
+
+// Focal-length report buckets (mm). Shared so the facet value the server
+// emits is exactly the key the client sends back as focalMin/focalMax.
+export const FOCAL_BUCKETS: { key: string; label: string; min: number; max: number }[] = [
+  { key: "0-24", label: "≤ 24 mm", min: 0, max: 24 },
+  { key: "25-35", label: "25–35 mm", min: 25, max: 35 },
+  { key: "36-50", label: "36–50 mm", min: 36, max: 50 },
+  { key: "51-85", label: "51–85 mm", min: 51, max: 85 },
+  { key: "86-135", label: "86–135 mm", min: 86, max: 135 },
+  { key: "136-200", label: "136–200 mm", min: 136, max: 200 },
+  { key: "201-400", label: "201–400 mm", min: 201, max: 400 },
+  { key: "401-9999", label: "> 400 mm", min: 401, max: 9999 },
+];
