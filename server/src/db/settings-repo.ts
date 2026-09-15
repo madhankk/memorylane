@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import type { SettingsDto, FaceModelName } from "@memorylane/shared";
 
 const DEFAULTS: SettingsDto = {
+  archiveTitle: "MemoryLane",
   bindAddress: "0.0.0.0",
   port: 4280,
   scanIntervalDays: null,
@@ -29,6 +30,7 @@ export class SettingsRepo {
     const map = new Map(rows.map((r) => [r.key, r.value]));
 
     return {
+      archiveTitle: map.get("archiveTitle") ?? DEFAULTS.archiveTitle,
       bindAddress: map.get("bindAddress") ?? DEFAULTS.bindAddress,
       port: map.has("port") ? Number(map.get("port")) : DEFAULTS.port,
       scanIntervalDays: map.has("scanIntervalDays")
@@ -61,6 +63,7 @@ export class SettingsRepo {
     });
 
     const entries: [string, string][] = [];
+    if (patch.archiveTitle !== undefined) entries.push(["archiveTitle", patch.archiveTitle]);
     if (patch.bindAddress !== undefined) entries.push(["bindAddress", patch.bindAddress]);
     if (patch.port !== undefined) entries.push(["port", String(patch.port)]);
     if (patch.scanIntervalDays !== undefined)

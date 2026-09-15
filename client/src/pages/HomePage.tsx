@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Pencil } from "lucide-react";
 import type { FolderDto, HomeSummaryDto, MediaDto, OnThisDayTier } from "@memorylane/shared";
 import { api } from "../api/client";
 import FolderCard from "../components/FolderCard";
@@ -20,6 +21,29 @@ const TIER_CAPTION: Record<OnThisDayTier, string> = {
 export default function HomePage() {
   const [folders, setFolders] = useState<FolderDto[] | null>(null);
   const [summary, setSummary] = useState<HomeSummaryDto | null>(null);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [savingTitle, setSavingTitle] = useState(false);
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const editTitle = () => {
+    setTitleDraft(summary?.archiveTitle ?? "MemoryLane");
+    setTitleError(null);
+    setEditingTitle(true);
+  };
+  const saveTitle = async () => {
+    if (!titleDraft.trim() || savingTitle) return;
+    setSavingTitle(true);
+    setTitleError(null);
+    try {
+      const saved = await api.settings.update({ archiveTitle: titleDraft.trim() });
+      setSummary((previous) => previous ? { ...previous, archiveTitle: saved.archiveTitle } : previous);
+      setEditingTitle(false);
+    } catch (err) {
+      setTitleError(err instanceof Error ? err.message : "Could not save the title. Try again.");
+    } finally {
+      setSavingTitle(false);
+    }
+  };
   const [activeTab, setActiveTab] = useState<MemoryTab>("random");
   const [tabItems, setTabItems] = useState<MediaDto[] | null>(null);
   const [tabTier, setTabTier] = useState<OnThisDayTier | null>(null);
@@ -94,11 +118,35 @@ export default function HomePage() {
           <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/42 to-transparent" />
 
           <div className="relative flex min-h-[460px] items-end p-6 text-white sm:p-8 lg:p-10">
-            <div className="max-w-[760px] pb-2">
+            <div className="w-full max-w-[760px] pb-2">
               <p className="text-[13px] font-medium text-white/70">Photo Archive</p>
-              <h1 className="mt-2 font-serif text-4xl font-semibold leading-[0.95] tracking-[-0.03em] sm:text-5xl lg:text-[clamp(3.875rem,5.4vw,5.25rem)]">
-                MemoryLane
-              </h1>
+              {editingTitle ? (
+                <form className="mt-3 max-w-xl rounded-lg bg-black/40 p-4" onSubmit={(event) => { event.preventDefault(); void saveTitle(); }}>
+                  <label htmlFor="archive-title" className="mb-2 block text-sm font-medium">Archive title</label>
+                  <input id="archive-title" autoFocus value={titleDraft} maxLength={100} required disabled={savingTitle}
+                    onChange={(event) => setTitleDraft(event.target.value)}
+                    onKeyDown={(event) => { if (event.key === "Escape" && !savingTitle) setEditingTitle(false); }}
+                    className="w-full rounded-md border border-white/40 bg-black/30 px-3 py-2 text-xl text-white outline-offset-2 placeholder:text-white/50"
+                    placeholder="John's Albums" />
+                  {titleError && <p role="alert" className="mt-2 text-sm text-red-200">{titleError}</p>}
+                  <div className="mt-3 flex gap-3">
+                    <button type="submit" disabled={savingTitle || !titleDraft.trim()} className="rounded-md bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50">{savingTitle ? "Saving…" : "Save"}</button>
+                    <button type="button" disabled={savingTitle} onClick={() => setEditingTitle(false)} className="rounded-md border border-white/40 px-4 py-2 text-sm disabled:opacity-50">Cancel</button>
+                  </div>
+                </form>
+              ) : (
+                <div className="group/title mt-2 inline-flex max-w-full items-center gap-3">
+                  <h1 className="min-w-0 break-words font-serif text-4xl font-semibold leading-[0.95] tracking-[-0.03em] sm:text-5xl lg:text-[clamp(3.875rem,5.4vw,5.25rem)]">
+                    {summary?.archiveTitle ?? "MemoryLane"}
+                  </h1>
+                  {summary && (
+                    <button type="button" onClick={editTitle} aria-label="Edit archive title"
+                      className="flex shrink-0 items-center gap-1.5 rounded-full bg-black/45 px-3 py-2 text-xs text-white opacity-100 transition-opacity hover:bg-black/65 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/title:opacity-100 [@media(hover:hover)]:focus-visible:opacity-100">
+                      <Pencil size={13} aria-hidden /> Edit
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

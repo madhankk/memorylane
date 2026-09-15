@@ -103,6 +103,7 @@ export interface VersionDto {
 }
 
 export interface SettingsDto {
+  archiveTitle: string;
   bindAddress: string;
   port: number;
   scanIntervalDays: number | null;
@@ -143,6 +144,7 @@ export interface FaceModelInfoDto {
 }
 
 export interface UpdateSettingsRequest {
+  archiveTitle?: string;
   bindAddress?: string;
   port?: number;
   scanIntervalDays?: number | null;
@@ -310,6 +312,7 @@ export interface IgnoreFolderResultDto {
 }
 
 export interface HomeSummaryDto {
+  archiveTitle: string;
   mediaCount: number;
   folderCount: number;
   totalSizeBytes: number;

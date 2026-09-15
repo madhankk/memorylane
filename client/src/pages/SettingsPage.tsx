@@ -1,13 +1,22 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ChevronUp, ChevronDown, X } from "lucide-react";
 import type { ScanRootDto, SettingsDto, ScanStatusDto, ScanRunDto, StorageStatsDto, IgnoredPathDto, AnalysisStatusDto } from "@memorylane/shared";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../hooks/useAuth";
-import { useTheme, THEMES, type Theme } from "../hooks/useTheme";
+import { useTheme, type Theme } from "../hooks/useTheme";
 import { formatBytes } from "../utils/format";
 import TranscodeCandidatesPanel from "../components/TranscodeCandidatesPanel";
 import AnalysisProgress from "../components/AnalysisProgress";
 import { useConfirm } from "../components/ConfirmDialog";
+
+const SETTINGS_TABS = [
+  { id: "folders", label: "Folders & Exclusions" },
+  { id: "analysis", label: "AI & Analysis" },
+  { id: "storage", label: "Storage" },
+  { id: "account", label: "Account" },
+] as const;
+const THEME_ORDER: Theme[] = ["light", "dusk", "gallery", "dark"];
 
 function scanRootSummary(root: ScanRootDto): string {
   const { stats } = root;
@@ -172,6 +181,16 @@ function ScanProgress({ run }: { run: ScanRunDto }) {
 
 export default function SettingsPage() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = SETTINGS_TABS.find((tab) => tab.id === searchParams.get("tab"))?.id ?? "folders";
+  const selectTab = (id: string) => {
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (id === "folders") next.delete("tab");
+      else next.set("tab", id);
+      return next;
+    });
+  };
   const [scanRoots, setScanRoots] = useState<ScanRootDto[]>([]);
   const [settings, setSettings] = useState<SettingsDto | null>(null);
   const [status, setStatus] = useState<ScanStatusDto | null>(null);
@@ -179,6 +198,7 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [storage, setStorage] = useState<StorageStatsDto | null>(null);
   const [storageLoading, setStorageLoading] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
   const [movePath, setMovePath] = useState("");
   const [moving, setMoving] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
@@ -258,6 +278,9 @@ export default function SettingsPage() {
     setStorageLoading(true);
     try {
       setStorage(await api.settings.storage());
+      setStorageError(null);
+    } catch (err) {
+      setStorageError(err instanceof Error ? err.message : "Could not load storage usage");
     } finally {
       setStorageLoading(false);
     }
@@ -265,8 +288,11 @@ export default function SettingsPage() {
 
   useEffect(() => {
     void loadAll();
-    void loadStorage();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === "storage") void loadStorage();
+  }, [activeTab]);
 
   useEffect(() => {
     if (status?.running && !pollRef.current) {
@@ -369,45 +395,52 @@ export default function SettingsPage() {
     <div className="flex flex-col gap-10">
       <h1 className="font-serif text-2xl font-semibold text-ink">Settings</h1>
 
-      <section>
-        <h2 className="mb-3 font-serif text-lg font-semibold text-ink">Account</h2>
-        {user && <p className="mb-3 text-sm text-muted">Signed in as <span className="font-medium text-ink">{user.username}</span></p>}
-        <ChangePasswordForm />
-      </section>
-
-      <section>
-        <h2 className="mb-3 font-serif text-lg font-semibold text-ink">Appearance</h2>
-        <div className="flex flex-wrap gap-3">
-          {THEMES.map((value) => {
-            const swatch = THEME_SWATCHES[value];
-            const active = theme === value;
-            return (
-              <label
-                key={value}
-                className={`flex cursor-pointer items-center gap-2.5 rounded-lg border bg-surface px-4 py-2.5 text-sm text-ink ${
-                  active ? "border-accent" : "border-border"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="theme"
-                  value={value}
-                  checked={active}
-                  onChange={() => setTheme(value)}
-                  className="cursor-pointer accent-accent"
-                />
-                <span
-                  className="h-4 w-4 rounded-full border border-border-strong"
-                  style={{ background: swatch.page, boxShadow: `inset 0 0 0 5px ${swatch.accent}` }}
-                  aria-hidden
-                />
-                {THEME_LABELS[value]}
-              </label>
-            );
-          })}
+      <div className="flex flex-col gap-4 border-b border-border sm:flex-row sm:items-end sm:justify-between">
+        <div role="tablist" aria-label="Settings sections" className="order-2 flex min-w-0 gap-5 overflow-x-auto sm:order-1">
+          {SETTINGS_TABS.map((tab, index) => (
+            <button
+              key={tab.id}
+              id={`settings-tab-${tab.id}`}
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              aria-controls={`settings-panel-${tab.id}`}
+              tabIndex={activeTab === tab.id ? 0 : -1}
+              onClick={() => selectTab(tab.id)}
+              onKeyDown={(event) => {
+                let next = index;
+                if (event.key === "ArrowRight") next = (index + 1) % SETTINGS_TABS.length;
+                else if (event.key === "ArrowLeft") next = (index + SETTINGS_TABS.length - 1) % SETTINGS_TABS.length;
+                else if (event.key === "Home") next = 0;
+                else if (event.key === "End") next = SETTINGS_TABS.length - 1;
+                else return;
+                event.preventDefault();
+                selectTab(SETTINGS_TABS[next].id);
+                document.getElementById(`settings-tab-${SETTINGS_TABS[next].id}`)?.focus();
+              }}
+              className={`shrink-0 border-b-2 px-1 pb-3 pt-2 text-sm font-medium transition-colors focus-visible:outline-accent ${activeTab === tab.id ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
-      </section>
+        <fieldset className="order-1 shrink-0 self-end pb-3 sm:order-2">
+          <legend className="mb-2 text-xs font-medium text-ink">Theme</legend>
+          <div className="flex gap-2">
+            {THEME_ORDER.map((value) => (
+              <label key={value} title={THEME_LABELS[value]} className="cursor-pointer">
+                <input type="radio" name="theme" value={value} checked={theme === value}
+                  onChange={() => setTheme(value)} aria-label={THEME_LABELS[value]} className="peer sr-only" />
+                <span className="grid size-8 place-items-center rounded-full border border-border transition peer-checked:border-ink peer-checked:ring-2 peer-checked:ring-border peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-accent">
+                  <span className="size-5 rounded-full border border-black/10" style={{ background: THEME_SWATCHES[value].page }} />
+                </span>
+              </label>
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-muted">{THEME_LABELS[theme]}</p>
+        </fieldset>
+      </div>
 
+      <div role="tabpanel" id="settings-panel-folders" aria-labelledby="settings-tab-folders" hidden={activeTab !== "folders"} tabIndex={0} className="space-y-8 focus-visible:outline-accent">
       <section>
         <h2 className="mb-3 font-serif text-lg font-semibold text-ink">Scan Folders</h2>
         <p className="mb-3 text-sm text-muted">
@@ -584,6 +617,9 @@ export default function SettingsPage() {
         )}
       </section>
 
+      </div>
+
+      <div role="tabpanel" id="settings-panel-analysis" aria-labelledby="settings-tab-analysis" hidden={activeTab !== "analysis"} tabIndex={0} className="space-y-8 focus-visible:outline-accent">
       <section>
         <h2 className="mb-1 font-serif text-lg font-semibold text-ink">AI</h2>
         <p className="mb-3 text-sm text-muted">
@@ -626,12 +662,12 @@ export default function SettingsPage() {
       </section>
 
       <section>
-        <h2 className="mb-1 font-serif text-lg font-semibold text-ink">Analysis</h2>
+        <h2 className="mb-1 font-serif text-lg font-semibold text-ink">Reports &amp; Metadata</h2>
         <p className="mb-3 text-sm text-muted">
           Background processing that runs after scans - full EXIF capture for Reports. Pauses automatically while a scan
           is running.
         </p>
-        <AnalysisProgress key={analysisKey} onStatus={setAnalysis} />
+        {activeTab === "analysis" && <AnalysisProgress key={analysisKey} onStatus={setAnalysis} />}
         {analysis && analysis.analyzers.some((a) => a.counts.failed + a.counts.unsupported > 0) && (
           <div className="mt-3">
             <button onClick={() => void retryAnalysis()} className={buttonClass}>
@@ -687,6 +723,8 @@ export default function SettingsPage() {
             )}
           </p>
         </div>
+        <details className="rounded-lg border border-border p-4">
+          <summary className="mb-3 cursor-pointer text-sm font-medium text-ink">Advanced People settings</summary>
         <p className="mb-2 text-xs text-muted">
           Siblings and young children look alike to the model - if one person collects several kids, raise both strictness values
           (0.55-0.6 is a good start) and press Regroup. Stricter means more small "Person N" entries to merge, which is cheaper than
@@ -772,6 +810,7 @@ export default function SettingsPage() {
             Delete all face data
           </button>
         </div>
+        </details>
       </section>
 
       <section>
@@ -780,6 +819,8 @@ export default function SettingsPage() {
           Bursts (same camera, within the burst gap, visually alike) and tripod series (long exposures minutes apart that look
           near-identical, within the series gap) are grouped into one grid item. Stacks you edit are never regrouped automatically.
         </p>
+        <details className="rounded-lg border border-border p-4">
+          <summary className="mb-3 cursor-pointer text-sm font-medium text-ink">Advanced stack settings</summary>
         <div className="flex flex-wrap items-end gap-4 text-sm text-ink">
           <label className="flex flex-col gap-1">
             <span className="text-muted">Burst gap (seconds)</span>
@@ -846,8 +887,12 @@ export default function SettingsPage() {
           </button>
         </div>
         {recomputeMsg && <p className="mt-2 text-sm text-muted">{recomputeMsg}</p>}
+        </details>
       </section>
 
+      </div>
+
+      <div role="tabpanel" id="settings-panel-storage" aria-labelledby="settings-tab-storage" hidden={activeTab !== "storage"} tabIndex={0} className="space-y-8 focus-visible:outline-accent">
       <section>
         <div className="mb-3 flex items-center justify-between gap-4">
           <h2 className="font-serif text-lg font-semibold text-ink">Storage</h2>
@@ -859,6 +904,7 @@ export default function SettingsPage() {
           MemoryLane's own cache and index - entirely separate from your photo folders, and safe to delete and
           rebuild via a rescan at any time.
         </p>
+        {storageError && <p role="alert" className="mb-3 text-sm text-red-500">{storageError}</p>}
         {storage ? (
           <>
             <div className="mb-3 rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm">
@@ -902,7 +948,7 @@ export default function SettingsPage() {
                     value={movePath}
                     onChange={(e) => setMovePath(e.target.value)}
                     placeholder="/absolute/path/to/empty/folder"
-                    className={`min-w-[320px] flex-1 ${inputClass}`}
+                    className={`min-w-0 flex-1 ${inputClass}`}
                   />
                   <button onClick={() => void moveData()} disabled={moving || !movePath.trim()} className={buttonClass}>
                     {moving ? "Copying…" : "Move data here"}
@@ -919,9 +965,19 @@ export default function SettingsPage() {
             )}
           </>
         ) : (
-          <p className="text-sm text-muted">Calculating...</p>
+          <p className="text-sm text-muted">{storageLoading ? "Calculating..." : "Use Refresh to calculate storage usage."}</p>
         )}
       </section>
+
+      </div>
+
+      <div role="tabpanel" id="settings-panel-account" aria-labelledby="settings-tab-account" hidden={activeTab !== "account"} tabIndex={0} className="space-y-8 focus-visible:outline-accent">
+      <section>
+        <h2 className="mb-3 font-serif text-lg font-semibold text-ink">Account</h2>
+        {user && <p className="mb-3 text-sm text-muted">Signed in as <span className="font-medium text-ink">{user.username}</span></p>}
+        <ChangePasswordForm />
+      </section>
+      </div>
 
       {version && <p className="text-center text-xs text-muted">MemoryLane v{version}</p>}
     </div>

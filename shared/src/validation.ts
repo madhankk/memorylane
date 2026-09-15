@@ -32,6 +32,7 @@ export const moveScanRootRequestSchema = z.object({
 });
 
 export const updateSettingsRequestSchema = z.object({
+  archiveTitle: z.string().trim().min(1).max(100).optional(),
   bindAddress: z.string().min(1).max(64).optional(),
   port: z.number().int().min(1).max(65535).optional(),
   scanIntervalDays: z.number().int().min(1).max(365).nullable().optional(),

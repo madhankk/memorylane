@@ -4,6 +4,7 @@ import type { AppContext } from "../context.js";
 import { toMediaDto, type MediaRow } from "./mappers.js";
 import { buildMediaQuery } from "../query/media-query.js";
 import { decorateMedia } from "./decorate-media.js";
+import { SettingsRepo } from "../db/settings-repo.js";
 
 // Backs the Home page's hero card: library-wide totals plus a randomly
 // picked photo to use as the hero background (re-rolled on every page load).
@@ -41,6 +42,7 @@ export async function registerHomeRoutes(app: FastifyInstance, ctx: AppContext):
     const heroMedia = heroRow ? decorateMedia(ctx, [toMediaDto(heroRow)])[0] : null;
 
     const summary: HomeSummaryDto = {
+      archiveTitle: new SettingsRepo(db).getAll().archiveTitle,
       mediaCount,
       folderCount,
       totalSizeBytes,
