@@ -331,3 +331,23 @@ export interface ArchiveTranscodedResultDto {
   archived: number[];
   failed: { mediaId: number; error: string }[];
 }
+
+// Background analysis pipeline (design doc §6) - per-analyzer queue counts
+// shown under Settings > Analysis, polled like scan status.
+export type AnalysisStatus = "pending" | "running" | "done" | "failed" | "unsupported";
+
+export interface AnalyzerStatusDto {
+  key: string;
+  version: string;
+  counts: Record<AnalysisStatus, number>;
+}
+
+export interface AnalysisStatusDto {
+  // True while a scan is running - the worker yields to it.
+  paused: boolean;
+  analyzers: AnalyzerStatusDto[];
+}
+
+export interface RetryAnalysisRequest {
+  analyzer?: string;
+}
