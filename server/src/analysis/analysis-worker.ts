@@ -19,17 +19,21 @@ export class AnalysisWorker {
   private needsEnqueue = false;
   private idleMs: number;
   private pausedMs: number;
+  // Runs when every analyzer is drained (e.g. stack recompute, which wants
+  // hashes finished first). Returns how much work it did; 0 = sleep.
+  private onIdle: (() => number) | undefined;
 
   constructor(
     db: Database.Database,
     private logger: Logger,
     private analyzers: Analyzer[],
     private isPaused: () => boolean,
-    opts: { idleMs?: number; pausedMs?: number } = {},
+    opts: { idleMs?: number; pausedMs?: number; onIdle?: () => number } = {},
   ) {
     this.repo = new AnalysisRepo(db);
     this.idleMs = opts.idleMs ?? 2000;
     this.pausedMs = opts.pausedMs ?? 5000;
+    this.onIdle = opts.onIdle;
   }
 
   start(): void {
@@ -134,7 +138,15 @@ export class AnalysisWorker {
       } catch (err) {
         this.logger.error({ err }, "Analysis loop iteration failed");
       }
-      if (processed === 0) await this.sleep(this.idleMs);
+      if (processed === 0) {
+        let idleWork = 0;
+        try {
+          idleWork = this.onIdle?.() ?? 0;
+        } catch (err) {
+          this.logger.error({ err }, "Idle task failed");
+        }
+        if (idleWork === 0) await this.sleep(this.idleMs);
+      }
     }
   }
 }

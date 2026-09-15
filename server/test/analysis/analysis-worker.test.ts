@@ -87,4 +87,23 @@ describe("AnalysisWorker", () => {
     await w.stop();
     expect(a.seen.length).toBe(1);
   });
+
+  it("runs the idle hook only when no analyzer work remains", async () => {
+    const { db } = await setup(1);
+    const a = fakeAnalyzer();
+    const calls: number[] = [];
+    let remaining = 2;
+    const w = new AnalysisWorker(db, logger, [a], () => false, {
+      idleMs: 5,
+      onIdle: () => {
+        calls.push(a.seen.length);
+        return remaining-- > 0 ? 1 : 0;
+      },
+    });
+    w.start();
+    await wait(80);
+    await w.stop();
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    expect(calls.every((seenBatches) => seenBatches === 1)).toBe(true); // analyzer drained first
+  });
 });

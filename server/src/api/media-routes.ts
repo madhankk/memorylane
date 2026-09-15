@@ -7,6 +7,7 @@ import { toMediaDto, type MediaRow } from "./mappers.js";
 import { thumbnailPathForMediaId, previewPathForMediaId } from "../config/paths.js";
 import { streamFile, mimeTypeForExtension } from "./file-streaming.js";
 import { EngagementRepo } from "../db/engagement-repo.js";
+import { decorateMedia } from "./decorate-media.js";
 import { buildMediaQuery, mediaCountSql, mediaSelectSql } from "../query/media-query.js";
 import { toMediaQueryParams } from "./reports-routes.js";
 
@@ -49,14 +50,14 @@ export async function registerMediaRoutes(app: FastifyInstance, ctx: AppContext)
     const q = buildMediaQuery(toMediaQueryParams(filters));
     const total = (db.prepare(mediaCountSql(q)).get(...q.bindings) as { c: number }).c;
     const rows = db.prepare(mediaSelectSql(q)).all(...q.bindings, limit, offset) as MediaRow[];
-    return reply.send({ items: engagement.attachFavorites(rows.map(toMediaDto)), total, offset, limit });
+    return reply.send({ items: decorateMedia(ctx, rows.map(toMediaDto)), total, offset, limit });
   });
 
   app.get("/api/media/:id", { preHandler: app.requireAuth }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
     const row = db.prepare("SELECT * FROM media WHERE id = ?").get(id) as MediaRow | undefined;
     if (!row) return reply.code(404).send({ error: "Media not found" });
-    const [dto] = engagement.attachFavorites([toMediaDto(row)]);
+    const [dto] = decorateMedia(ctx, [toMediaDto(row)]);
     return reply.send(dto);
   });
 

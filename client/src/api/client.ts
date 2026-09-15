@@ -31,6 +31,8 @@ import type {
   ReportFacetsDto,
   ExifFilterQuery,
   AnalysisStatusDto,
+  StackDto,
+  StackDetailDto,
 } from "@memorylane/shared";
 
 class ApiError extends Error {
@@ -114,9 +116,9 @@ export const api = {
     get: (id: number) => request<{ folder: FolderDto; breadcrumbs: FolderBreadcrumbDto[] }>(`/api/folders/${id}`),
     children: (id: number, offset = 0, limit = 100) =>
       request<PaginatedResult<FolderDto>>(`/api/folders/${id}/children?offset=${offset}&limit=${limit}`),
-    media: (id: number, offset = 0, limit = 200, recursive = false, type: MediaTypeFilter = "all") =>
+    media: (id: number, offset = 0, limit = 200, recursive = false, type: MediaTypeFilter = "all", expandStacks = false) =>
       request<PaginatedResult<MediaDto>>(
-        `/api/folders/${id}/media?offset=${offset}&limit=${limit}&recursive=${recursive}&type=${type}`,
+        `/api/folders/${id}/media?offset=${offset}&limit=${limit}&recursive=${recursive}&type=${type}&expandStacks=${expandStacks}`,
       ),
     ignore: (id: number) => request<IgnoreFolderResultDto>(`/api/folders/${id}/ignore`, { method: "POST" }),
   },
@@ -152,6 +154,26 @@ export const api = {
   reports: {
     facets: (filters: ReportFilters) => request<ReportFacetsDto>(`/api/reports/facets${toQueryString(filters)}`),
     exportUrl: (filters: ReportFilters) => `/api/reports/export.csv${toQueryString(filters)}`,
+  },
+  stacks: {
+    get: (id: number) => request<StackDetailDto>(`/api/stacks/${id}`),
+    create: (mediaIds: number[]) => request<StackDto>("/api/stacks", { method: "POST", body: JSON.stringify({ mediaIds }) }),
+    setCover: (id: number, mediaId: number) =>
+      request<StackDto>(`/api/stacks/${id}/cover`, { method: "POST", body: JSON.stringify({ mediaId }) }),
+    split: (id: number, mediaIds: number[]) =>
+      request<StackDto>(`/api/stacks/${id}/split`, { method: "POST", body: JSON.stringify({ mediaIds }) }),
+    merge: (id: number, stackId: number) =>
+      request<StackDto>(`/api/stacks/${id}/merge`, { method: "POST", body: JSON.stringify({ stackId }) }),
+    removeMember: (id: number, mediaId: number) =>
+      request<{ stack: StackDto | null }>(`/api/stacks/${id}/members/${mediaId}`, { method: "DELETE" }),
+    remove: (id: number) => request<void>(`/api/stacks/${id}`, { method: "DELETE" }),
+    // Marks folders for recompute; the work happens on the analysis worker's
+    // next idle pass, so callers should expect eventual consistency.
+    recompute: (folderId?: number) =>
+      request<{ folders: number }>("/api/stacks/recompute", {
+        method: "POST",
+        body: JSON.stringify(folderId !== undefined ? { folderId } : {}),
+      }),
   },
   analysis: {
     status: () => request<AnalysisStatusDto>("/api/analysis/status"),

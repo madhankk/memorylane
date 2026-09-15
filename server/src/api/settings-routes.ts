@@ -17,7 +17,10 @@ export async function registerSettingsRoutes(app: FastifyInstance, ctx: AppConte
     if (!parsed.success) {
       return reply.code(400).send({ error: "Invalid input", details: parsed.error.flatten() });
     }
-    return reply.send(repo.update(parsed.data));
+    const updated = repo.update(parsed.data);
+    // New thresholds apply on the worker's next idle pass over every folder.
+    if (parsed.data.stackGapSeconds !== undefined || parsed.data.stackMaxHamming !== undefined) ctx.stacks.markAllDirty();
+    return reply.send(updated);
   });
 
   // Disk usage of MemoryLane's own disposable app-data directory (thumbnail

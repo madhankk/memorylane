@@ -6,6 +6,8 @@ const DEFAULTS: SettingsDto = {
   port: 4280,
   scanIntervalDays: null,
   scanScheduleEnabled: false,
+  stackGapSeconds: 2,
+  stackMaxHamming: 14,
 };
 
 export class SettingsRepo {
@@ -29,6 +31,8 @@ export class SettingsRepo {
       scanScheduleEnabled: map.has("scanScheduleEnabled")
         ? map.get("scanScheduleEnabled") === "true"
         : DEFAULTS.scanScheduleEnabled,
+      stackGapSeconds: map.has("stackGapSeconds") ? Number(map.get("stackGapSeconds")) : DEFAULTS.stackGapSeconds,
+      stackMaxHamming: map.has("stackMaxHamming") ? Number(map.get("stackMaxHamming")) : DEFAULTS.stackMaxHamming,
     };
   }
 
@@ -47,6 +51,8 @@ export class SettingsRepo {
       entries.push(["scanIntervalDays", patch.scanIntervalDays === null ? "null" : String(patch.scanIntervalDays)]);
     if (patch.scanScheduleEnabled !== undefined)
       entries.push(["scanScheduleEnabled", String(patch.scanScheduleEnabled)]);
+    if (patch.stackGapSeconds !== undefined) entries.push(["stackGapSeconds", String(patch.stackGapSeconds)]);
+    if (patch.stackMaxHamming !== undefined) entries.push(["stackMaxHamming", String(patch.stackMaxHamming)]);
 
     if (entries.length > 0) tx(entries);
     return this.getAll();

@@ -68,6 +68,10 @@ client (React SPA) ── fetch /api/* ──▶ Fastify routes (server/src/api/
 
 `server/src/query/media-query.ts::buildMediaQuery` is the only place listing WHERE clauses are assembled (scope, type, companion exclusion, favorites, EXIF filters). Every listing route and `random-selection-service` use it; new filters go there, not in routes. Companion fragments are `media.`-qualified.
 
+### Stacks
+
+`server/src/stacks/`: `stacks` / `stack_members` (a photo is in at most one stack) / `stack_exclusions` ("never auto-stack again") / `stack_dirty_folders`; `media_phash` holds a 64-bit DCT hash of the thumbnail as 16 hex chars. `groupBursts` (stacker.ts, pure) does one time-sorted pass per folder: same body (serial, else model) + within `stackGapSeconds` + (hash distance ≤ `stackMaxHamming` **or** same maker-note burst id); cover = first frame. `StackService.recomputeFolder` replaces only `user_modified = 0` stacks, and candidates exclude `stack_exclusions` and members of user-modified stacks — every user operation sets `user_modified = 1`; remove/delete add exclusions, split doesn't. Recompute flow: scanner (new/changed/missing) and the `phash` analyzer mark folders dirty → `AnalysisWorker`'s `onIdle` (only when every analyzer is drained and no scan is running) → `recomputeDirty`. `buildMediaQuery({ collapseStacks })` hides non-cover members: on for the folder grid (unless `expandStacks=true`), hero, memories, random selection; off for search, favorites, reports. Every listing route must call `decorateMedia(ctx, dtos)` (favorites + `MediaDto.stack`). Client: stack badge on cover tiles → `StackPanel`; folder "Select" mode → manual stack.
+
 ### Reports
 
 `GET /api/media` (filtered list), `GET /api/reports/facets` (per-field counts, each ignoring its own filter), `GET /api/reports/export.csv` share `exifFilterQuerySchema` in `shared/`. `FOCAL_BUCKETS` in shared defines focal-length ranges used by both server and client. Client page: `client/src/pages/ReportsPage.tsx`; filters live in the URL query string.

@@ -36,6 +36,8 @@ export const updateSettingsRequestSchema = z.object({
   port: z.number().int().min(1).max(65535).optional(),
   scanIntervalDays: z.number().int().min(1).max(365).nullable().optional(),
   scanScheduleEnabled: z.boolean().optional(),
+  stackGapSeconds: z.number().min(0.1).max(60).optional(),
+  stackMaxHamming: z.number().int().min(0).max(64).optional(),
 });
 
 export const paginationQuerySchema = z.object({
@@ -60,6 +62,9 @@ export const folderMediaQuerySchema = paginationQuerySchema.extend({
   // When true, includes media from all descendant subfolders, not just this one.
   recursive: booleanQueryParam,
   type: mediaTypeFilterSchema,
+  // Folder grids collapse stacks to their cover by default; the stack panel
+  // and anything that needs every frame passes expandStacks=true.
+  expandStacks: booleanQueryParam,
 });
 
 export const favoritesQuerySchema = paginationQuerySchema.extend({
@@ -146,3 +151,10 @@ export const reportFacetsQuerySchema = exifFilterQuerySchema.extend({
   type: mediaTypeFilterSchema,
   scanRootId: z.coerce.number().int().positive().optional(),
 });
+
+const mediaIdList = z.array(z.number().int().positive()).max(500);
+export const createStackRequestSchema = z.object({ mediaIds: mediaIdList.min(2) });
+export const setStackCoverRequestSchema = z.object({ mediaId: z.number().int().positive() });
+export const splitStackRequestSchema = z.object({ mediaIds: mediaIdList.min(2) });
+export const mergeStacksRequestSchema = z.object({ stackId: z.number().int().positive() });
+export const recomputeStacksRequestSchema = z.object({ folderId: z.number().int().positive().optional() });
