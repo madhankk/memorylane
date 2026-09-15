@@ -131,6 +131,13 @@ export class AnalysisWorker {
   }
 
   getStatus(): AnalysisStatusDto {
+    // Analyzers only check provider health when they have work, so an idle
+    // server would report a stale "not connected" forever - refresh in the
+    // background when the last check is old; the next poll shows the result.
+    if (this.provider) {
+      const info = this.provider.getInfo();
+      if (!info.checkedAt || Date.now() - Date.parse(info.checkedAt) > 30_000) void this.provider.health(true).catch(() => undefined);
+    }
     const errors = this.repo.lastErrors();
     const byKey = new Map(
       this.analyzers.map((a) => {
