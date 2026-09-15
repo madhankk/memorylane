@@ -28,6 +28,7 @@ export async function createTestApp() {
     thumbnailsDir: path.join(dataDir, "thumbnails"),
     previewsDir: path.join(dataDir, "previews"),
     transcodingDir: path.join(dataDir, "transcoding"),
+    vectorsDir: path.join(dataDir, "vectors"),
     logsDir: path.join(dataDir, "logs"),
     clientDistDir: path.join(dataDir, "no-client"),
   };

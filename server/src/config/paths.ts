@@ -30,6 +30,9 @@ export interface AppPaths {
   // Fully disposable: a finished output only ever becomes durable once
   // Archive copies it into the actual library folder.
   transcodingDir: string;
+  // LanceDB vector index (design doc §6.3a) - a rebuildable cache over
+  // media_embeddings, never the source of truth.
+  vectorsDir: string;
   logsDir: string;
   clientDistDir: string;
 }
@@ -44,13 +47,14 @@ export function resolveAppPaths(): AppPaths {
     // media/thumbnail-generator.ts PREVIEW_LONG_EDGE.
     previewsDir: path.join(dataDir, "previews"),
     transcodingDir: path.join(dataDir, "transcoding"),
+    vectorsDir: path.join(dataDir, "vectors"),
     logsDir: path.join(dataDir, "logs"),
     // import.meta.dirname is server/src/config (dev, tsx) or server/dist/config
     // (built) - either way, two levels up is the server package root, where
     // the Vite client build outputs directly (see client/vite.config.ts).
     clientDistDir: path.resolve(import.meta.dirname, "..", "..", "public"),
   };
-  for (const dir of [paths.dataDir, paths.thumbnailsDir, paths.previewsDir, paths.transcodingDir, paths.logsDir]) {
+  for (const dir of [paths.dataDir, paths.thumbnailsDir, paths.previewsDir, paths.transcodingDir, paths.vectorsDir, paths.logsDir]) {
     fs.mkdirSync(dir, { recursive: true });
   }
   return paths;
