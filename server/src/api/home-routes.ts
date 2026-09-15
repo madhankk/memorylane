@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import type { HomeSummaryDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
-import { toMediaDto, EXCLUDE_PAIRED_RAW, type MediaRow } from "./mappers.js";
+import { toMediaDto, type MediaRow } from "./mappers.js";
+import { buildMediaQuery } from "../query/media-query.js";
 import { EngagementRepo } from "../db/engagement-repo.js";
 
 // Backs the Home page's hero card: library-wide totals plus a randomly
@@ -33,12 +34,10 @@ export async function registerHomeRoutes(app: FastifyInstance, ctx: AppContext):
     const yearSpan =
       yearRow.minYear !== null && yearRow.maxYear !== null ? yearRow.maxYear - yearRow.minYear + 1 : 0;
 
+    const hero = buildMediaQuery({ type: "photo", thumbnailDone: true });
     const heroRow = db
-      .prepare(
-        `SELECT * FROM media WHERE status = 'active' AND media_type IN ('image', 'raw') AND thumbnail_status = 'done' AND ${EXCLUDE_PAIRED_RAW}
-         ORDER BY RANDOM() LIMIT 1`,
-      )
-      .get() as MediaRow | undefined;
+      .prepare(`SELECT media.* FROM media WHERE ${hero.where} ORDER BY RANDOM() LIMIT 1`)
+      .get(...hero.bindings) as MediaRow | undefined;
 
     const heroMedia = heroRow ? engagement.attachFavorites([toMediaDto(heroRow)])[0] : null;
 

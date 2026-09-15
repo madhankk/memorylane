@@ -1,10 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { randomMediaQuerySchema, type OnThisDayTier } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
-import { toMediaDto, EXCLUDE_PAIRED_RAW, type MediaRow } from "./mappers.js";
+import { toMediaDto, type MediaRow } from "./mappers.js";
+import { buildMediaQuery } from "../query/media-query.js";
 import { EngagementRepo } from "../db/engagement-repo.js";
 
-const ELIGIBLE_MEDIA_FILTER = `status = 'active' AND media_type IN ('image', 'raw') AND thumbnail_status = 'done' AND ${EXCLUDE_PAIRED_RAW}`;
+// Scope-less, so the builder emits no bindings - safe to inline as a constant.
+const ELIGIBLE_MEDIA_FILTER = buildMediaQuery({ type: "photo", thumbnailDone: true }).where;
 
 export async function registerMemoriesRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { db, randomSelection } = ctx;
@@ -41,8 +43,8 @@ export async function registerMemoriesRoutes(app: FastifyInstance, ctx: AppConte
 
     const dayRows = db
       .prepare(
-        `SELECT id FROM media WHERE ${ELIGIBLE_MEDIA_FILTER} AND captured_date IS NOT NULL
-         AND strftime('%m-%d', captured_date) = strftime('%m-%d', 'now')
+        `SELECT media.id FROM media WHERE ${ELIGIBLE_MEDIA_FILTER} AND media.captured_date IS NOT NULL
+         AND strftime('%m-%d', media.captured_date) = strftime('%m-%d', 'now')
          ORDER BY RANDOM() LIMIT ?`,
       )
       .all(count) as { id: number }[];
@@ -54,10 +56,10 @@ export async function registerMemoriesRoutes(app: FastifyInstance, ctx: AppConte
       tier = "week";
       idRows = db
         .prepare(
-          `SELECT id FROM media WHERE ${ELIGIBLE_MEDIA_FILTER} AND captured_date IS NOT NULL
+          `SELECT media.id FROM media WHERE ${ELIGIBLE_MEDIA_FILTER} AND media.captured_date IS NOT NULL
            AND MIN(
-             ABS(CAST(strftime('%j', captured_date) AS INTEGER) - CAST(strftime('%j', 'now') AS INTEGER)),
-             366 - ABS(CAST(strftime('%j', captured_date) AS INTEGER) - CAST(strftime('%j', 'now') AS INTEGER))
+             ABS(CAST(strftime('%j', media.captured_date) AS INTEGER) - CAST(strftime('%j', 'now') AS INTEGER)),
+             366 - ABS(CAST(strftime('%j', media.captured_date) AS INTEGER) - CAST(strftime('%j', 'now') AS INTEGER))
            ) <= 3
            ORDER BY RANDOM() LIMIT ?`,
         )
@@ -68,8 +70,8 @@ export async function registerMemoriesRoutes(app: FastifyInstance, ctx: AppConte
       tier = "month";
       idRows = db
         .prepare(
-          `SELECT id FROM media WHERE ${ELIGIBLE_MEDIA_FILTER} AND captured_date IS NOT NULL
-           AND strftime('%m', captured_date) = strftime('%m', 'now')
+          `SELECT media.id FROM media WHERE ${ELIGIBLE_MEDIA_FILTER} AND media.captured_date IS NOT NULL
+           AND strftime('%m', media.captured_date) = strftime('%m', 'now')
            ORDER BY RANDOM() LIMIT ?`,
         )
         .all(count) as { id: number }[];

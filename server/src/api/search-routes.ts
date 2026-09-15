@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { searchQuerySchema, type SearchResultDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
-import { toFolderDto, toMediaDto, EXCLUDE_LIVE_PHOTO_VIDEOS, EXCLUDE_PAIRED_RAW, type FolderRow, type MediaRow } from "./mappers.js";
+import { toFolderDto, toMediaDto, type FolderRow, type MediaRow } from "./mappers.js";
+import { buildMediaQuery } from "../query/media-query.js";
 import { getFolderCounts, getRecursiveFolderStats } from "./folders-routes.js";
 import { EngagementRepo } from "../db/engagement-repo.js";
 
@@ -36,15 +37,16 @@ export async function registerSearchRoutes(app: FastifyInstance, ctx: AppContext
       .all(ftsQuery, folderLimit) as FolderRow[];
 
     const mediaLimit = Math.max(0, limit - folderRows.length);
+    const listing = buildMediaQuery({});
     const mediaRows = mediaLimit
       ? (db
           .prepare(
             `SELECT media.* FROM media_fts
-             JOIN media ON media.id = media_fts.rowid
-             WHERE media_fts MATCH ? AND media.status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW}
+             JOIN media ON media.id = media_fts.rowid ${listing.joins}
+             WHERE media_fts MATCH ? AND ${listing.where}
              ORDER BY rank LIMIT ? OFFSET ?`,
           )
-          .all(ftsQuery, mediaLimit, offset) as MediaRow[])
+          .all(ftsQuery, ...listing.bindings, mediaLimit, offset) as MediaRow[])
       : [];
 
     const items: SearchResultDto[] = [

@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { EXCLUDE_PAIRED_RAW } from "../api/mappers.js";
+import { buildMediaQuery } from "../query/media-query.js";
 
 // Isolated behind an interface so the sampling strategy can be swapped (e.g.
 // for reservoir sampling or history-weighted "forgotten photos" selection)
@@ -15,6 +15,9 @@ export interface RandomSelectionService {
 // recent ones" without the complexity of a scored weighted-random query.
 const RECENTLY_SHOWN_COOLDOWN_DAYS = 7;
 
+// Scope-less, so no bindings - the WHERE fragment can be inlined.
+const ELIGIBLE = buildMediaQuery({ type: "photo", thumbnailDone: true }).where;
+
 export class SqliteRandomSelectionService implements RandomSelectionService {
   constructor(private db: Database.Database) {}
 
@@ -24,7 +27,7 @@ export class SqliteRandomSelectionService implements RandomSelectionService {
       .prepare(
         `SELECT media.id FROM media
          LEFT JOIN media_engagement e ON e.media_id = media.id
-         WHERE media.status = 'active' AND media.media_type IN ('image', 'raw') AND media.thumbnail_status = 'done' AND ${EXCLUDE_PAIRED_RAW}
+         WHERE ${ELIGIBLE}
            AND (e.last_shown_at IS NULL OR e.last_shown_at < datetime('now', '-${RECENTLY_SHOWN_COOLDOWN_DAYS} days'))
          ORDER BY RANDOM() LIMIT ?`,
       )
@@ -44,7 +47,7 @@ export class SqliteRandomSelectionService implements RandomSelectionService {
     const topUpRows = this.db
       .prepare(
         `SELECT media.id FROM media
-         WHERE media.status = 'active' AND media.media_type IN ('image', 'raw') AND media.thumbnail_status = 'done' AND ${EXCLUDE_PAIRED_RAW}
+         WHERE ${ELIGIBLE}
            ${exclusion}
          ORDER BY RANDOM() LIMIT ?`,
       )
