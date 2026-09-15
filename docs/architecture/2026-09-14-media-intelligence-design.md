@@ -188,6 +188,8 @@ Models need a consistent, oriented, decodable JPEG. Rule: **the server renders i
 | raw | existing 1800 px preview (already orientation-corrected) | passed through |
 | video | existing 500 px poster thumbnail | passed through (embedding only; no faces) |
 
+**Phase 3 note:** image embeddings use the existing 500 px thumbnail instead (CLIP downsamples to 224 px, so re-decoding originals costs 10× for nothing); the 1600 px render below is introduced with faces in Phase 4.
+
 The 1600 px render is generated per batch and **not persisted** — the decode cost is paid once during backfill and it avoids a third derivative tier on disk. If the fullscreen Viewer later wants a mid-size tier for huge TIFFs, that becomes the persisted tier and this rule switches to reuse it. HEIC decoding depends on the sharp build (prebuilt sharp lacks libheif); HEIC files whose thumbnail already fails today will be `unsupported` here too — a pre-existing gap, out of scope.
 
 ### 6.5 Sidecar contract
@@ -206,7 +208,7 @@ Rules: no file paths in the API; no auth beyond loopback by default (`MEMORYLANE
 
 Model choices (initial, all Apache/MIT-licensed, ONNX-exportable):
 
-- **Image/text embedding:** SigLIP base (or CLIP ViT-B/32 as the small fallback). One model gives similarity *and* free-text search. DINOv2 is better at fine-grained near-duplicate matching but has no text side; consider it as a second embedding only if stack refinement proves weak.
+- **Image/text embedding:** **Implemented in Phase 3 as CLIP ViT-B/32** via the pre-exported ONNX graph `Xenova/clip-vit-base-patch32` (512-d, ~350 MB, measured 52 img/s on an M2 Max CPU; CoreML MLProgram 55 img/s so CPU stays the default). SigLIP remains a drop-in upgrade later (bump the model id → the worker re-embeds everything into a new space). One model gives similarity *and* free-text search. DINOv2 is better at fine-grained near-duplicate matching but has no text side; consider it as a second embedding only if stack refinement proves weak.
 - **Faces:** InsightFace `buffalo_l` (RetinaFace detector + ArcFace 512-d). Industry-standard for identity clustering.
 - **Clustering:** HDBSCAN (scikit-learn) on cosine distance.
 

@@ -31,8 +31,10 @@ export default function SearchPage() {
     }
   };
 
+  // Ranked by CLIP text->image similarity. The raw cosine values sit around
+  // 0.2-0.3 even for good matches, so they're deliberately not shown as
+  // percentages - the order is the signal.
   const semanticMedia: MediaDto[] = mode === "semantic" ? (results ?? []).flatMap((r) => (r.media ? [r.media] : [])) : [];
-  const captions = Object.fromEntries((results ?? []).filter((r) => r.media && r.score != null).map((r) => [r.media!.id, `${Math.round((r.score ?? 0) * 100)}%`]));
 
   return (
     <div>
@@ -82,7 +84,7 @@ export default function SearchPage() {
       {mode === "semantic" && results && (
         <>
           {semanticMedia.length === 0 && <p className="text-sm text-muted">Nothing analysed yet matches that description.</p>}
-          {semanticMedia.length > 0 && <MediaGrid items={semanticMedia} onOpen={setViewerIndex} captions={captions} />}
+          {semanticMedia.length > 0 && <MediaGrid items={semanticMedia} onOpen={setViewerIndex} />}
           {viewerIndex !== null && <Viewer items={semanticMedia} startIndex={viewerIndex} onClose={() => setViewerIndex(null)} />}
         </>
       )}
