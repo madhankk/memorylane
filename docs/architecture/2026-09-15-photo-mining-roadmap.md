@@ -205,6 +205,31 @@ Small, self-contained improvements to the existing Browse/Home experience. None 
 
 **Effort:** small each. **Data leaving the machine:** none.
 
+### O. Display & dissemination — TVs, frames, casting (plugins)
+
+**What:** show albums, people, "best of", or Surprise Me on the living-room TV or a photo frame, and **rate/favourite from the couch** so the archive gets better while you enjoy it. Every path is a plugin on two core seams (below); several need no app on the TV at all.
+
+**The landscape — standards and popular integrations:**
+
+| Integration | Standard / how it works | Reach | Rating back-channel | Effort |
+|---|---|---|---|---|
+| **TV-mode web page** (`/tv`) | Our own 10-foot UI: huge tiles, D-pad/remote navigation, auto-advancing slideshow, pairing code on screen. Opened in the TV's browser (LG webOS, Samsung Tizen, Android/Google TV, Fire TV via Silk) or any browser on a mini-PC/Raspberry Pi. Same idea as Immich's "Frame" mode. | Any TV with a browser; instant | **Yes** — arrows/OK on the remote map to ★ / 👎 / next; calls our API with the paired device token | small |
+| **DLNA / UPnP AV MediaServer** | The classic LAN standard: SSDP discovery + a ContentDirectory service the TV browses (containers → items) and plain HTTP delivery of JPEGs. Built into most smart TVs (Samsung, LG, Sony), consoles, Kodi, VLC, older photo frames. We expose Years / Albums / People / Places / Best-of as containers and serve sized derivatives. | Very broad, zero setup on the TV | **No** — UPnP has no rating action; the TV's own UI can't send anything back | small–medium (protocol is simple; few maintained Node libraries, so likely hand-rolled SSDP + 3 SOAP actions) |
+| **Google Cast (Chromecast, Google TV, many TVs)** | Cast Web Sender SDK in our client → the **Default Media Receiver** shows images/slideshows, or a **custom receiver** (a web app we host, registered in the Cast developer console) renders our own slideshow UI. Sender page must be served over HTTPS (localhost exempt). | Very broad | Via the **sender** (phone/laptop stays the remote: rate there); a custom receiver can also accept limited remote input | small (default receiver) / medium (custom) |
+| **Kodi add-on** | Kodi (LibreELEC boxes, Fire TV, Android TV, PCs) has a Python add-on API and JSON-RPC; an add-on browses our REST API, plays slideshows, and can rate with the remote. | Enthusiast TV boxes | **Yes** (add-on calls our API) | medium |
+| **Home Assistant** | Popular in self-hosted homes: a custom integration exposing MemoryLane as a media source (dashboards, wall tablets) and services (`memorylane.favorite`, `memorylane.next`); HA can itself cast to TVs and drive frames/tablets. | Smart-home users | **Yes** (HA buttons/automations call our API) | medium |
+| **Photo frames** | Modern DIY frames (Raspberry Pi/"PhotoFrame" projects, e-ink) take a **JSON/RSS feed** of image URLs or an MJPEG/HTML page; older frames speak DLNA (above). Commercial cloud frames (Aura, Nixplay, Skylight) accept email/app uploads only — cover them with the export/share flow, not a live link. | DIY + older frames | Feed: no; HTML frame page: yes (touch) | small |
+| **Apple TV / AirPlay** | Photos AirPlay from iPhone/Mac apps only; the wire protocol isn't open. A **tvOS app** wrapping `/tv` is the real path (native, App Store) — later, if demand. Meanwhile the desktop app can mirror its slideshow window via AirPlay screen mirroring. | Apple households | tvOS app: yes | large (native) |
+| **Native TV apps** (Android TV / Google TV, Fire TV, Samsung, LG) | Thin WebView/web-app wrappers around `/tv`, published to each store, giving a launcher icon and remote-key handling instead of a browser. | Everyone else | **Yes** (same web UI) | medium each, after `/tv` |
+
+**Core seams all of these share (built once, in core):**
+1. **Presentation queue** — "what to show and how": a source (album, query, person, Surprise Me, Year in review), ordering, dwell time, transitions, caption on/off (people, place, date), and a **display tier** of derivatives (1080p/4K JPEG, rendered on demand from the original/preview and cached like thumbnails) so no display ever gets a 45 MP RAW.
+2. **Display devices + remote rating** — a device registry (discovered DLNA/Cast targets, paired browsers/frames) with capabilities (`canRate`, resolution), **pairing by short code shown on the screen** → long-lived device token scoped to *view derivatives + rate/favourite/skip*, never to originals or settings. Ratings from any device land in the same `media_engagement` favourites/"shown" counters that already bias rediscovery, plus an optional 1–5 star field mapped to `xmp:Rating` semantics (we already read `Rating` from files; writing `.xmp` sidecars is a §J export option — a new file beside the original, so allowed).
+
+**Recommended order inside this area:** `/tv` web mode with pairing + rating (biggest reach, proves the seams) → DLNA server (widest zero-setup reach, view-only) → Cast default receiver → Home Assistant + Kodi add-ons → frame feed → native TV wrappers → tvOS.
+
+**Effort:** small for `/tv` and the feed, medium for the rest, large only for native Apple TV. **Data leaving the machine:** none — everything is LAN; Cast custom receivers are served from our own server too.
+
 ---
 
 ## 3. Plugin architecture — the extension points
@@ -265,6 +290,8 @@ Rules that keep this from becoming a mess:
 | `create` | collages, cards, slideshows (ffmpeg) | — | none |
 | `ai-transform` | `image-edit` provider slot, AI badge/provenance | image provider (API key or GPU) | pixels (cloud) |
 | `apple-photos` (macOS) | scan-root kind, catalogue sync (osxphotos in the sidecar), People/albums/favourites import, iCloud state + viewer actions, optional PhotoKit helper | Photos/Full Disk Access permission | none |
+| `tv` | `/tv` 10-foot web UI, device pairing, remote rating | — | none |
+| `dlna`, `cast`, `kodi`, `home-assistant`, `frame-feed` | one display integration each on the presentation-queue + device seams | LAN (Cast: HTTPS for the sender page) | none |
 
 The first plugin-refactor step is small and mechanical: give `people`, `stacks` and the sidecar `ai` the manifest shape and load them through the registry, so the seams are proven before new plugins land.
 
@@ -305,6 +332,7 @@ Everything runs through the existing `AnalysisWorker`, `buildMediaQuery`, `Media
 | Sharing | Yes (export, own-server links) | Sized derivatives to the chosen host, only with the hosted-sharing plugin |
 | Apple Photos library | Always local | — |
 | Browsing polish | Always local | — |
+| Display & dissemination (TV, DLNA, Cast, frames) | Always local (LAN) | — |
 
 ---
 
@@ -317,7 +345,7 @@ Plans written so far: **§M Apple Photos** → `docs/superpowers/plans/2026-09-1
 | **4.5 — Browsing polish** | N (hover slideshow on folder cards, auto-enter a lone root, hero banner preferences + thumbs-down) | Small, visible, no dependencies; ships while Phase 5's seams are being built. |
 | **5 — Plugin seams + Ask** | plugin loader/manifest/secrets, refactor `people`/`stacks`/`ai` onto it; E (filtered ranking), B (places), C (relationships/age), `llm` providers (cloud + local), Ask page | Seams first so every later feature lands as a plugin; Ask is the highest value per effort and makes decades of data *reachable*. |
 | **6 — Housekeeping, albums & Apple Photos** | J (marks → trash → empty, hide, export), K (query + manual albums, save-as-album from people/places/trips/Ask), M (Apple Photos root, catalogue sync, People bootstrap, iCloud state) | The tidying tools a real library needs before "making things" is fun; M reuses albums and hidden state, and brings phone photos in for Mac users. |
-| **7 — Mining & sharing** | quality analyzer, Year in review, Best of, timelines, then & now, trips; L tiers 1–2 (export, own-server share links) | Exploits data now in place; share links reuse albums. |
+| **7 — Mining, sharing & display** | quality analyzer, Year in review, Best of, timelines, then & now, trips; L tiers 1–2 (export, own-server share links); O core seams + `/tv` mode with remote rating, then DLNA and Cast | Exploits data now in place; share links reuse albums; `/tv` turns the TV into the best rediscovery surface and feeds ratings back. |
 | **8 — Editing & creations** | G (non-destructive edits, exports), H (collages, cards, ffmpeg slideshows), Create menu | Self-contained; Sharp + bundled ffmpeg only. |
 | **9 — AI transformations & hosted sharing** | I (`image-edit` provider, provenance, AI badge), L tier 3 (hosted share plugin) | Last: the only features that must send pixels away or need a GPU/bucket; reuse the People consent UX. |
 | optional | D (captions) | Slot in after 5 for users who want text-only retrieval or album naming. |
@@ -334,4 +362,5 @@ Plans written so far: **§M Apple Photos** → `docs/superpowers/plans/2026-09-1
 6. **Trash location** — beside the originals (`_MemoryLane-Trash/` per folder, visible and restorable, works on any volume) or the OS trash (macOS/Windows APIs, not available for network volumes)? Recommendation: per-folder trash folder, with "Reveal in Finder/Explorer" links.
 7. **Plugin client bundling** — one Vite build that includes enabled plugins' pages, or per-plugin bundles loaded lazily? Recommendation: single build with lazy routes for Phase 5; per-plugin bundles only if third-party plugins ever ship.
 8. **Apple Photos originals cache** — when the user asks to download an iCloud original, stream it once or keep a full-res copy in MemoryLane's data dir (their disk-space trade-off)? Recommendation: stream by default, opt-in cache per action.
-9. **Share links over the internet** — document reverse-proxy + TLS (as the README already does) or add a built-in tunnel/hosted relay later? Recommendation: document first; hosted relay is the tier-3 plugin's job.
+9. **TV-mode input model** — D-pad/remote keys arrive as ordinary keyboard events in TV browsers (arrows/Enter/Back), but key codes differ per platform (webOS/Tizen have their own); decide on a small key-map layer early so native wrappers reuse it.
+10. **Share links over the internet** — document reverse-proxy + TLS (as the README already does) or add a built-in tunnel/hosted relay later? Recommendation: document first; hosted relay is the tier-3 plugin's job.
