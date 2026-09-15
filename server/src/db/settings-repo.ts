@@ -10,6 +10,9 @@ const DEFAULTS: SettingsDto = {
   stackMaxHamming: 14,
   stackMinCosine: 0.9,
   aiEnabled: true,
+  personsEnabled: false,
+  faceAssignThreshold: 0.45,
+  faceMinClusterSize: 3,
 };
 
 export class SettingsRepo {
@@ -37,6 +40,9 @@ export class SettingsRepo {
       stackMaxHamming: map.has("stackMaxHamming") ? Number(map.get("stackMaxHamming")) : DEFAULTS.stackMaxHamming,
       stackMinCosine: map.has("stackMinCosine") ? Number(map.get("stackMinCosine")) : DEFAULTS.stackMinCosine,
       aiEnabled: map.has("aiEnabled") ? map.get("aiEnabled") === "true" : DEFAULTS.aiEnabled,
+      personsEnabled: map.has("personsEnabled") ? map.get("personsEnabled") === "true" : DEFAULTS.personsEnabled,
+      faceAssignThreshold: map.has("faceAssignThreshold") ? Number(map.get("faceAssignThreshold")) : DEFAULTS.faceAssignThreshold,
+      faceMinClusterSize: map.has("faceMinClusterSize") ? Number(map.get("faceMinClusterSize")) : DEFAULTS.faceMinClusterSize,
     };
   }
 
@@ -59,6 +65,9 @@ export class SettingsRepo {
     if (patch.stackMaxHamming !== undefined) entries.push(["stackMaxHamming", String(patch.stackMaxHamming)]);
     if (patch.stackMinCosine !== undefined) entries.push(["stackMinCosine", String(patch.stackMinCosine)]);
     if (patch.aiEnabled !== undefined) entries.push(["aiEnabled", String(patch.aiEnabled)]);
+    if (patch.personsEnabled !== undefined) entries.push(["personsEnabled", String(patch.personsEnabled)]);
+    if (patch.faceAssignThreshold !== undefined) entries.push(["faceAssignThreshold", String(patch.faceAssignThreshold)]);
+    if (patch.faceMinClusterSize !== undefined) entries.push(["faceMinClusterSize", String(patch.faceMinClusterSize)]);
 
     if (entries.length > 0) tx(entries);
     return this.getAll();

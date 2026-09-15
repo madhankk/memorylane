@@ -96,6 +96,12 @@ export interface SettingsDto {
   stackMinCosine: number;
   // Master switch for provider-backed analysis (embeddings today, faces later).
   aiEnabled: boolean;
+  // People (design doc §10) is opt-in: faces are biometric data.
+  personsEnabled: boolean;
+  // Cosine at/above which a new face joins the nearest known person.
+  faceAssignThreshold: number;
+  // Minimum faces for discovery to create a new "Person N".
+  faceMinClusterSize: number;
 }
 
 export interface UpdateSettingsRequest {
@@ -107,6 +113,9 @@ export interface UpdateSettingsRequest {
   stackMaxHamming?: number;
   stackMinCosine?: number;
   aiEnabled?: boolean;
+  personsEnabled?: boolean;
+  faceAssignThreshold?: number;
+  faceMinClusterSize?: number;
 }
 
 export interface FolderDto {
@@ -463,4 +472,47 @@ export interface MergeStacksRequest {
 }
 export interface RecomputeStacksRequest {
   folderId?: number;
+}
+
+// People (design doc §10.3).
+export interface PersonDto {
+  id: number;
+  name: string | null;
+  autoLabel: string; // "Person 12"
+  displayName: string; // name ?? autoLabel
+  coverFaceId: number | null;
+  faceCount: number;
+  mediaCount: number;
+  hidden: boolean;
+}
+
+export interface FaceDto {
+  id: number;
+  mediaId: number;
+  bbox: [number, number, number, number];
+  detScore: number;
+  quality: number;
+  personId: number | null;
+  assignedBy: "auto" | "user" | null;
+}
+
+export interface PersonDetailDto {
+  person: PersonDto;
+  faces: FaceDto[];
+}
+
+export interface RenamePersonRequest {
+  name: string | null;
+}
+export interface HidePersonRequest {
+  hidden: boolean;
+}
+export interface MergePersonsRequest {
+  personId: number;
+}
+export interface AssignFaceRequest {
+  personId: number | null;
+}
+export interface RejectFaceRequest {
+  personId: number;
 }
