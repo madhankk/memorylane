@@ -34,7 +34,7 @@ const stackOf = (db: Database.Database, mediaId: number) =>
 describe("StackService.recomputeFolder", () => {
   it("creates burst stacks with the first shot as cover and leaves singles", async () => {
     const { db, folder, svc, shot } = await setup();
-    const a = shot(0), b = shot(100, H1), c = shot(200), d = shot(10_000);
+    const a = shot(0), b = shot(100, H1), c = shot(200), d = shot(10_000, HFAR);
     expect(svc.recomputeFolder(folder)).toBe(1);
     const s = svc.getStack(stackOf(db, a)!)!;
     expect(s).toMatchObject({ kind: "burst", coverMediaId: a, count: 3, userModified: false });
@@ -71,6 +71,26 @@ describe("StackService.recomputeFolder", () => {
     expect(svc.recomputeDirty()).toBe(1);
     expect(svc.recomputeDirty()).toBe(0);
     expect((db.prepare("SELECT COUNT(*) c FROM stacks").get() as { c: number }).c).toBe(1);
+  });
+});
+
+describe("StackService v2 candidates", () => {
+  it("uses embeddings for the configured model", async () => {
+    const db = await createTestDb();
+    const root = seedScanRoot(db);
+    const folder = seedFolder(db, root, "/library/burst");
+    const svc = new StackService(db, logger, new SettingsRepo(db), () => "m@1");
+    const exif = db.prepare("INSERT INTO media_exif (media_id, captured_at_precise, camera_serial, tags_json, exiftool_version) VALUES (?, ?, 'R5', '{}', 't')");
+    const emb = db.prepare("INSERT INTO media_embeddings (media_id, model, dim, vector) VALUES (?, 'm@1', 2, ?)");
+    const a = seedMedia(db, folder, root), b = seedMedia(db, folder, root);
+    exif.run(a, t(0)); exif.run(b, t(100));
+    // No hashes at all - only the embedding rule can group these.
+    emb.run(a, Buffer.from(new Float32Array([1, 0]).buffer)); emb.run(b, Buffer.from(new Float32Array([0.99, 0.14]).buffer));
+    expect(svc.recomputeFolder(folder)).toBe(1);
+    expect(svc.getStack(stackOf(db, a)!)!.count).toBe(2);
+    const noModel = new StackService(db, logger, new SettingsRepo(db));
+    expect(noModel.recomputeFolder(folder)).toBe(0);
+    expect(svc.hasStaleAutoStacks()).toBe(false);
   });
 });
 

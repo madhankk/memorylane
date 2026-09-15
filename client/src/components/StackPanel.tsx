@@ -4,6 +4,7 @@ import { api, ApiError } from "../api/client";
 import Modal from "./Modal";
 import MediaGrid from "./MediaGrid";
 import Viewer from "./Viewer";
+import { useConfirm } from "./ConfirmDialog";
 
 interface StackPanelProps {
   stackId: number;
@@ -25,6 +26,7 @@ export default function StackPanel({ stackId, onClose, onChanged }: StackPanelPr
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { confirm } = useConfirm();
 
   const load = useCallback(async () => {
     try {
@@ -120,8 +122,15 @@ export default function StackPanel({ stackId, onClose, onChanged }: StackPanelPr
             <button
               className={`${buttonClass} ml-auto text-red-600`}
               disabled={busy}
-              onClick={() => {
-                if (window.confirm("Delete this stack? The photos stay in your library, they just won't be grouped.")) {
+              onClick={async () => {
+                if (
+                  await confirm({
+                    title: "Delete this stack?",
+                    message: "The photos stay in your library - they just won't be grouped, and won't be auto-stacked again.",
+                    confirmLabel: "Delete stack",
+                    danger: true,
+                  })
+                ) {
                   void run(async () => {
                     await api.stacks.remove(stackId);
                     return null;

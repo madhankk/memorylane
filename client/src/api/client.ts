@@ -33,6 +33,12 @@ import type {
   AnalysisStatusDto,
   StackDto,
   StackDetailDto,
+  MoveDataDirResultDto,
+  SimilarResultDto,
+  SearchMode,
+  PersonDto,
+  PersonDetailDto,
+  FaceDto,
 } from "@memorylane/shared";
 
 class ApiError extends Error {
@@ -66,7 +72,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export { ApiError };
 
-export type ReportFilters = ExifFilterQuery & { type?: MediaTypeFilter };
+export type ReportFilters = ExifFilterQuery & { type?: MediaTypeFilter; personIds?: string };
 
 // Serialises only defined filter values, so the same object drives the
 // grid request, the facets request, and the CSV link.
@@ -92,6 +98,7 @@ export const api = {
     get: () => request<SettingsDto>("/api/settings"),
     update: (body: UpdateSettingsRequest) => request<SettingsDto>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
     storage: () => request<StorageStatsDto>("/api/settings/storage"),
+    moveDataDir: (path: string) => request<MoveDataDirResultDto>("/api/settings/data-dir", { method: "POST", body: JSON.stringify({ path }) }),
     version: () => request<VersionDto>("/api/settings/version"),
   },
   scanRoots: {
@@ -130,6 +137,8 @@ export const api = {
     list: (filters: ReportFilters, offset = 0, limit = 200) =>
       request<PaginatedResult<MediaDto>>(`/api/media${toQueryString({ ...filters, offset, limit })}`),
     get: (id: number) => request<MediaDto>(`/api/media/${id}`),
+    similar: (id: number, limit = 48) => request<SimilarResultDto>(`/api/media/${id}/similar?limit=${limit}`),
+    faces: (id: number) => request<FaceDto[]>(`/api/media/${id}/faces`),
     fileUrl: (id: number) => `/api/media/${id}/file`,
     // `v` busts the browser's 1-year immutable cache when the thumbnail/preview
     // is regenerated (e.g. after an orientation fix) - see thumbnail_version.
@@ -142,8 +151,8 @@ export const api = {
     markShown: (id: number) => request<{ ok: true }>(`/api/media/${id}/shown`, { method: "POST" }),
     markViewed: (id: number) => request<{ ok: true }>(`/api/media/${id}/viewed`, { method: "POST" }),
   },
-  search: (q: string, offset = 0, limit = 50) =>
-    request<PaginatedResult<SearchResultDto>>(`/api/search?q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`),
+  search: (q: string, offset = 0, limit = 50, mode: SearchMode = "text") =>
+    request<PaginatedResult<SearchResultDto>>(`/api/search?q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}&mode=${mode}`),
   memories: {
     random: (count = 100) => request<{ items: MediaDto[] }>(`/api/memories/random?count=${count}`),
     onThisDay: (count = 30) => request<OnThisDayResponse>(`/api/memories/on-this-day?count=${count}`),
@@ -174,6 +183,22 @@ export const api = {
         method: "POST",
         body: JSON.stringify(folderId !== undefined ? { folderId } : {}),
       }),
+  },
+  persons: {
+    list: (includeHidden = false) => request<PersonDto[]>(`/api/persons?includeHidden=${includeHidden}`),
+    get: (id: number) => request<PersonDetailDto>(`/api/persons/${id}`),
+    faces: (id: number, offset = 0, limit = 100) => request<FaceDto[]>(`/api/persons/${id}/faces?offset=${offset}&limit=${limit}`),
+    rename: (id: number, name: string | null) => request<PersonDto>(`/api/persons/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+    setHidden: (id: number, hidden: boolean) => request<PersonDto>(`/api/persons/${id}`, { method: "PATCH", body: JSON.stringify({ hidden }) }),
+    merge: (id: number, personId: number) => request<PersonDto>(`/api/persons/${id}/merge`, { method: "POST", body: JSON.stringify({ personId }) }),
+    discover: () => request<{ persons: number; assigned: number }>("/api/persons/discover", { method: "POST" }),
+    regroup: () => request<{ persons: number; assigned: number }>("/api/persons/regroup", { method: "POST" }),
+    deleteAllData: () => request<void>("/api/persons/data", { method: "DELETE" }),
+  },
+  faces: {
+    cropUrl: (id: number) => `/api/faces/${id}/crop`,
+    assign: (id: number, personId: number | null) => request<FaceDto>(`/api/faces/${id}/assign`, { method: "POST", body: JSON.stringify({ personId }) }),
+    reject: (id: number, personId: number) => request<FaceDto>(`/api/faces/${id}/reject`, { method: "POST", body: JSON.stringify({ personId }) }),
   },
   analysis: {
     status: () => request<AnalysisStatusDto>("/api/analysis/status"),

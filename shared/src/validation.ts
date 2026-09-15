@@ -38,6 +38,14 @@ export const updateSettingsRequestSchema = z.object({
   scanScheduleEnabled: z.boolean().optional(),
   stackGapSeconds: z.number().min(0.1).max(60).optional(),
   stackMaxHamming: z.number().int().min(0).max(64).optional(),
+  stackMinCosine: z.number().min(0.5).max(1).optional(),
+  stackSeriesGapSeconds: z.number().min(0).max(3600).optional(),
+  aiEnabled: z.boolean().optional(),
+  personsEnabled: z.boolean().optional(),
+  faceAssignThreshold: z.number().min(0.3).max(0.9).optional(),
+  faceMinClusterSize: z.number().int().min(2).max(20).optional(),
+  faceLinkThreshold: z.number().min(0.3).max(0.9).optional(),
+  faceModel: z.enum(["yunet-sface", "buffalo_l"]).optional(),
 });
 
 export const paginationQuerySchema = z.object({
@@ -75,6 +83,14 @@ export const searchQuerySchema = z.object({
   q: z.string().min(1).max(200),
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(200).default(50),
+  // "text" = FTS over names/camera/lens; "semantic" = CLIP text->image kNN
+  // (needs the AI sidecar, returns media only).
+  mode: z.enum(["text", "semantic"]).default("text"),
+});
+export type SearchMode = z.infer<typeof searchQuerySchema>["mode"];
+
+export const similarQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(48),
 });
 
 export const randomMediaQuerySchema = z.object({
@@ -139,9 +155,18 @@ export const exifFilterQuerySchema = z.object({
 });
 export type ExifFilterQuery = z.infer<typeof exifFilterQuerySchema>;
 
+// "1,2,3" -> [1, 2, 3]
+const idListQueryParam = z
+  .string()
+  .regex(/^\d+(,\d+)*$/)
+  .transform((s) => s.split(",").map(Number))
+  .optional();
+
 export const mediaListQuerySchema = paginationQuerySchema.merge(exifFilterQuerySchema).extend({
   type: mediaTypeFilterSchema,
   scanRootId: z.coerce.number().int().positive().optional(),
+  // Photos containing any of these persons (People pages).
+  personIds: idListQueryParam,
 });
 
 export const REPORT_FACET_FIELDS = ["lens", "camera", "make", "aperture", "iso", "focal", "year"] as const;
@@ -158,3 +183,13 @@ export const setStackCoverRequestSchema = z.object({ mediaId: z.number().int().p
 export const splitStackRequestSchema = z.object({ mediaIds: mediaIdList.min(2) });
 export const mergeStacksRequestSchema = z.object({ stackId: z.number().int().positive() });
 export const recomputeStacksRequestSchema = z.object({ folderId: z.number().int().positive().optional() });
+
+export const renamePersonRequestSchema = z.object({ name: z.string().trim().min(1).max(80).nullable() });
+export const hidePersonRequestSchema = z.object({ hidden: z.boolean() });
+export const mergePersonsRequestSchema = z.object({ personId: z.number().int().positive() });
+export const assignFaceRequestSchema = z.object({ personId: z.number().int().positive().nullable() });
+export const rejectFaceRequestSchema = z.object({ personId: z.number().int().positive() });
+export const personFacesQuerySchema = paginationQuerySchema;
+export const personsListQuerySchema = z.object({ includeHidden: booleanQueryParam });
+
+export const moveDataDirRequestSchema = z.object({ path: z.string().min(1).max(4096) });

@@ -14,6 +14,7 @@ import MediaGrid from "../components/MediaGrid";
 import MediaTypeFilter from "../components/MediaTypeFilter";
 import Viewer from "../components/Viewer";
 import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
+import AnalysisProgress from "../components/AnalysisProgress";
 
 const PAGE_SIZE = 200;
 
@@ -186,6 +187,11 @@ export default function ReportsPage() {
             <Download size={14} strokeWidth={1.8} /> Export CSV
           </a>
         </div>
+      </div>
+
+      {/* Facets fill in as metadata extraction runs - say so instead of "0 photos match". */}
+      <div className="max-w-2xl empty:hidden">
+        <AnalysisProgress only={["exif_full"]} hideWhenDone />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-sm">

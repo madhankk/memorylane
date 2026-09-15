@@ -6,6 +6,7 @@ import { EXCLUDE_LIVE_PHOTO_VIDEOS, EXCLUDE_PAIRED_RAW } from "../query/media-qu
 import type { MediaRow } from "../api/mappers.js";
 import { groupBursts, STACK_RULE_VERSION, type StackCandidate } from "./stacker.js";
 import { markFoldersDirty } from "./dirty.js";
+import { blobToVector } from "../vectors/embedding-repo.js";
 
 export class StackError extends Error {
   constructor(
@@ -39,31 +40,42 @@ export class StackService {
     private db: Database.Database,
     private logger: Logger,
     private settings: SettingsRepo,
+    // Embedding model whose vectors feed stacks v2; null = pHash/time only.
+    private getModel: () => string | null = () => null,
   ) {}
 
   // ---- recompute -----------------------------------------------------------
 
   private listCandidates(folderId: number): StackCandidate[] {
-    return this.db
+    const model = this.getModel() ?? "";
+    const rows = this.db
       .prepare(
         `SELECT media.id, media.filename, mx.captured_at_precise AS capturedAt,
-                COALESCE(mx.camera_serial, mx.camera_model) AS body, ph.phash, mx.burst_id AS burstId
+                COALESCE(mx.camera_serial, mx.camera_model) AS body, ph.phash, mx.burst_id AS burstId,
+                mx.shutter_speed_s AS shutterSeconds, em.vector AS embeddingBlob
          FROM media
          LEFT JOIN media_exif mx ON mx.media_id = media.id
          LEFT JOIN media_phash ph ON ph.media_id = media.id
+         LEFT JOIN media_embeddings em ON em.media_id = media.id AND em.model = ?
          WHERE media.parent_folder_id = ? AND media.status = 'active' AND media.media_type IN ('image', 'raw')
            AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW}
            AND media.id NOT IN (SELECT media_id FROM stack_exclusions)
            AND media.id NOT IN (SELECT sm.media_id FROM stack_members sm JOIN stacks s ON s.id = sm.stack_id WHERE s.user_modified = 1)`,
       )
-      .all(folderId) as StackCandidate[];
+      .all(model, folderId) as (StackCandidate & { embeddingBlob: Buffer | null })[];
+    return rows.map(({ embeddingBlob, ...r }) => ({ ...r, embedding: embeddingBlob ? blobToVector(embeddingBlob) : null }));
   }
 
   // Replaces every auto stack in the folder with a fresh grouping. Returns
   // the number of stacks created. Idempotent.
   recomputeFolder(folderId: number): number {
-    const { stackGapSeconds, stackMaxHamming } = this.settings.getAll();
-    const groups = groupBursts(this.listCandidates(folderId), { gapSeconds: stackGapSeconds, maxHamming: stackMaxHamming });
+    const { stackGapSeconds, stackMaxHamming, stackMinCosine, stackSeriesGapSeconds } = this.settings.getAll();
+    const groups = groupBursts(this.listCandidates(folderId), {
+      gapSeconds: stackGapSeconds,
+      maxHamming: stackMaxHamming,
+      minCosine: stackMinCosine,
+      seriesGapSeconds: stackSeriesGapSeconds,
+    });
     const tx = this.db.transaction(() => {
       this.db.prepare("DELETE FROM stacks WHERE parent_folder_id = ? AND user_modified = 0").run(folderId);
       for (const ids of groups) this.insertStack("burst", folderId, ids, STACK_RULE_VERSION, false);
@@ -96,6 +108,14 @@ export class StackService {
 
   markFolderDirty(folderId: number): void {
     markFoldersDirty(this.db, [folderId]);
+  }
+
+  // True when auto stacks were computed by an older rule - the caller marks
+  // everything dirty once so they get regrouped under the current rule.
+  hasStaleAutoStacks(): boolean {
+    return !!this.db
+      .prepare("SELECT 1 FROM stacks WHERE user_modified = 0 AND (rule_version IS NULL OR rule_version != ?) LIMIT 1")
+      .get(STACK_RULE_VERSION);
   }
 
   // ---- reads ---------------------------------------------------------------

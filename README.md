@@ -21,6 +21,10 @@ Photos, RAW, video, and Apple Live Photos are all indexed and browsable.
 - **Multi-folder libraries** - scan multiple folders/drives, reorder them, and trigger a rescan of just one folder at a time from Settings.
 - **Ignore folders you don't want indexed** - a global ignore list (Settings, or click "Ignore folder" while browsing one) tells the scanner to permanently skip a path - it removes that folder and its already-indexed items from your library without touching the original files.
 
+## AI features (optional)
+
+Find similar, "describe it" search, smarter burst stacks, and (opt-in) People — faces grouped into identities you can name — use small local models served by the `memorylane-ai` sidecar (CLIP, ONNX Runtime, ~350 MB download on first start, CPU is plenty). It runs on Windows, macOS (Apple Silicon) and Linux and never sees your file paths - the server sends it thumbnails and stores the resulting vectors in its own data directory. Start it with `npm run ai` in a second terminal (Python 3.11+ required); see [memorylane-ai/README.md](memorylane-ai/README.md). Without it, everything else works exactly as before.
+
 ## Requirements
 
 - Node.js 20+

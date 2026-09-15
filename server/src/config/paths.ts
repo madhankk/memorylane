@@ -2,12 +2,9 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 
-// Resolves MemoryLane's application-data directory (database, thumbnails, logs).
-// This directory is entirely disposable/rebuildable from the source media - see PLAN.md section 12.
-export function resolveAppDataDir(): string {
-  const override = process.env.MEMORYLANE_DATA_DIR;
-  if (override) return path.resolve(override);
-
+// The OS-standard location. Also where the "data lives elsewhere" pointer
+// file is kept, so it can be found without any configuration.
+export function platformDefaultDataDir(): string {
   const platform = process.platform;
   if (platform === "win32") {
     const base = process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local");
@@ -21,8 +18,31 @@ export function resolveAppDataDir(): string {
   return path.join(xdgDataHome, "MemoryLane");
 }
 
+export const DATA_LOCATION_FILE = "data-location.txt";
+
+export type DataDirSource = "env" | "pointer" | "default";
+
+// Resolves MemoryLane's application-data directory (database, thumbnails, logs).
+// Precedence: MEMORYLANE_DATA_DIR env var > pointer file written by
+// Settings › Storage › Move (lives in the platform default dir) > default.
+// This directory is entirely disposable/rebuildable from the source media.
+export function resolveAppDataDir(): { dataDir: string; source: DataDirSource } {
+  const override = process.env.MEMORYLANE_DATA_DIR;
+  if (override) return { dataDir: path.resolve(override), source: "env" };
+  const defaultDir = platformDefaultDataDir();
+  const pointer = path.join(defaultDir, DATA_LOCATION_FILE);
+  try {
+    const target = fs.readFileSync(pointer, "utf8").trim();
+    if (target && fs.existsSync(target) && fs.statSync(target).isDirectory()) return { dataDir: target, source: "pointer" };
+  } catch {
+    // no pointer - use the default
+  }
+  return { dataDir: defaultDir, source: "default" };
+}
+
 export interface AppPaths {
   dataDir: string;
+  dataDirSource: DataDirSource;
   dbPath: string;
   thumbnailsDir: string;
   previewsDir: string;
@@ -30,27 +50,35 @@ export interface AppPaths {
   // Fully disposable: a finished output only ever becomes durable once
   // Archive copies it into the actual library folder.
   transcodingDir: string;
+  // LanceDB vector index (design doc §6.3a) - a rebuildable cache over
+  // media_embeddings, never the source of truth.
+  vectorsDir: string;
+  // Face crop cache (People pages) - regenerated on demand.
+  facesDir: string;
   logsDir: string;
   clientDistDir: string;
 }
 
 export function resolveAppPaths(): AppPaths {
-  const dataDir = resolveAppDataDir();
+  const { dataDir, source } = resolveAppDataDir();
   const paths: AppPaths = {
     dataDir,
+    dataDirSource: source,
     dbPath: path.join(dataDir, "memorylane.sqlite"),
     thumbnailsDir: path.join(dataDir, "thumbnails"),
     // Larger RAW-only previews live separately from grid thumbnails - see
     // media/thumbnail-generator.ts PREVIEW_LONG_EDGE.
     previewsDir: path.join(dataDir, "previews"),
     transcodingDir: path.join(dataDir, "transcoding"),
+    vectorsDir: path.join(dataDir, "vectors"),
+    facesDir: path.join(dataDir, "faces"),
     logsDir: path.join(dataDir, "logs"),
     // import.meta.dirname is server/src/config (dev, tsx) or server/dist/config
     // (built) - either way, two levels up is the server package root, where
     // the Vite client build outputs directly (see client/vite.config.ts).
     clientDistDir: path.resolve(import.meta.dirname, "..", "..", "public"),
   };
-  for (const dir of [paths.dataDir, paths.thumbnailsDir, paths.previewsDir, paths.transcodingDir, paths.logsDir]) {
+  for (const dir of [paths.dataDir, paths.thumbnailsDir, paths.previewsDir, paths.transcodingDir, paths.vectorsDir, paths.facesDir, paths.logsDir]) {
     fs.mkdirSync(dir, { recursive: true });
   }
   return paths;
@@ -84,4 +112,8 @@ export function transcodingPathForMediaId(transcodingDir: string, mediaId: numbe
 // mounting a real <video> element for every row at once.
 export function transcodingThumbnailPathForMediaId(transcodingDir: string, mediaId: number): string {
   return path.join(transcodingDir, `${mediaId}.jpg`);
+}
+
+export function faceCropPath(facesDir: string, faceId: number): string {
+  return shardedMediaPath(facesDir, faceId);
 }

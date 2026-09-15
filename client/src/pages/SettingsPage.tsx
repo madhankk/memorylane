@@ -6,6 +6,8 @@ import { useAuth } from "../hooks/useAuth";
 import { useTheme, THEMES, type Theme } from "../hooks/useTheme";
 import { formatBytes } from "../utils/format";
 import TranscodeCandidatesPanel from "../components/TranscodeCandidatesPanel";
+import AnalysisProgress from "../components/AnalysisProgress";
+import { useConfirm } from "../components/ConfirmDialog";
 
 function scanRootSummary(root: ScanRootDto): string {
   const { stats } = root;
@@ -177,49 +179,59 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [storage, setStorage] = useState<StorageStatsDto | null>(null);
   const [storageLoading, setStorageLoading] = useState(false);
+  const [movePath, setMovePath] = useState("");
+  const [moving, setMoving] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const [moveDone, setMoveDone] = useState<{ from: string; to: string; bytes: number } | null>(null);
+
+  const moveData = async () => {
+    const target = movePath.trim();
+    if (!target) return;
+    const ok = await confirm({
+      title: "Move MemoryLane's data?",
+      message: (
+        <>
+          Everything (database, thumbnails, previews, vectors, face crops) is copied to <code className="text-ink">{target}</code> now - about a
+          minute per GB, and MemoryLane keeps working meanwhile. Afterwards you restart it to use the new location; the old copy stays until
+          you delete it.
+        </>
+      ),
+      confirmLabel: "Copy data",
+    });
+    if (!ok) return;
+    setMoving(true);
+    setMoveError(null);
+    try {
+      const r = await api.settings.moveDataDir(target);
+      setMoveDone({ from: r.from, to: r.to, bytes: r.copiedBytes });
+      setMovePath("");
+      await loadStorage();
+    } catch (err) {
+      setMoveError(err instanceof ApiError ? err.message : "Move failed");
+    } finally {
+      setMoving(false);
+    }
+  };
   const [ignoredPaths, setIgnoredPaths] = useState<IgnoredPathDto[]>([]);
   const [version, setVersion] = useState<string | null>(null);
   const [openTranscodeRootId, setOpenTranscodeRootId] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisStatusDto | null>(null);
-  const analysisPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { theme, setTheme } = useTheme();
+  const { confirm, notice } = useConfirm();
 
-  const analysisBusy = (a: AnalysisStatusDto | null) =>
-    !!a && a.analyzers.some((x) => x.counts.pending > 0 || x.counts.running > 0);
-
-  // Poll while the background analysis queue has work; stop once it drains
-  // (same idea as the scan-status poll below, but independent of it).
-  useEffect(() => {
-    let active = true;
-    const tick = async () => {
-      const st = await api.analysis.status();
-      if (active) setAnalysis(st);
-      return st;
-    };
-    void tick();
-    analysisPollRef.current = setInterval(async () => {
-      const st = await tick();
-      if (!analysisBusy(st) && analysisPollRef.current) {
-        clearInterval(analysisPollRef.current);
-        analysisPollRef.current = null;
-      }
-    }, 3000);
-    return () => {
-      active = false;
-      if (analysisPollRef.current) clearInterval(analysisPollRef.current);
-    };
-  }, []);
-
+  // Live counts come from the AnalysisProgress component (it owns the polling);
+  // this copy only drives the provider card and the Retry button.
+  const [analysisKey, setAnalysisKey] = useState(0);
   const [recomputeMsg, setRecomputeMsg] = useState<string | null>(null);
   const recomputeStacks = async () => {
     const res = await api.stacks.recompute();
-    setRecomputeMsg(`Queued ${res.folders} folder(s) - stacks update in the background.`);
+    setRecomputeMsg(`Recomputed stacks in ${res.folders} folder(s).`);
   };
 
   const retryAnalysis = async () => {
     await api.analysis.retryFailed();
-    setAnalysis(await api.analysis.status());
+    setAnalysisKey((k) => k + 1); // remount the progress view so it polls again
   };
 
   const loadAll = async () => {
@@ -295,7 +307,18 @@ export default function SettingsPage() {
   };
 
   const removeRoot = async (root: ScanRootDto) => {
-    if (!confirm(`Remove "${root.path}" from MemoryLane? Original files are never touched - this only removes MemoryLane's index for this folder.`)) return;
+    const ok = await confirm({
+      title: "Remove this folder from MemoryLane?",
+      message: (
+        <>
+          <code className="text-ink">{root.path}</code> is removed from the library. Original files are never touched - this only removes
+          MemoryLane's index for the folder.
+        </>
+      ),
+      confirmLabel: "Remove folder",
+      danger: true,
+    });
+    if (!ok) return;
     await api.scanRoots.remove(root.id);
     setScanRoots((prev) => prev.filter((r) => r.id !== root.id));
   };
@@ -335,6 +358,9 @@ export default function SettingsPage() {
   const updateSchedule = async (patch: Partial<SettingsDto>) => {
     const updated = await api.settings.update(patch);
     setSettings(updated);
+    // Toggling AI/People changes what the worker will process next - make the
+    // progress view poll again so the bars start moving without a reload.
+    if (patch.aiEnabled !== undefined || patch.personsEnabled !== undefined) setAnalysisKey((k) => k + 1);
   };
 
   if (!settings) return <p className="text-sm text-muted">Loading...</p>;
@@ -559,43 +585,40 @@ export default function SettingsPage() {
       </section>
 
       <section>
-        <h2 className="mb-1 font-serif text-lg font-semibold text-ink">Analysis</h2>
+        <h2 className="mb-1 font-serif text-lg font-semibold text-ink">AI</h2>
         <p className="mb-3 text-sm text-muted">
-          Background processing that runs after scans - full EXIF capture for Reports. Pauses automatically while a scan
-          is running.
+          An optional local sidecar (<code>memorylane-ai</code>) turns photos into vectors for Find similar, describe-it search and
+          smarter stacks. Nothing leaves your machine.
         </p>
+        <label className="mb-3 flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={settings.aiEnabled}
+            onChange={(e) => updateSchedule({ aiEnabled: e.target.checked })}
+            className="accent-accent"
+          />
+          Analyse photos with the AI sidecar when it's running
+        </label>
         {analysis && (
-          <div className="flex flex-col gap-2 text-sm">
-            {analysis.paused && <p className="text-muted">Paused while a scan is running.</p>}
-            <table className="w-full max-w-xl text-left">
-              <thead className="text-xs uppercase tracking-wide text-muted">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Analyzer</th>
-                  <th className="py-1 pr-3 font-medium">Done</th>
-                  <th className="py-1 pr-3 font-medium">Pending</th>
-                  <th className="py-1 pr-3 font-medium">Failed</th>
-                  <th className="py-1 font-medium">Unsupported</th>
-                </tr>
-              </thead>
-              <tbody className="text-ink tabular-nums">
-                {analysis.analyzers.map((a) => (
-                  <tr key={a.key} className="border-t border-border">
-                    <td className="py-1.5 pr-3">
-                      {a.key} <span className="text-xs text-faint">{a.version}</span>
-                    </td>
-                    <td className="py-1.5 pr-3">{a.counts.done.toLocaleString()}</td>
-                    <td className="py-1.5 pr-3">{(a.counts.pending + a.counts.running).toLocaleString()}</td>
-                    <td className="py-1.5 pr-3">{a.counts.failed.toLocaleString()}</td>
-                    <td className="py-1.5">{a.counts.unsupported.toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {analysis.analyzers.some((a) => a.counts.failed + a.counts.unsupported > 0) && (
-              <div>
-                <button onClick={() => void retryAnalysis()} className={buttonClass}>
-                  Retry failed
-                </button>
+          <div className="rounded-lg border border-border bg-surface px-4 py-3 text-sm">
+            {analysis.provider === null && <p className="text-muted">No AI provider configured (MEMORYLANE_AI_PROVIDER=none).</p>}
+            {analysis.provider && analysis.provider.reachable && (
+              <p className="text-ink">
+                <span className="mr-2 inline-block size-2 rounded-full bg-green-500 align-middle" aria-hidden />
+                Connected to <code>{analysis.provider.url}</code> · {analysis.provider.model} · {analysis.provider.device}
+              </p>
+            )}
+            {analysis.provider && !analysis.provider.reachable && (
+              <div className="text-ink">
+                <p>
+                  <span className="mr-2 inline-block size-2 rounded-full bg-amber-500 align-middle" aria-hidden />
+                  Not connected to <code>{analysis.provider.url}</code>
+                  {analysis.provider.lastError ? ` - ${analysis.provider.lastError}` : ""}
+                </p>
+                <p className="mt-1 text-muted">
+                  Start it with <code>npm run ai</code> in a second terminal (see memorylane-ai/README.md). Photos queue up meanwhile and are
+                  analysed once it's reachable; this card refreshes within a few seconds.
+                </p>
               </div>
             )}
           </div>
@@ -603,10 +626,159 @@ export default function SettingsPage() {
       </section>
 
       <section>
+        <h2 className="mb-1 font-serif text-lg font-semibold text-ink">Analysis</h2>
+        <p className="mb-3 text-sm text-muted">
+          Background processing that runs after scans - full EXIF capture for Reports. Pauses automatically while a scan
+          is running.
+        </p>
+        <AnalysisProgress key={analysisKey} onStatus={setAnalysis} />
+        {analysis && analysis.analyzers.some((a) => a.counts.failed + a.counts.unsupported > 0) && (
+          <div className="mt-3">
+            <button onClick={() => void retryAnalysis()} className={buttonClass}>
+              Retry failed
+            </button>
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-1 font-serif text-lg font-semibold text-ink">People</h2>
+        <p className="mb-3 text-sm text-muted">
+          Finds faces and groups them into people you can name, then lets you browse "photos of X". Off by default because faces are
+          personal data; everything is computed and stored on this machine only, and can be removed in one click.
+        </p>
+        <label className="mb-3 flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={settings.personsEnabled}
+            onChange={(e) => updateSchedule({ personsEnabled: e.target.checked })}
+            className="accent-accent"
+          />
+          Find and group faces (needs the AI sidecar)
+        </label>
+        <div className="mb-3 flex flex-wrap items-end gap-3 text-sm text-ink">
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">Face model</span>
+            <select
+              value={settings.faceModel}
+              onChange={async (e) => {
+                const next = e.target.value as SettingsDto["faceModel"];
+                if (next === settings.faceModel) return;
+                const ok = await confirm({
+                  title: "Switch face model?",
+                  message:
+                    "Every photo is re-analysed with the new model - a few minutes per few thousand photos, and a one-time download the first time. Names and your confirmed/rejected faces are kept. Press Regroup once it finishes.",
+                  confirmLabel: "Switch model",
+                });
+                if (ok) void updateSchedule({ faceModel: next });
+                else e.target.value = settings.faceModel;
+              }}
+              className={inputClass}
+            >
+              <option value="yunet-sface">Standard - YuNet + SFace (open license)</option>
+              <option value="buffalo_l">ArcFace - InsightFace buffalo_l (stronger, personal use only)</option>
+            </select>
+          </label>
+          <p className="max-w-xl text-xs text-muted">
+            ArcFace tells similar faces (siblings, children) apart much better, costs ~60% more time per photo and a one-time ~190 MB
+            download, and its weights are licensed for <em>non-commercial</em> use - fine for your own library, not for redistribution.
+            {analysis?.provider && analysis.provider.reachable && !analysis.provider.faceModels.some((m) => m.name === settings.faceModel) && (
+              <span className="text-amber-600"> The running sidecar doesn't offer this model - update and restart it (npm run ai).</span>
+            )}
+          </p>
+        </div>
+        <p className="mb-2 text-xs text-muted">
+          Siblings and young children look alike to the model - if one person collects several kids, raise both strictness values
+          (0.55-0.6 is a good start) and press Regroup. Stricter means more small "Person N" entries to merge, which is cheaper than
+          un-mixing a wrong one face by face.
+        </p>
+        <div className="flex flex-wrap items-end gap-4 text-sm text-ink">
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">Match strictness (min similarity, 0.3-0.9)</span>
+            <input
+              type="number"
+              min={0.3}
+              max={0.9}
+              step={0.05}
+              defaultValue={settings.faceAssignThreshold}
+              onBlur={(e) => {
+                const v = Number(e.target.value);
+                if (v >= 0.3 && v <= 0.9 && v !== settings.faceAssignThreshold) void updateSchedule({ faceAssignThreshold: v });
+              }}
+              className={`w-24 ${inputClass}`}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">Faces needed to create a person (2-20)</span>
+            <input
+              type="number"
+              min={2}
+              max={20}
+              step={1}
+              defaultValue={settings.faceMinClusterSize}
+              onBlur={(e) => {
+                const v = Math.round(Number(e.target.value));
+                if (v >= 2 && v <= 20 && v !== settings.faceMinClusterSize) void updateSchedule({ faceMinClusterSize: v });
+              }}
+              className={`w-24 ${inputClass}`}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">Grouping strictness (0.3-0.9)</span>
+            <input
+              type="number"
+              min={0.3}
+              max={0.9}
+              step={0.05}
+              defaultValue={settings.faceLinkThreshold}
+              onBlur={(e) => {
+                const v = Number(e.target.value);
+                if (v >= 0.3 && v <= 0.9 && v !== settings.faceLinkThreshold) void updateSchedule({ faceLinkThreshold: v });
+              }}
+              className={`w-24 ${inputClass}`}
+            />
+          </label>
+          <button
+            className={buttonClass}
+            title="Regroup all automatically grouped faces with the current settings. Names and your ✓/✗ answers are kept."
+            onClick={async () => {
+              const ok = await confirm({
+                title: "Regroup faces?",
+                message: "Automatic groupings are redone with the current strictness. Names and your confirmed/rejected faces are kept.",
+                confirmLabel: "Regroup",
+              });
+              if (!ok) return;
+              const r = await api.persons.regroup();
+              await notice({ title: "Regrouped", message: `${r.persons} new ${r.persons === 1 ? "person" : "people"}, ${r.assigned} faces assigned.` });
+            }}
+          >
+            Regroup with these settings
+          </button>
+          <button
+            className={`${buttonClass} text-red-600`}
+            onClick={async () => {
+              const ok = await confirm({
+                title: "Delete all face data?",
+                message: "People, faces and their vectors are removed. Your photos are untouched. Faces are detected again only while People is on.",
+                confirmLabel: "Delete face data",
+                danger: true,
+              });
+              if (ok) {
+                await api.persons.deleteAllData();
+                setAnalysisKey((k) => k + 1);
+              }
+            }}
+          >
+            Delete all face data
+          </button>
+        </div>
+      </section>
+
+      <section>
         <h2 className="mb-1 font-serif text-lg font-semibold text-ink">Stacks</h2>
         <p className="mb-3 text-sm text-muted">
-          Bursts of near-identical shots (same camera, seconds apart, visually alike) are grouped into one grid item.
-          Stacks you edit are never regrouped automatically.
+          Bursts (same camera, within the burst gap, visually alike) and tripod series (long exposures minutes apart that look
+          near-identical, within the series gap) are grouped into one grid item. Stacks you edit are never regrouped automatically.
         </p>
         <div className="flex flex-wrap items-end gap-4 text-sm text-ink">
           <label className="flex flex-col gap-1">
@@ -639,6 +811,36 @@ export default function SettingsPage() {
               className={`w-24 ${inputClass}`}
             />
           </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">AI similarity (min cosine, 0.5-1)</span>
+            <input
+              type="number"
+              min={0.5}
+              max={1}
+              step={0.01}
+              defaultValue={settings.stackMinCosine}
+              onBlur={(e) => {
+                const v = Number(e.target.value);
+                if (v >= 0.5 && v <= 1 && v !== settings.stackMinCosine) void updateSchedule({ stackMinCosine: v });
+              }}
+              className={`w-24 ${inputClass}`}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">Tripod series gap (seconds)</span>
+            <input
+              type="number"
+              min={0}
+              max={3600}
+              step={10}
+              defaultValue={settings.stackSeriesGapSeconds}
+              onBlur={(e) => {
+                const v = Number(e.target.value);
+                if (v >= 0 && v <= 3600 && v !== settings.stackSeriesGapSeconds) void updateSchedule({ stackSeriesGapSeconds: v });
+              }}
+              className={`w-24 ${inputClass}`}
+            />
+          </label>
           <button onClick={() => void recomputeStacks()} className={buttonClass}>
             Recompute all stacks
           </button>
@@ -658,24 +860,64 @@ export default function SettingsPage() {
           rebuild via a rescan at any time.
         </p>
         {storage ? (
-          <ul className="flex flex-col gap-2">
-            <li className="flex items-center justify-between rounded-lg border border-border bg-surface px-3.5 py-2.5">
-              <span className="text-ink">Thumbnail cache</span>
-              <span className="text-muted">{formatBytes(storage.thumbnailCacheBytes)}</span>
-            </li>
-            <li className="flex items-center justify-between rounded-lg border border-border bg-surface px-3.5 py-2.5">
-              <span className="text-ink">Database</span>
-              <span className="text-muted">{formatBytes(storage.databaseBytes)}</span>
-            </li>
-            <li className="flex items-center justify-between rounded-lg border border-border bg-surface px-3.5 py-2.5">
-              <span className="text-ink">Logs</span>
-              <span className="text-muted">{formatBytes(storage.logsBytes)}</span>
-            </li>
-            <li className="flex items-center justify-between rounded-lg border border-accent bg-surface px-3.5 py-2.5 font-medium">
-              <span className="text-ink">Total</span>
-              <span className="text-ink">{formatBytes(storage.totalBytes)}</span>
-            </li>
-          </ul>
+          <>
+            <div className="mb-3 rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm">
+              <div className="text-xs uppercase tracking-wide text-muted">Location</div>
+              <code className="break-all text-ink">{storage.dataDir}</code>
+              <div className="mt-1 text-xs text-muted">
+                {storage.dataDirSource === "env" && "Set by MEMORYLANE_DATA_DIR in the environment."}
+                {storage.dataDirSource === "pointer" && "Chosen under Settings (the default location holds a pointer to it)."}
+                {storage.dataDirSource === "default" && "The OS default location."}
+              </div>
+              {storage.pendingMoveTo && (
+                <p className="mt-2 rounded-md bg-amber-500/15 px-2.5 py-1.5 text-xs text-amber-700">
+                  Data was copied to <code>{storage.pendingMoveTo}</code>. Restart MemoryLane to use it; the copy here can be deleted afterwards.
+                </p>
+              )}
+            </div>
+            <ul className="flex flex-col gap-2">
+              {[
+                ["Previews (RAW fullscreen)", storage.previewsBytes],
+                ["Thumbnail cache", storage.thumbnailCacheBytes],
+                ["Database (index, EXIF, embeddings)", storage.databaseBytes],
+                ["Vector index", storage.vectorsBytes],
+                ["Face crops", storage.facesBytes],
+                ["Logs", storage.logsBytes],
+              ].map(([label, bytes]) => (
+                <li key={label as string} className="flex items-center justify-between rounded-lg border border-border bg-surface px-3.5 py-2.5">
+                  <span className="text-ink">{label}</span>
+                  <span className="text-muted tabular-nums">{formatBytes(bytes as number)}</span>
+                </li>
+              ))}
+              <li className="flex items-center justify-between rounded-lg border border-accent bg-surface px-3.5 py-2.5 font-medium">
+                <span className="text-ink">Total</span>
+                <span className="text-ink tabular-nums">{formatBytes(storage.totalBytes)}</span>
+              </li>
+            </ul>
+            {storage.dataDirSource !== "env" && (
+              <div className="mt-4 flex flex-col gap-2 text-sm">
+                <span className="text-muted">Move to another disk (an empty folder, e.g. <code>/Volumes/External/MemoryLane</code> or <code>D:\\MemoryLane</code>)</span>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    value={movePath}
+                    onChange={(e) => setMovePath(e.target.value)}
+                    placeholder="/absolute/path/to/empty/folder"
+                    className={`min-w-[320px] flex-1 ${inputClass}`}
+                  />
+                  <button onClick={() => void moveData()} disabled={moving || !movePath.trim()} className={buttonClass}>
+                    {moving ? "Copying…" : "Move data here"}
+                  </button>
+                </div>
+                {moveError && <p className="text-red-600">{moveError}</p>}
+                {moveDone && (
+                  <p className="text-muted">
+                    Copied {formatBytes(moveDone.bytes)} to <code>{moveDone.to}</code>. <strong className="text-ink">Restart MemoryLane</strong> to switch;
+                    then delete <code>{moveDone.from}</code> to free the space.
+                  </p>
+                )}
+              </div>
+            )}
+          </>
         ) : (
           <p className="text-sm text-muted">Calculating...</p>
         )}

@@ -39,6 +39,8 @@ export interface MediaQueryParams {
   exif?: ExifFilterQuery;
   // Join media_exif as `mx` even with no EXIF filter (reports need the columns).
   requireExifJoin?: boolean;
+  // Photos with at least one face assigned to any of these persons.
+  personIds?: number[];
 }
 
 export interface BuiltMediaQuery {
@@ -99,6 +101,10 @@ export function buildMediaQuery(p: MediaQueryParams): BuiltMediaQuery {
   if (p.type && p.type !== "all") where.push(mediaTypeFilterClause(p.type));
   if (p.thumbnailDone) where.push("media.thumbnail_status = 'done'");
   if (p.collapseStacks) where.push(COLLAPSE_STACKS);
+  if (p.personIds && p.personIds.length > 0) {
+    where.push(`EXISTS (SELECT 1 FROM faces f WHERE f.media_id = media.id AND f.person_id IN (${p.personIds.map(() => "?").join(",")}))`);
+    bindings.push(...p.personIds);
+  }
 
   if (p.favoritesOnly) {
     joins.push("JOIN media_engagement me ON me.media_id = media.id");
