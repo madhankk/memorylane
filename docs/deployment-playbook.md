@@ -74,7 +74,8 @@ Open a **second terminal** and leave it running.
 macOS / Linux:
 ```bash
 cd memorylane/memorylane-ai
-python3.12 -m venv .venv                 # or python3 if it's ≥ 3.11
+python3 --version                        # needs 3.11+ (3.13 verified); if it says 3.9, use $(brew --prefix python@3.12)/bin/python3.12 below
+python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 .venv/bin/memorylane-ai
 ```
