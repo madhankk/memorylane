@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ChevronUp, ChevronDown, X } from "lucide-react";
-import type { ScanRootDto, SettingsDto, ScanStatusDto, ScanRunDto, StorageStatsDto, IgnoredPathDto } from "@memorylane/shared";
+import type { ScanRootDto, SettingsDto, ScanStatusDto, ScanRunDto, StorageStatsDto, IgnoredPathDto, AnalysisStatusDto } from "@memorylane/shared";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../hooks/useAuth";
 import { useTheme, THEMES, type Theme } from "../hooks/useTheme";
@@ -181,7 +181,40 @@ export default function SettingsPage() {
   const [version, setVersion] = useState<string | null>(null);
   const [openTranscodeRootId, setOpenTranscodeRootId] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [analysis, setAnalysis] = useState<AnalysisStatusDto | null>(null);
+  const analysisPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { theme, setTheme } = useTheme();
+
+  const analysisBusy = (a: AnalysisStatusDto | null) =>
+    !!a && a.analyzers.some((x) => x.counts.pending > 0 || x.counts.running > 0);
+
+  // Poll while the background analysis queue has work; stop once it drains
+  // (same idea as the scan-status poll below, but independent of it).
+  useEffect(() => {
+    let active = true;
+    const tick = async () => {
+      const st = await api.analysis.status();
+      if (active) setAnalysis(st);
+      return st;
+    };
+    void tick();
+    analysisPollRef.current = setInterval(async () => {
+      const st = await tick();
+      if (!analysisBusy(st) && analysisPollRef.current) {
+        clearInterval(analysisPollRef.current);
+        analysisPollRef.current = null;
+      }
+    }, 3000);
+    return () => {
+      active = false;
+      if (analysisPollRef.current) clearInterval(analysisPollRef.current);
+    };
+  }, []);
+
+  const retryAnalysis = async () => {
+    await api.analysis.retryFailed();
+    setAnalysis(await api.analysis.status());
+  };
 
   const loadAll = async () => {
     const [roots, s, st, ip, v] = await Promise.all([
@@ -514,6 +547,50 @@ export default function SettingsPage() {
             )}
             {status.lastSuccessfulRun && (
               <p className="text-muted">Last successful scan: {new Date(status.lastSuccessfulRun.startedAt).toLocaleString()}</p>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-1 font-serif text-lg font-semibold text-ink">Analysis</h2>
+        <p className="mb-3 text-sm text-muted">
+          Background processing that runs after scans - full EXIF capture for Reports. Pauses automatically while a scan
+          is running.
+        </p>
+        {analysis && (
+          <div className="flex flex-col gap-2 text-sm">
+            {analysis.paused && <p className="text-muted">Paused while a scan is running.</p>}
+            <table className="w-full max-w-xl text-left">
+              <thead className="text-xs uppercase tracking-wide text-muted">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Analyzer</th>
+                  <th className="py-1 pr-3 font-medium">Done</th>
+                  <th className="py-1 pr-3 font-medium">Pending</th>
+                  <th className="py-1 pr-3 font-medium">Failed</th>
+                  <th className="py-1 font-medium">Unsupported</th>
+                </tr>
+              </thead>
+              <tbody className="text-ink tabular-nums">
+                {analysis.analyzers.map((a) => (
+                  <tr key={a.key} className="border-t border-border">
+                    <td className="py-1.5 pr-3">
+                      {a.key} <span className="text-xs text-faint">{a.version}</span>
+                    </td>
+                    <td className="py-1.5 pr-3">{a.counts.done.toLocaleString()}</td>
+                    <td className="py-1.5 pr-3">{(a.counts.pending + a.counts.running).toLocaleString()}</td>
+                    <td className="py-1.5 pr-3">{a.counts.failed.toLocaleString()}</td>
+                    <td className="py-1.5">{a.counts.unsupported.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {analysis.analyzers.some((a) => a.counts.failed + a.counts.unsupported > 0) && (
+              <div>
+                <button onClick={() => void retryAnalysis()} className={buttonClass}>
+                  Retry failed
+                </button>
+              </div>
             )}
           </div>
         )}
