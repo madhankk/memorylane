@@ -40,6 +40,7 @@ import type {
   PersonDetailDto,
   FaceDto,
 } from "@memorylane/shared";
+import { trackPageRead } from "../utils/pageLoad";
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -48,6 +49,15 @@ class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const finish = !init?.method || init.method.toUpperCase() === "GET" ? trackPageRead() : () => {};
+  try {
+    return await performRequest<T>(path, init);
+  } finally {
+    finish();
+  }
+}
+
+async function performRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
     credentials: "include",
