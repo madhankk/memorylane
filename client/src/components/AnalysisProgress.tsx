@@ -83,7 +83,9 @@ export default function AnalysisProgress({ only, onStatus, pollMs = 3000 }: Anal
       last.current = { at: now, done };
       setStatus(st);
       onStatus?.(st);
+      const anyPending = st.analyzers.some((a) => a.counts.pending > 0 || a.counts.running > 0);
       if (analysisBusy(st)) timer = setTimeout(tick, pollMs);
+      else if (anyPending) timer = setTimeout(tick, pollMs * 5); // disabled-but-pending: slow poll
     };
     void tick();
     return () => {

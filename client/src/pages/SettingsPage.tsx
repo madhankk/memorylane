@@ -312,6 +312,9 @@ export default function SettingsPage() {
   const updateSchedule = async (patch: Partial<SettingsDto>) => {
     const updated = await api.settings.update(patch);
     setSettings(updated);
+    // Toggling AI/People changes what the worker will process next - make the
+    // progress view poll again so the bars start moving without a reload.
+    if (patch.aiEnabled !== undefined || patch.personsEnabled !== undefined) setAnalysisKey((k) => k + 1);
   };
 
   if (!settings) return <p className="text-sm text-muted">Loading...</p>;
