@@ -211,6 +211,12 @@ export default function SettingsPage() {
     };
   }, []);
 
+  const [recomputeMsg, setRecomputeMsg] = useState<string | null>(null);
+  const recomputeStacks = async () => {
+    const res = await api.stacks.recompute();
+    setRecomputeMsg(`Queued ${res.folders} folder(s) - stacks update in the background.`);
+  };
+
   const retryAnalysis = async () => {
     await api.analysis.retryFailed();
     setAnalysis(await api.analysis.status());
@@ -594,6 +600,50 @@ export default function SettingsPage() {
             )}
           </div>
         )}
+      </section>
+
+      <section>
+        <h2 className="mb-1 font-serif text-lg font-semibold text-ink">Stacks</h2>
+        <p className="mb-3 text-sm text-muted">
+          Bursts of near-identical shots (same camera, seconds apart, visually alike) are grouped into one grid item.
+          Stacks you edit are never regrouped automatically.
+        </p>
+        <div className="flex flex-wrap items-end gap-4 text-sm text-ink">
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">Burst gap (seconds)</span>
+            <input
+              type="number"
+              min={0.1}
+              max={60}
+              step={0.5}
+              defaultValue={settings.stackGapSeconds}
+              onBlur={(e) => {
+                const v = Number(e.target.value);
+                if (v > 0 && v !== settings.stackGapSeconds) void updateSchedule({ stackGapSeconds: v });
+              }}
+              className={`w-24 ${inputClass}`}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">Visual similarity (max hash distance, 0-64)</span>
+            <input
+              type="number"
+              min={0}
+              max={64}
+              step={1}
+              defaultValue={settings.stackMaxHamming}
+              onBlur={(e) => {
+                const v = Math.round(Number(e.target.value));
+                if (v >= 0 && v <= 64 && v !== settings.stackMaxHamming) void updateSchedule({ stackMaxHamming: v });
+              }}
+              className={`w-24 ${inputClass}`}
+            />
+          </label>
+          <button onClick={() => void recomputeStacks()} className={buttonClass}>
+            Recompute all stacks
+          </button>
+        </div>
+        {recomputeMsg && <p className="mt-2 text-sm text-muted">{recomputeMsg}</p>}
       </section>
 
       <section>
