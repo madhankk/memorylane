@@ -646,6 +646,66 @@ export default function SettingsPage() {
       </section>
 
       <section>
+        <h2 className="mb-1 font-serif text-lg font-semibold text-ink">People</h2>
+        <p className="mb-3 text-sm text-muted">
+          Finds faces and groups them into people you can name, then lets you browse "photos of X". Off by default because faces are
+          personal data; everything is computed and stored on this machine only, and can be removed in one click.
+        </p>
+        <label className="mb-3 flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={settings.personsEnabled}
+            onChange={(e) => updateSchedule({ personsEnabled: e.target.checked })}
+            className="accent-accent"
+          />
+          Find and group faces (needs the AI sidecar)
+        </label>
+        <div className="flex flex-wrap items-end gap-4 text-sm text-ink">
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">Match strictness (min similarity, 0.3-0.9)</span>
+            <input
+              type="number"
+              min={0.3}
+              max={0.9}
+              step={0.05}
+              defaultValue={settings.faceAssignThreshold}
+              onBlur={(e) => {
+                const v = Number(e.target.value);
+                if (v >= 0.3 && v <= 0.9 && v !== settings.faceAssignThreshold) void updateSchedule({ faceAssignThreshold: v });
+              }}
+              className={`w-24 ${inputClass}`}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">Faces needed to create a person (2-20)</span>
+            <input
+              type="number"
+              min={2}
+              max={20}
+              step={1}
+              defaultValue={settings.faceMinClusterSize}
+              onBlur={(e) => {
+                const v = Math.round(Number(e.target.value));
+                if (v >= 2 && v <= 20 && v !== settings.faceMinClusterSize) void updateSchedule({ faceMinClusterSize: v });
+              }}
+              className={`w-24 ${inputClass}`}
+            />
+          </label>
+          <button
+            className={`${buttonClass} text-red-600`}
+            onClick={async () => {
+              if (window.confirm("Delete all face data? People, faces and their vectors are removed. Photos are untouched. Faces are re-detected only if People is on.")) {
+                await api.persons.deleteAllData();
+                setAnalysis(await api.analysis.status());
+              }
+            }}
+          >
+            Delete all face data
+          </button>
+        </div>
+      </section>
+
+      <section>
         <h2 className="mb-1 font-serif text-lg font-semibold text-ink">Stacks</h2>
         <p className="mb-3 text-sm text-muted">
           Bursts of near-identical shots (same camera, seconds apart, visually alike) are grouped into one grid item.
