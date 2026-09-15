@@ -111,3 +111,7 @@ export const archiveTranscodedRequestSchema = z
   .refine((v) => v.all || (v.mediaIds && v.mediaIds.length > 0), { message: "mediaIds or all is required" });
 
 export const transcodeCandidatesQuerySchema = paginationQuerySchema;
+
+export const retryAnalysisRequestSchema = z.object({
+  analyzer: z.string().min(1).max(64).optional(),
+});
