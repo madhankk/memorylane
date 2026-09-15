@@ -138,3 +138,11 @@ export const mediaListQuerySchema = paginationQuerySchema.merge(exifFilterQueryS
   type: mediaTypeFilterSchema,
   scanRootId: z.coerce.number().int().positive().optional(),
 });
+
+export const REPORT_FACET_FIELDS = ["lens", "camera", "make", "aperture", "iso", "focal", "year"] as const;
+export type ReportFacetField = (typeof REPORT_FACET_FIELDS)[number];
+
+export const reportFacetsQuerySchema = exifFilterQuerySchema.extend({
+  type: mediaTypeFilterSchema,
+  scanRootId: z.coerce.number().int().positive().optional(),
+});

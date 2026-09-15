@@ -1,7 +1,7 @@
 // Shared enums and DTOs used by both server and client.
 // Keep this file free of any server-only or browser-only dependencies.
 
-import type { VideoTranscodeQuality } from "./validation.js";
+import type { VideoTranscodeQuality, ReportFacetField } from "./validation.js";
 
 export type MediaType = "image" | "raw" | "video";
 
@@ -364,3 +364,17 @@ export const FOCAL_BUCKETS: { key: string; label: string; min: number; max: numb
   { key: "201-400", label: "201–400 mm", min: 201, max: 400 },
   { key: "401-9999", label: "> 400 mm", min: 401, max: 9999 },
 ];
+
+export interface FacetBucketDto {
+  // The filter value to send back (lens string, "2.8", "400", focal bucket key, "2019").
+  value: string;
+  label: string;
+  count: number;
+}
+
+// Each facet is computed with its own filter removed (standard faceted
+// search): selecting a lens narrows every other panel but still shows all lenses.
+export interface ReportFacetsDto {
+  total: number;
+  facets: Record<ReportFacetField, FacetBucketDto[]>;
+}
