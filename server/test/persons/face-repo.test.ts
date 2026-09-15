@@ -27,15 +27,21 @@ describe("FaceRepo", () => {
     const person = Number(db.prepare("INSERT INTO persons (auto_label) VALUES ('Person 1')").run().lastInsertRowid);
     const other = Number(db.prepare("INSERT INTO persons (auto_label) VALUES ('Person 2')").run().lastInsertRowid);
     repo.setAssignment(first.ids[0], person, "user", 1);
+    repo.setAssignment(first.ids[1], other, "auto", 0.7);
     repo.addRejection(first.ids[1], other);
+    db.prepare("UPDATE persons SET cover_face_id = ? WHERE id = ?").run(first.ids[0], person);
+    db.prepare("UPDATE persons SET cover_face_id = ? WHERE id = ?").run(first.ids[1], other);
 
     // Re-detect: first face moved slightly (overlaps), second vanished, a new one appeared elsewhere.
     const second = repo.replaceForMedia(media, "m@2", [det(0.12, 0.11, 0.2, 0.3), det(0.3, 0.6, 0.2, 0.2)]);
     expect(second.removed.sort()).toEqual(first.ids.sort());
     const rows = repo.listByIds(second.ids).sort((a, b) => a.id - b.id);
     expect(rows[0]).toMatchObject({ person_id: person, assigned_by: "user", model: "m@2" });
-    expect(rows[1].person_id).toBeNull();
+    expect(rows[1].person_id).toBeNull(); // the auto-assigned face had no overlapping replacement
     expect(repo.rejectionsFor(second.ids[0]).size).toBe(0);
+    // Covers follow the replacement (user face) or are cleared (vanished face).
+    expect((db.prepare("SELECT cover_face_id c FROM persons WHERE id = ?").get(person) as { c: number }).c).toBe(second.ids[0]);
+    expect((db.prepare("SELECT cover_face_id c FROM persons WHERE id = ?").get(other) as { c: number | null }).c).toBeNull();
     expect((db.prepare("SELECT COUNT(*) c FROM faces").get() as { c: number }).c).toBe(2);
     expect(repo.assignedMap("m@2").get(second.ids[0])).toBe(person);
     expect(repo.unassignedQuality("m@2").map((f) => f.id)).toEqual([second.ids[1]]);

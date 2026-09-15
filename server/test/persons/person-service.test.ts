@@ -150,3 +150,23 @@ describe("PersonService.regroup", () => {
     expect(S.svc.getPerson(pB.id)).toBeNull(); // unnamed auto person was rebuilt under a new id
   });
 });
+
+describe("model switch keeps people populated", () => {
+  it("carries automatic assignments to the re-detected faces and hides emptied unnamed persons", async () => {
+    const S = await setup();
+    const a1 = await S.addFace(vec(0, 0.1)), a2 = await S.addFace(vec(0, 0.15));
+    await S.svc.discover();
+    const person = S.svc.listPersons(false)[0];
+    // Re-detect a1's photo under a new model with an overlapping box: the auto assignment must survive.
+    const media = S.faces.get(a1)!.media_id;
+    const { ids } = S.faces.replaceForMedia(media, "other@1", [{ bbox: [0.12, 0.1, 0.3, 0.3], landmarks: [], detScore: 0.9, embedding: vec(0, 0.1) }]);
+    expect(S.faces.get(ids[0])).toMatchObject({ person_id: person.id, assigned_by: "auto", model: "other@1" });
+    expect(S.svc.getPerson(person.id)!.faceCount).toBe(2);
+    // Re-detect a2's photo with no face at all: the person keeps a1's replacement, cover re-picked.
+    S.faces.replaceForMedia(S.faces.get(a2)!.media_id, "other@1", []);
+    expect(S.svc.getPerson(person.id)!.faceCount).toBe(1);
+    // A person that loses every face and has no name disappears from the list.
+    S.faces.replaceForMedia(media, "other@1", []);
+    expect(S.svc.listPersons(true)).toHaveLength(0);
+  });
+});

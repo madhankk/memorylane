@@ -35,13 +35,16 @@ const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
 export class FaceRepo {
   constructor(private db: Database.Database) {}
 
-  // Replaces a media item's faces for `model`, carrying user assignments and
-  // rejections over to the best-overlapping new face (IoU >= 0.5) so a
-  // re-run - e.g. after a model change - doesn't throw away corrections.
+  // Replaces a media item's faces for `model`, carrying *every* assignment
+  // (user and automatic) plus rejections over to the best-overlapping new
+  // face (IoU >= 0.5): same photo, same box means the same person, so a
+  // re-run - e.g. after a face-model switch - keeps people populated and
+  // named instead of rediscovering everyone as new "Person N"s. Person
+  // covers follow their replaced face too.
   replaceForMedia(mediaId: number, model: string, dets: FaceDetection[]): { ids: number[]; removed: number[] } {
     const tx = this.db.transaction(() => {
       const old = this.db.prepare("SELECT * FROM faces WHERE media_id = ?").all(mediaId) as FaceRow[];
-      const oldUser = old.filter((f) => f.assigned_by === "user" && f.person_id !== null);
+      const oldAssigned = old.filter((f) => f.person_id !== null);
       const oldRejections = old.length
         ? (this.db
             .prepare(`SELECT face_id, person_id FROM face_person_rejections WHERE face_id IN (${old.map(() => "?").join(",")})`)
@@ -76,12 +79,18 @@ export class FaceRepo {
         });
         return best >= 0 ? ids[best] : null;
       };
-      for (const f of oldUser) {
+      const coverUpdate = this.db.prepare("UPDATE persons SET cover_face_id = ? WHERE cover_face_id = ?");
+      for (const f of oldAssigned) {
         const target = carry(f);
         if (target !== null) {
-          this.db.prepare("UPDATE faces SET person_id = ?, assigned_by = 'user', assign_score = ? WHERE id = ?").run(f.person_id, f.assign_score, target);
+          this.db
+            .prepare("UPDATE faces SET person_id = ?, assigned_by = ?, assign_score = ? WHERE id = ?")
+            .run(f.person_id, f.assigned_by ?? "auto", f.assign_score, target);
+          coverUpdate.run(target, f.id);
         }
       }
+      // Covers pointing at faces that vanished without a replacement get re-picked by PersonService.fixCover later.
+      if (old.length) this.db.prepare(`UPDATE persons SET cover_face_id = NULL WHERE cover_face_id IN (${old.map(() => "?").join(",")})`).run(...old.map((f) => f.id));
       const byOldId = new Map(old.map((f) => [f.id, f]));
       const rej = this.db.prepare("INSERT OR IGNORE INTO face_person_rejections (face_id, person_id) VALUES (?, ?)");
       for (const r of oldRejections) {

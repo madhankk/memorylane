@@ -180,8 +180,10 @@ export class PersonService {
         if (p.cover_face_id === null) this.db.prepare("UPDATE persons SET cover_face_id = ? WHERE id = ?").run(cover.id, personId);
       }
       this.faces.markDiscovered(rows.map((r) => r.id));
+      this.db.prepare("DELETE FROM persons WHERE merged_into IS NULL AND name IS NULL AND NOT EXISTS (SELECT 1 FROM faces f WHERE f.person_id = persons.id)").run();
     });
     tx();
+    for (const p of this.listPersons(true)) this.fixCover(p.id);
     if (persons || assigned) this.logger.info({ persons, assigned, considered: rows.length }, "Person discovery finished");
     return { persons, assigned };
   }
@@ -273,7 +275,9 @@ export class PersonService {
     const rows = this.db
       .prepare(`${PERSON_SELECT} WHERE p.merged_into IS NULL ${includeHidden ? "" : "AND p.hidden = 0"} ORDER BY (p.name IS NOT NULL), face_count DESC, p.id`)
       .all() as PersonRow[];
-    return rows.map((r) => this.toPerson(r));
+    // An unnamed person with no faces left (all rejected, or lost in a
+    // re-detection) is noise; named ones stay visible so the name isn't lost.
+    return rows.filter((r) => r.face_count > 0 || r.name !== null).map((r) => this.toPerson(r));
   }
 
   getPerson(id: number): PersonDto | null {
