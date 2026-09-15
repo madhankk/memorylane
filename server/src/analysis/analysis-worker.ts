@@ -25,7 +25,7 @@ export class AnalysisWorker {
   private pausedMs: number;
   // Runs when every analyzer is drained (e.g. stack recompute, which wants
   // hashes finished first). Returns how much work it did; 0 = sleep.
-  private onIdle: (() => number) | undefined;
+  private onIdle: (() => number | Promise<number>) | undefined;
   private provider: AiProvider | null;
   // Per-analyzer exponential backoff while its provider is unreachable.
   private backoff = new Map<string, { until: number; delayMs: number }>();
@@ -35,7 +35,7 @@ export class AnalysisWorker {
     private logger: Logger,
     private analyzers: Analyzer[],
     private isPaused: () => boolean,
-    opts: { idleMs?: number; pausedMs?: number; onIdle?: () => number; provider?: AiProvider | null } = {},
+    opts: { idleMs?: number; pausedMs?: number; onIdle?: () => number | Promise<number>; provider?: AiProvider | null } = {},
   ) {
     this.repo = new AnalysisRepo(db);
     this.idleMs = opts.idleMs ?? 2000;
@@ -179,7 +179,7 @@ export class AnalysisWorker {
       if (processed === 0) {
         let idleWork = 0;
         try {
-          idleWork = this.onIdle?.() ?? 0;
+          idleWork = (await this.onIdle?.()) ?? 0;
         } catch (err) {
           this.logger.error({ err }, "Idle task failed");
         }
