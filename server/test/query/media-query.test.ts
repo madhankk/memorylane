@@ -85,4 +85,14 @@ describe("buildMediaQuery", () => {
     // requireExifJoin without filters still restricts to rows with EXIF
     expect(run(L.db, { requireExifJoin: true })).toEqual([L.jpg, L.otherRoot]);
   });
+
+  it("collapseStacks hides non-cover members", async () => {
+    const L = await library();
+    const s = L.db
+      .prepare("INSERT INTO stacks (kind, cover_media_id, parent_folder_id) VALUES ('burst', ?, ?)")
+      .run(L.jpg, L.top).lastInsertRowid;
+    L.db.prepare("INSERT INTO stack_members (stack_id, media_id, position) VALUES (?, ?, 0), (?, ?, 1)").run(s, L.jpg, s, L.video);
+    expect(run(L.db, { collapseStacks: true, scope: { kind: "folder", folderId: L.top, recursive: false } })).toEqual([L.jpg]);
+    expect(run(L.db, { scope: { kind: "folder", folderId: L.top, recursive: false } })).toEqual([L.jpg, L.video]);
+  });
 });

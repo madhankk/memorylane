@@ -88,6 +88,10 @@ export interface SettingsDto {
   port: number;
   scanIntervalDays: number | null;
   scanScheduleEnabled: boolean;
+  // Burst stacking thresholds (design doc §8.3) - changing either re-queues
+  // every folder for recompute.
+  stackGapSeconds: number;
+  stackMaxHamming: number;
 }
 
 export interface UpdateSettingsRequest {
@@ -95,6 +99,8 @@ export interface UpdateSettingsRequest {
   port?: number;
   scanIntervalDays?: number | null;
   scanScheduleEnabled?: boolean;
+  stackGapSeconds?: number;
+  stackMaxHamming?: number;
 }
 
 export interface FolderDto {
@@ -178,6 +184,10 @@ export interface MediaDto {
   // Engagement (media_engagement table) - separate from the imported EXIF/XMP
   // `rating` above, which is never overwritten by favoriting.
   favorite: boolean;
+
+  // Stack membership (see StackRefDto) - populated by decorateMedia on every
+  // listing route; null when the photo isn't in a stack.
+  stack: StackRefDto | null;
 }
 
 export interface UpdateFavoriteRequest {
@@ -377,4 +387,47 @@ export interface FacetBucketDto {
 export interface ReportFacetsDto {
   total: number;
   facets: Record<ReportFacetField, FacetBucketDto[]>;
+}
+
+// Stacks (design doc §8): a burst collapsed to one grid item.
+export type StackKind = "burst" | "manual";
+
+// Attached to every MediaDto that belongs to a stack.
+export interface StackRefDto {
+  id: number;
+  count: number;
+  isCover: boolean;
+}
+
+export interface StackDto {
+  id: number;
+  kind: StackKind;
+  coverMediaId: number;
+  parentFolderId: number;
+  userModified: boolean;
+  count: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StackDetailDto {
+  stack: StackDto;
+  // Members in stack order; the cover is wherever stack.coverMediaId points.
+  items: MediaDto[];
+}
+
+export interface CreateStackRequest {
+  mediaIds: number[];
+}
+export interface SetStackCoverRequest {
+  mediaId: number;
+}
+export interface SplitStackRequest {
+  mediaIds: number[];
+}
+export interface MergeStacksRequest {
+  stackId: number;
+}
+export interface RecomputeStacksRequest {
+  folderId?: number;
 }
