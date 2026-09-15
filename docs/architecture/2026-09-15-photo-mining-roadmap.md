@@ -195,6 +195,16 @@ All of these are queries over data we already have (or B/C add), surfaced as pag
 
 **Implementation plan:** `docs/superpowers/plans/2026-09-15-apple-photos-plugin.md` (10 tasks; introduces the scan-root *kind* seam, reusable by future importers such as Lightroom catalogues or Google Takeout). Verified while planning: `osxphotos` 0.76 (MIT, Python ≥ 3.10) installs against the sidecar venv; reading the package from a VS Code-launched process is denied by macOS until the Photos/Full Disk Access permission is granted — the plan treats that as a first-class state.
 
+### N. Browsing polish — quick wins (core, not plugins)
+
+Small, self-contained improvements to the existing Browse/Home experience. None needs a model or a new table beyond a single flag; each is a day or less. Worth doing before Phase 5 because they touch what the user sees first.
+
+1. **Hover slideshow on folder cards.** Today a folder card shows one random cover. On mouse-over (and on touch-hold), cycle through a handful of the folder's photos every ~800 ms — a quick "what's in here" preview. Implementation: the folder card already has a cover id; add `GET /api/folders/:id/preview?count=8` returning 8 ids sampled across the folder's time span (first/last/evenly spaced, favourites preferred), prefetch the thumbnails on hover-intent (150 ms delay so scrolling past cards doesn't fetch), cycle with a small crossfade, stop on mouse-out. Honour `prefers-reduced-motion` (show a static 2×2 mosaic instead).
+2. **Auto-enter a lone top-level folder.** If the library has exactly one scan root *and* that root has no loose photos of its own, Home's "Your Library" section is one card standing alone — pointless. In that case Home should render the root's subfolders directly (the same grid `FolderPage` shows), with the root named as a breadcrumb. Rule: `roots.length === 1 && root.mediaCount === 0 && root.childFolderCount > 0` → render children; otherwise unchanged. Multiple roots, or a root with loose photos, keep today's behaviour.
+3. **Hero banner: better picks and a way to say "not this one".** The Home hero is a random photo. Three changes: (a) **prefer landscape** — `width > height` (using EXIF orientation-corrected dimensions), falling back to any photo if none qualify; (b) **prefer photos with people** when People is on — join `faces` and weight rows with ≥ 1 assigned face higher (e.g. 3:1 sampling), still occasionally showing landscapes without people so the hero isn't monotonous; (c) **thumbs-down / unfavourite on the banner** — a small ✕ / 👎 control on the hero: *not a favourite* just clears the star, *don't show as banner* records a `hero_excluded` flag on `media_engagement` so that photo never returns as a hero (it stays everywhere else). Both controls also reroll the hero immediately. Selection lives in `SqliteRandomSelectionService` alongside the existing "not shown in 7 days" rule, so Surprise Me and the mini slideshows inherit the same preferences via an option flag.
+
+**Effort:** small each. **Data leaving the machine:** none.
+
 ---
 
 ## 3. Plugin architecture — the extension points
@@ -294,6 +304,7 @@ Everything runs through the existing `AnalysisWorker`, `buildMediaQuery`, `Media
 | Housekeeping, albums | Always local | — |
 | Sharing | Yes (export, own-server links) | Sized derivatives to the chosen host, only with the hosted-sharing plugin |
 | Apple Photos library | Always local | — |
+| Browsing polish | Always local | — |
 
 ---
 
@@ -303,6 +314,7 @@ Plans written so far: **§M Apple Photos** → `docs/superpowers/plans/2026-09-1
 
 | Phase | Contents | Why this order |
 |---|---|---|
+| **4.5 — Browsing polish** | N (hover slideshow on folder cards, auto-enter a lone root, hero banner preferences + thumbs-down) | Small, visible, no dependencies; ships while Phase 5's seams are being built. |
 | **5 — Plugin seams + Ask** | plugin loader/manifest/secrets, refactor `people`/`stacks`/`ai` onto it; E (filtered ranking), B (places), C (relationships/age), `llm` providers (cloud + local), Ask page | Seams first so every later feature lands as a plugin; Ask is the highest value per effort and makes decades of data *reachable*. |
 | **6 — Housekeeping, albums & Apple Photos** | J (marks → trash → empty, hide, export), K (query + manual albums, save-as-album from people/places/trips/Ask), M (Apple Photos root, catalogue sync, People bootstrap, iCloud state) | The tidying tools a real library needs before "making things" is fun; M reuses albums and hidden state, and brings phone photos in for Mac users. |
 | **7 — Mining & sharing** | quality analyzer, Year in review, Best of, timelines, then & now, trips; L tiers 1–2 (export, own-server share links) | Exploits data now in place; share links reuse albums. |
