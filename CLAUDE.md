@@ -19,7 +19,7 @@ npm start              # node server/dist/server.js, serves API + built client o
 npm run dev            # server only, tsx watch (regenerates server/src/version.ts first)
 npm run dev:client     # Vite on :5173, proxies /api → 127.0.0.1:4280 (run alongside `npm run dev`)
 npm run typecheck      # tsc --noEmit across shared, server, client
-npm test               # vitest in server (no test files exist yet)
+npm test               # vitest, server/test/** (in-memory SQLite; one file: npm test --workspace=server -- test/exif/promote.test.ts)
 npm run reset-password -- <args>   # server/scripts/reset-password.ts
 ```
 
@@ -58,6 +58,19 @@ client (React SPA) ── fetch /api/* ──▶ Fastify routes (server/src/api/
 - `processMediaItem` (media-processor.ts) never throws: metadata extraction and thumbnail generation are guarded independently so a Sharp failure doesn't discard EXIF data already read. Outcome lands in `media.thumbnail_status` (`pending|done|failed|unsupported`); anything not `done` is retried on the next scan even if the fingerprint is unchanged.
 - **Per-type handling:** standard images → Sharp from file (BMP decoded via bmp-js first, since libvips can't read it); RAW → ExifTool extracts the largest embedded preview, from which both a 500px thumbnail and a 1800px `previews/` tier are produced, oriented by the RAW file's *own* EXIF orientation (embedded previews often lack/lie about theirs); video → ffprobe for codec/duration + one ffmpeg poster frame. Originals are streamed as-is with Range support; there is no on-the-fly transcoding.
 - Thumbnails/previews are sharded on disk by media id (`paths.ts`) and served with a 1-year immutable cache header; `media.thumbnail_version` is bumped on every regeneration and appended as a query param by the client to cache-bust.
+- `processMediaItem` also writes the full ExifTool tag set to `media_exif` (`server/src/exif/`: `promoteTags` maps ~25 typed columns, the rest goes to `tags_json`) and marks the `exif_full` analyzer done for that row. Note `tags.FocalLength` etc. arrive as strings with units (`"100.0 mm"`) — use `parseLeadingNumber`.
+
+### Analysis pipeline
+
+`server/src/analysis/`: `media_analysis` holds one row per (media, analyzer) with `status`/`model_version`. `AnalysisWorker` (started in `server.ts`, on `AppContext`) polls pending rows per registered `Analyzer` (`registry.ts`), runs batches, and records outcomes; it pauses while a scan runs and is kicked by `scanner.onScanFinished`. On startup it resets `running` → `pending` and re-queues rows whose `model_version` differs from the analyzer's. Adding an analyzer = implement `Analyzer` (`types.ts`) and append it to `createAnalyzers`; bump its `version` to re-run it library-wide. Status/retry: `GET /api/analysis/status`, `POST /api/analysis/retry`.
+
+### Media listing queries
+
+`server/src/query/media-query.ts::buildMediaQuery` is the only place listing WHERE clauses are assembled (scope, type, companion exclusion, favorites, EXIF filters). Every listing route and `random-selection-service` use it; new filters go there, not in routes. Companion fragments are `media.`-qualified.
+
+### Reports
+
+`GET /api/media` (filtered list), `GET /api/reports/facets` (per-field counts, each ignoring its own filter), `GET /api/reports/export.csv` share `exifFilterQuerySchema` in `shared/`. `FOCAL_BUCKETS` in shared defines focal-length ranges used by both server and client. Client page: `client/src/pages/ReportsPage.tsx`; filters live in the URL query string.
 
 ### Pairing (Live Photos, RAW+JPEG)
 
@@ -65,7 +78,7 @@ Two "hide the companion" relationships live on `media`:
 - `live_photo_video_id` — still ↔ video sharing an EXIF `ContentIdentifier` in the same folder.
 - `raw_pair_id` — RAW ↔ image sharing a base filename in the same folder.
 
-Both are linked best-effort from whichever side is processed second. Every media-listing query must append `EXCLUDE_LIVE_PHOTO_VIDEOS` and `EXCLUDE_PAIRED_RAW` (mappers.ts) so companions never appear as their own grid items. `NEEDS_TRANSCODE_SQL_CLAUSE` (video-compatibility.ts) is likewise the single source of truth for "which videos need modernizing" so stats and candidate lists can't drift.
+Both are linked best-effort from whichever side is processed second. Every media-listing query goes through `buildMediaQuery`, which appends `EXCLUDE_LIVE_PHOTO_VIDEOS` and `EXCLUDE_PAIRED_RAW` by default so companions never appear as their own grid items. `NEEDS_TRANSCODE_SQL_CLAUSE` (video-compatibility.ts) is likewise the single source of truth for "which videos need modernizing" so stats and candidate lists can't drift.
 
 ### Rediscovery & engagement
 
@@ -89,6 +102,6 @@ React 18 + React Router 6 + Tailwind 4 (Vite plugin). `App.tsx` routes: `/setup`
 
 ## Notes
 
-- README.md and several code comments reference `PLAN.md` (spec section numbers); that file is not in the repo.
+- README.md and several code comments reference `PLAN.md` (spec section numbers); that file is not in the repo. The media-intelligence design lives at `docs/architecture/2026-09-14-media-intelligence-design.md`.
 - ExifTool must be on PATH for RAW/metadata; ffmpeg/ffprobe are bundled via `ffmpeg-static`/`ffprobe-static`. Both are detected at startup and degrade gracefully (thumbnail_status `unsupported`) when missing.
 - macOS signing/notarization in `desktop/forge.config.ts` is incomplete (runtime binaries need an explicit codesign pass — see the TODO there).
