@@ -16,6 +16,7 @@ import { SettingsRepo } from "../../src/db/settings-repo.js";
 import { LanceVectorIndex } from "../../src/vectors/lance-vector-index.js";
 import { EmbeddingRepo } from "../../src/vectors/embedding-repo.js";
 import type { AiProvider } from "../../src/providers/types.js";
+import { PersonService } from "../../src/persons/person-service.js";
 
 const logger = { info() {}, warn() {}, error() {}, debug() {} } as unknown as import("pino").Logger;
 
@@ -47,6 +48,8 @@ export async function createTestApp(opts: { provider?: AiProvider | null } = {})
   } as unknown as ScannerService;
   const provider = opts.provider ?? null;
   const analysisWorker = new AnalysisWorker(db, logger, [], () => false, { provider });
+  const settingsRepo = new SettingsRepo(db);
+  const vectorIndex = new LanceVectorIndex(paths.vectorsDir);
   const ctx: AppContext = {
     db,
     paths,
@@ -55,10 +58,11 @@ export async function createTestApp(opts: { provider?: AiProvider | null } = {})
     randomSelection: new SqliteRandomSelectionService(db),
     transcodeWorker: {} as TranscodeWorker,
     analysisWorker,
-    stacks: new StackService(db, logger, new SettingsRepo(db)),
+    stacks: new StackService(db, logger, settingsRepo),
     provider,
-    vectorIndex: new LanceVectorIndex(paths.vectorsDir),
+    vectorIndex,
     embeddings: new EmbeddingRepo(db),
+    persons: new PersonService(db, logger, settingsRepo, () => provider, vectorIndex, paths.facesDir),
   };
   const app: FastifyInstance = await buildApp(ctx);
   return {

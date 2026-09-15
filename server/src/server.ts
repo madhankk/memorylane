@@ -15,6 +15,7 @@ import { createProvider } from "./providers/index.js";
 import { LanceVectorIndex } from "./vectors/lance-vector-index.js";
 import { EmbeddingRepo } from "./vectors/embedding-repo.js";
 import { spaceFor } from "./vectors/vector-index.js";
+import { PersonService } from "./persons/person-service.js";
 import { buildApp } from "./app.js";
 import type { AppContext } from "./context.js";
 
@@ -50,16 +51,17 @@ async function main(): Promise<void> {
   const vectorIndex = new LanceVectorIndex(paths.vectorsDir);
   const embeddings = new EmbeddingRepo(db);
   const stacks = new StackService(db, bootstrapLogger, settingsRepo, () => provider?.expectedModel ?? null);
-  const analyzers = createAnalyzers(db, bootstrapLogger, { paths, settings: settingsRepo, provider, vectorIndex });
+  const persons = new PersonService(db, bootstrapLogger, settingsRepo, () => provider, vectorIndex, paths.facesDir);
+  const analyzers = createAnalyzers(db, bootstrapLogger, { paths, settings: settingsRepo, provider, vectorIndex, persons });
   const analysisWorker = new AnalysisWorker(db, bootstrapLogger, analyzers, () => scanner.isRunning(), {
-    // Stack recompute runs only once every analyzer is drained (hashes first)
-    // and never while a scan is running.
-    onIdle: () => (scanner.isRunning() ? 0 : stacks.recomputeDirty(5)),
+    // Idle work runs only once every analyzer is drained and no scan is
+    // running: stack recompute (hashes/embeddings first), then person discovery.
+    onIdle: async () => (scanner.isRunning() ? 0 : stacks.recomputeDirty(5) + (await persons.discoverIfNeeded())),
     provider,
   });
 
   const ctx: AppContext = {
-    db, paths, sessions, scanner, randomSelection, transcodeWorker, analysisWorker, stacks, provider, vectorIndex, embeddings,
+    db, paths, sessions, scanner, randomSelection, transcodeWorker, analysisWorker, stacks, provider, vectorIndex, embeddings, persons,
   };
   const app = await buildApp(ctx);
 
@@ -90,6 +92,25 @@ async function main(): Promise<void> {
         if (r === "rebuilt") bootstrapLogger.info({ space, count: embeddings.count(model) }, "Rebuilt vector index from media_embeddings");
       })
       .catch((err) => bootstrapLogger.error({ err }, "Vector index sync failed"));
+    const faceModel = provider.expectedFaceModel;
+    const faceSpace = spaceFor("faces", faceModel);
+    const faceCount = (db.prepare("SELECT COUNT(*) AS c FROM faces WHERE model = ?").get(faceModel) as { c: number }).c;
+    vectorIndex
+      .ensureSynced(
+        faceSpace,
+        faceCount,
+        function* () {
+          const stmt = db.prepare("SELECT id, embedding FROM faces WHERE model = ? ORDER BY id");
+          for (const row of stmt.iterate(faceModel) as IterableIterator<{ id: number; embedding: Buffer }>) {
+            yield { id: row.id, vector: new Float32Array(new Uint8Array(row.embedding).buffer) };
+          }
+        },
+        null,
+      )
+      .then((r) => {
+        if (r === "rebuilt") bootstrapLogger.info({ space: faceSpace, count: faceCount }, "Rebuilt face vector index");
+      })
+      .catch((err) => bootstrapLogger.error({ err }, "Face index sync failed"));
   }
 
   scanner.scheduleFromSettings(settings.scanIntervalDays, settings.scanScheduleEnabled);

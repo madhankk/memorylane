@@ -9,6 +9,7 @@ import type { StackService } from "./stacks/stack-service.js";
 import type { AiProvider } from "./providers/types.js";
 import type { VectorIndex } from "./vectors/vector-index.js";
 import type { EmbeddingRepo } from "./vectors/embedding-repo.js";
+import type { PersonService } from "./persons/person-service.js";
 
 // Central set of app-wide singletons, built once at startup and passed to every
 // route module. Keeps routes free of import-order/singleton-init footguns.
@@ -25,4 +26,5 @@ export interface AppContext {
   provider: AiProvider | null;
   vectorIndex: VectorIndex;
   embeddings: EmbeddingRepo;
+  persons: PersonService;
 }
