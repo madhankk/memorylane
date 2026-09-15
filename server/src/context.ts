@@ -6,6 +6,9 @@ import type { RandomSelectionService } from "./media/random-selection-service.js
 import type { TranscodeWorker } from "./media/transcode-worker.js";
 import type { AnalysisWorker } from "./analysis/analysis-worker.js";
 import type { StackService } from "./stacks/stack-service.js";
+import type { EmbeddingProvider } from "./providers/types.js";
+import type { VectorIndex } from "./vectors/vector-index.js";
+import type { EmbeddingRepo } from "./vectors/embedding-repo.js";
 
 // Central set of app-wide singletons, built once at startup and passed to every
 // route module. Keeps routes free of import-order/singleton-init footguns.
@@ -18,4 +21,8 @@ export interface AppContext {
   transcodeWorker: TranscodeWorker;
   analysisWorker: AnalysisWorker;
   stacks: StackService;
+  // null when no AI provider is configured (MEMORYLANE_AI_PROVIDER=none).
+  provider: EmbeddingProvider | null;
+  vectorIndex: VectorIndex;
+  embeddings: EmbeddingRepo;
 }

@@ -92,6 +92,10 @@ export interface SettingsDto {
   // every folder for recompute.
   stackGapSeconds: number;
   stackMaxHamming: number;
+  // Stacks v2: embedding cosine similarity that also counts as "same moment".
+  stackMinCosine: number;
+  // Master switch for provider-backed analysis (embeddings today, faces later).
+  aiEnabled: boolean;
 }
 
 export interface UpdateSettingsRequest {
@@ -101,6 +105,8 @@ export interface UpdateSettingsRequest {
   scanScheduleEnabled?: boolean;
   stackGapSeconds?: number;
   stackMaxHamming?: number;
+  stackMinCosine?: number;
+  aiEnabled?: boolean;
 }
 
 export interface FolderDto {
@@ -350,12 +356,30 @@ export interface AnalyzerStatusDto {
   key: string;
   version: string;
   counts: Record<AnalysisStatus, number>;
+  // Set while the analyzer's provider is unreachable - rows stay pending and
+  // the worker retries after this time (exponential backoff, 5s to 5min).
+  backoffUntil: string | null;
+  // False when switched off in Settings (aiEnabled) - rows stay pending.
+  enabled: boolean;
+}
+
+// The inference sidecar (memorylane-ai) as last seen by the server.
+export interface ProviderStatusDto {
+  url: string;
+  reachable: boolean;
+  model: string | null;
+  dim: number | null;
+  device: string | null;
+  lastError: string | null;
+  checkedAt: string | null;
 }
 
 export interface AnalysisStatusDto {
   // True while a scan is running - the worker yields to it.
   paused: boolean;
   analyzers: AnalyzerStatusDto[];
+  // null when MEMORYLANE_AI_PROVIDER=none.
+  provider: ProviderStatusDto | null;
 }
 
 export interface RetryAnalysisRequest {

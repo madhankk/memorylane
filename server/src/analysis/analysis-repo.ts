@@ -95,6 +95,16 @@ export class AnalysisRepo {
     tx(outcomes);
   }
 
+  // Puts claimed rows back without counting an attempt - used when the
+  // provider (not the file) was the problem.
+  unclaim(analyzerKey: string, mediaIds: number[]): void {
+    if (mediaIds.length === 0) return;
+    const placeholders = mediaIds.map(() => "?").join(",");
+    this.db
+      .prepare(`UPDATE media_analysis SET status = 'pending', updated_at = ${NOW} WHERE analyzer = ? AND status = 'running' AND media_id IN (${placeholders})`)
+      .run(analyzerKey, ...mediaIds);
+  }
+
   // Nothing survives a process restart, so 'running' can only mean "was
   // interrupted" at startup - same reasoning as TranscodeWorker.reconcileAndResume.
   resetRunning(): number {

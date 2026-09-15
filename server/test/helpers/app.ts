@@ -13,12 +13,15 @@ import type { TranscodeWorker } from "../../src/media/transcode-worker.js";
 import type { AppPaths } from "../../src/config/paths.js";
 import { StackService } from "../../src/stacks/stack-service.js";
 import { SettingsRepo } from "../../src/db/settings-repo.js";
+import { LanceVectorIndex } from "../../src/vectors/lance-vector-index.js";
+import { EmbeddingRepo } from "../../src/vectors/embedding-repo.js";
+import type { EmbeddingProvider } from "../../src/providers/types.js";
 
 const logger = { info() {}, warn() {}, error() {}, debug() {} } as unknown as import("pino").Logger;
 
 // A fully routed Fastify app over an in-memory DB with one logged-in user.
 // Scanner/transcode are inert stubs - route tests never trigger real scans.
-export async function createTestApp() {
+export async function createTestApp(opts: { provider?: EmbeddingProvider | null } = {}) {
   process.env.LOG_LEVEL = "silent";
   const db = await createTestDb();
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "memorylane-test-"));
@@ -41,7 +44,8 @@ export async function createTestApp() {
     getStatus: () => ({ running: false }),
     getHistory: () => [],
   } as unknown as ScannerService;
-  const analysisWorker = new AnalysisWorker(db, logger, [], () => false);
+  const provider = opts.provider ?? null;
+  const analysisWorker = new AnalysisWorker(db, logger, [], () => false, { provider });
   const ctx: AppContext = {
     db,
     paths,
@@ -51,6 +55,9 @@ export async function createTestApp() {
     transcodeWorker: {} as TranscodeWorker,
     analysisWorker,
     stacks: new StackService(db, logger, new SettingsRepo(db)),
+    provider,
+    vectorIndex: new LanceVectorIndex(paths.vectorsDir),
+    embeddings: new EmbeddingRepo(db),
   };
   const app: FastifyInstance = await buildApp(ctx);
   return {

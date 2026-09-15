@@ -9,7 +9,7 @@ describe("analysis routes", () => {
       expect(anon.statusCode).toBe(401);
       const res = await t.app.inject({ method: "GET", url: "/api/analysis/status", headers: { cookie: t.cookie } });
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ paused: false, analyzers: [] });
+      expect(res.json()).toEqual({ paused: false, analyzers: [], provider: null });
     } finally {
       await t.close();
     }

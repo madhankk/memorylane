@@ -8,6 +8,8 @@ const DEFAULTS: SettingsDto = {
   scanScheduleEnabled: false,
   stackGapSeconds: 2,
   stackMaxHamming: 14,
+  stackMinCosine: 0.9,
+  aiEnabled: true,
 };
 
 export class SettingsRepo {
@@ -33,6 +35,8 @@ export class SettingsRepo {
         : DEFAULTS.scanScheduleEnabled,
       stackGapSeconds: map.has("stackGapSeconds") ? Number(map.get("stackGapSeconds")) : DEFAULTS.stackGapSeconds,
       stackMaxHamming: map.has("stackMaxHamming") ? Number(map.get("stackMaxHamming")) : DEFAULTS.stackMaxHamming,
+      stackMinCosine: map.has("stackMinCosine") ? Number(map.get("stackMinCosine")) : DEFAULTS.stackMinCosine,
+      aiEnabled: map.has("aiEnabled") ? map.get("aiEnabled") === "true" : DEFAULTS.aiEnabled,
     };
   }
 
@@ -53,6 +57,8 @@ export class SettingsRepo {
       entries.push(["scanScheduleEnabled", String(patch.scanScheduleEnabled)]);
     if (patch.stackGapSeconds !== undefined) entries.push(["stackGapSeconds", String(patch.stackGapSeconds)]);
     if (patch.stackMaxHamming !== undefined) entries.push(["stackMaxHamming", String(patch.stackMaxHamming)]);
+    if (patch.stackMinCosine !== undefined) entries.push(["stackMinCosine", String(patch.stackMinCosine)]);
+    if (patch.aiEnabled !== undefined) entries.push(["aiEnabled", String(patch.aiEnabled)]);
 
     if (entries.length > 0) tx(entries);
     return this.getAll();

@@ -11,6 +11,10 @@ import { TranscodeWorker } from "./media/transcode-worker.js";
 import { AnalysisWorker } from "./analysis/analysis-worker.js";
 import { createAnalyzers } from "./analysis/registry.js";
 import { StackService } from "./stacks/stack-service.js";
+import { createProvider } from "./providers/index.js";
+import { LanceVectorIndex } from "./vectors/lance-vector-index.js";
+import { EmbeddingRepo } from "./vectors/embedding-repo.js";
+import { spaceFor } from "./vectors/vector-index.js";
 import { buildApp } from "./app.js";
 import type { AppContext } from "./context.js";
 
@@ -40,14 +44,23 @@ async function main(): Promise<void> {
   const randomSelection = new SqliteRandomSelectionService(db);
   const transcodeWorker = new TranscodeWorker(db, paths, bootstrapLogger, scanner);
 
+  // The AI sidecar is optional: without it (or with it down) every feature
+  // that needs vectors reports "unavailable" and the rest of the app is unchanged.
+  const provider = createProvider();
+  const vectorIndex = new LanceVectorIndex(paths.vectorsDir);
+  const embeddings = new EmbeddingRepo(db);
   const stacks = new StackService(db, bootstrapLogger, settingsRepo);
-  const analysisWorker = new AnalysisWorker(db, bootstrapLogger, createAnalyzers(db, bootstrapLogger, paths), () => scanner.isRunning(), {
+  const analyzers = createAnalyzers(db, bootstrapLogger, { paths, settings: settingsRepo, provider, vectorIndex });
+  const analysisWorker = new AnalysisWorker(db, bootstrapLogger, analyzers, () => scanner.isRunning(), {
     // Stack recompute runs only once every analyzer is drained (hashes first)
     // and never while a scan is running.
     onIdle: () => (scanner.isRunning() ? 0 : stacks.recomputeDirty(5)),
+    provider,
   });
 
-  const ctx: AppContext = { db, paths, sessions, scanner, randomSelection, transcodeWorker, analysisWorker, stacks };
+  const ctx: AppContext = {
+    db, paths, sessions, scanner, randomSelection, transcodeWorker, analysisWorker, stacks, provider, vectorIndex, embeddings,
+  };
   const app = await buildApp(ctx);
 
   // Reconcile any video transcode job left mid-flight by a previous process
@@ -61,6 +74,19 @@ async function main(): Promise<void> {
   // entirely while a scan is running.
   analysisWorker.start();
   scanner.onScanFinished(() => analysisWorker.kick());
+
+  // The vector index is a cache over media_embeddings - rebuild it if the
+  // two disagree (deleted vectors/ folder, crash mid-write).
+  if (provider) {
+    const model = provider.expectedModel;
+    const space = spaceFor("media", model);
+    vectorIndex
+      .ensureSynced(space, embeddings.count(model), () => embeddings.iterate(model), embeddings.dim(model))
+      .then((r) => {
+        if (r === "rebuilt") bootstrapLogger.info({ space, count: embeddings.count(model) }, "Rebuilt vector index from media_embeddings");
+      })
+      .catch((err) => bootstrapLogger.error({ err }, "Vector index sync failed"));
+  }
 
   scanner.scheduleFromSettings(settings.scanIntervalDays, settings.scanScheduleEnabled);
 
