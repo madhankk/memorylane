@@ -16,7 +16,7 @@ export interface RandomSelectionService {
 const RECENTLY_SHOWN_COOLDOWN_DAYS = 7;
 
 // Scope-less, so no bindings - the WHERE fragment can be inlined.
-const ELIGIBLE = buildMediaQuery({ type: "photo", thumbnailDone: true }).where;
+const ELIGIBLE = buildMediaQuery({ type: "photo", thumbnailDone: true, collapseStacks: true }).where;
 
 export class SqliteRandomSelectionService implements RandomSelectionService {
   constructor(private db: Database.Database) {}

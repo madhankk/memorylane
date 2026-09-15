@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { EyeOff, MoreVertical } from "lucide-react";
+import { CheckSquare, EyeOff, Layers, MoreVertical } from "lucide-react";
 import type { FolderDto, FolderBreadcrumbDto, MediaDto, MediaTypeFilter as MediaTypeFilterValue } from "@memorylane/shared";
 import { api } from "../api/client";
 import Breadcrumbs from "../components/Breadcrumbs";
@@ -8,6 +8,8 @@ import FolderCard from "../components/FolderCard";
 import MediaGrid from "../components/MediaGrid";
 import MediaTypeFilter from "../components/MediaTypeFilter";
 import Viewer from "../components/Viewer";
+import StackPanel from "../components/StackPanel";
+import { useConfirm } from "../components/ConfirmDialog";
 import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
 
 const PAGE_SIZE = 200;
@@ -30,6 +32,11 @@ export default function FolderPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [ignoring, setIgnoring] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [openStackId, setOpenStackId] = useState<number | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [stackError, setStackError] = useState<string | null>(null);
+  const { confirm } = useConfirm();
   const loadingMoreRef = useRef(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -66,6 +73,8 @@ export default function FolderPage() {
   useEffect(() => {
     setShowAllFiles(false);
     setMediaType("all");
+    setSelectMode(false);
+    setSelectedIds(new Set());
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderId]);
@@ -96,15 +105,46 @@ export default function FolderPage() {
   const hasMore = media.length < mediaTotal;
   const sentinelRef = useInfiniteScroll(loadMore, hasMore, loadingMore);
 
+  // Stacks: the grid collapses each burst to its cover; the panel expands
+  // one, and selection mode lets the user build a stack by hand.
+  const refreshMedia = useCallback(() => void loadMedia(showAllFiles, mediaType), [loadMedia, showAllFiles, mediaType]);
+
+  const toggleSelect = (m: MediaDto) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(m.id)) next.delete(m.id);
+      else next.add(m.id);
+      return next;
+    });
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setStackError(null);
+  };
+
+  const stackSelected = async () => {
+    setStackError(null);
+    try {
+      await api.stacks.create([...selectedIds]);
+      exitSelectMode();
+      refreshMedia();
+    } catch (err) {
+      setStackError(err instanceof Error ? err.message : "Could not create the stack");
+    }
+  };
+
   const ignoreFolder = async () => {
     if (!folder) return;
     setMenuOpen(false);
     const itemsPhrase = folder.recursiveMediaCount > 0 ? ` and ${folder.recursiveMediaCount.toLocaleString()} indexed item(s) in it` : "";
-    if (
-      !confirm(
-        `Ignore "${folder.name}"?\n\nMemoryLane will stop scanning this folder${itemsPhrase} will be removed from your library. Original files on disk are never touched - you can remove it from the ignore list in Settings later and rescan to bring it back.`,
-      )
-    ) {
+    const ok = await confirm({
+      title: `Ignore "${folder.name}"?`,
+      message: `MemoryLane will stop scanning this folder${itemsPhrase} will be removed from your library. Original files on disk are never touched - you can remove it from the ignore list in Settings later and rescan to bring it back.`,
+      confirmLabel: "Ignore folder",
+      danger: true,
+    });
+    if (!ok) {
       return;
     }
     setIgnoring(true);
@@ -125,6 +165,31 @@ export default function FolderPage() {
         <div className="flex items-center justify-between gap-4">
           <h1 className="font-serif text-2xl font-semibold text-ink">{folder.name}</h1>
           <div className="flex items-center gap-4">
+            {selectMode ? (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted">{selectedIds.size} selected</span>
+                <button
+                  onClick={() => void stackSelected()}
+                  disabled={selectedIds.size < 2}
+                  className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-page hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Layers size={14} strokeWidth={1.8} />
+                  Stack selected
+                </button>
+                <button onClick={exitSelectMode} className="rounded-md border border-border px-3 py-1.5 text-ink hover:bg-hover">
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setSelectMode(true)}
+                title="Select photos to stack them by hand"
+                className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-ink hover:bg-hover"
+              >
+                <CheckSquare size={14} strokeWidth={1.8} />
+                Select
+              </button>
+            )}
             <MediaTypeFilter value={mediaType} onChange={(t) => void changeMediaType(t)} />
             <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap text-sm text-muted">
               <input
@@ -169,7 +234,20 @@ export default function FolderPage() {
         </div>
       )}
 
-      {media.length > 0 && <MediaGrid items={media} onOpen={setViewerIndex} />}
+      {stackError && <p className="text-sm text-red-600">{stackError}</p>}
+
+      {media.length > 0 && (
+        <MediaGrid
+          items={media}
+          onOpen={setViewerIndex}
+          onOpenStack={(m) => m.stack && setOpenStackId(m.stack.id)}
+          selectable={selectMode}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelect}
+        />
+      )}
+
+      {openStackId !== null && <StackPanel stackId={openStackId} onClose={() => setOpenStackId(null)} onChanged={refreshMedia} />}
 
       {!showAllFiles && children.length === 0 && media.length === 0 && (
         <p className="text-sm text-muted">

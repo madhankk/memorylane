@@ -9,6 +9,11 @@ export const EXCLUDE_LIVE_PHOTO_VIDEOS =
 // it's reachable only via the image's rawPairId.
 export const EXCLUDE_PAIRED_RAW = "media.id NOT IN (SELECT raw_pair_id FROM media WHERE raw_pair_id IS NOT NULL)";
 
+// Hides every stack member except the cover - the folder grid shows one
+// tile per burst. Off for search/favorites/reports, which are about frames.
+export const COLLAPSE_STACKS =
+  "(media.id NOT IN (SELECT media_id FROM stack_members) OR media.id IN (SELECT cover_media_id FROM stacks))";
+
 // "photo" groups RAW with regular images - both are non-video stills from
 // the user's point of view.
 export function mediaTypeFilterClause(type: MediaTypeFilter): string {
@@ -28,11 +33,14 @@ export interface MediaQueryParams {
   // Default false: companions (Live Photo videos, paired RAWs) are hidden.
   includeCompanions?: boolean;
   thumbnailDone?: boolean;
+  collapseStacks?: boolean;
   // Joins media_engagement as `me` (so callers may ORDER BY me.favorited_at).
   favoritesOnly?: boolean;
   exif?: ExifFilterQuery;
   // Join media_exif as `mx` even with no EXIF filter (reports need the columns).
   requireExifJoin?: boolean;
+  // Photos with at least one face assigned to any of these persons.
+  personIds?: number[];
 }
 
 export interface BuiltMediaQuery {
@@ -92,6 +100,11 @@ export function buildMediaQuery(p: MediaQueryParams): BuiltMediaQuery {
   if (!p.includeCompanions) where.push(EXCLUDE_LIVE_PHOTO_VIDEOS, EXCLUDE_PAIRED_RAW);
   if (p.type && p.type !== "all") where.push(mediaTypeFilterClause(p.type));
   if (p.thumbnailDone) where.push("media.thumbnail_status = 'done'");
+  if (p.collapseStacks) where.push(COLLAPSE_STACKS);
+  if (p.personIds && p.personIds.length > 0) {
+    where.push(`EXISTS (SELECT 1 FROM faces f WHERE f.media_id = media.id AND f.person_id IN (${p.personIds.map(() => "?").join(",")}))`);
+    bindings.push(...p.personIds);
+  }
 
   if (p.favoritesOnly) {
     joins.push("JOIN media_engagement me ON me.media_id = media.id");

@@ -46,6 +46,17 @@ export class AnalysisRepo {
       .run(mediaId, analyzerKey, version, mediaId);
   }
 
+  // Explicitly queue one row (used by the scan path when its inline attempt
+  // failed for a retryable reason, e.g. an unreadable file).
+  markPending(mediaId: number, analyzerKey: string, error: string | null): void {
+    this.db
+      .prepare(
+        `INSERT INTO media_analysis (media_id, analyzer, status, error, updated_at) VALUES (?, ?, 'pending', ?, ${NOW})
+         ON CONFLICT(media_id, analyzer) DO UPDATE SET status = 'pending', error = excluded.error, updated_at = excluded.updated_at`,
+      )
+      .run(mediaId, analyzerKey, error);
+  }
+
   // The file changed on disk (fingerprint mismatch) - every analyzer's result is stale.
   resetForMedia(mediaId: number): void {
     this.db
@@ -95,6 +106,16 @@ export class AnalysisRepo {
     tx(outcomes);
   }
 
+  // Puts claimed rows back without counting an attempt - used when the
+  // provider (not the file) was the problem.
+  unclaim(analyzerKey: string, mediaIds: number[]): void {
+    if (mediaIds.length === 0) return;
+    const placeholders = mediaIds.map(() => "?").join(",");
+    this.db
+      .prepare(`UPDATE media_analysis SET status = 'pending', updated_at = ${NOW} WHERE analyzer = ? AND status = 'running' AND media_id IN (${placeholders})`)
+      .run(analyzerKey, ...mediaIds);
+  }
+
   // Nothing survives a process restart, so 'running' can only mean "was
   // interrupted" at startup - same reasoning as TranscodeWorker.reconcileAndResume.
   resetRunning(): number {
@@ -108,6 +129,17 @@ export class AnalysisRepo {
                  WHERE status IN ('failed', 'unsupported')${analyzerKey ? " AND analyzer = ?" : ""}`;
     const stmt = this.db.prepare(sql);
     return (analyzerKey ? stmt.run(analyzerKey) : stmt.run()).changes;
+  }
+
+  lastErrors(): Map<string, string> {
+    const rows = this.db
+      .prepare(
+        `SELECT analyzer, error FROM media_analysis m
+         WHERE status = 'failed' AND error IS NOT NULL
+           AND updated_at = (SELECT MAX(updated_at) FROM media_analysis WHERE analyzer = m.analyzer AND status = 'failed' AND error IS NOT NULL)`,
+      )
+      .all() as { analyzer: string; error: string }[];
+    return new Map(rows.map((r) => [r.analyzer, r.error]));
   }
 
   counts(): { analyzer: string; status: AnalysisStatus; count: number }[] {

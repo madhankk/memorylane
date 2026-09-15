@@ -50,7 +50,7 @@ function applyExifOrientation(image: sharp.Sharp, orientation: number | null | u
 // on every BMP, valid or not. Decode it ourselves via bmp-js into raw pixels
 // and hand those to sharp instead of failing every BMP's thumbnail. BMP has
 // no EXIF/orientation concept of its own, so there's no rotation to apply.
-async function sharpFromBmpFile(sourcePath: string): Promise<sharp.Sharp> {
+export async function sharpFromBmpFile(sourcePath: string): Promise<sharp.Sharp> {
   const buffer = await fs.readFile(sourcePath);
   const decoded = bmpJs.decode(buffer);
   const { width, height, data } = decoded;

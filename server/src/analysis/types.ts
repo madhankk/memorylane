@@ -23,5 +23,8 @@ export interface Analyzer {
   version: string;
   batchSize: number;
   appliesTo: string;
+  // Optional runtime switch (e.g. Settings > AI). When false the worker
+  // leaves the analyzer's rows pending and skips it.
+  isEnabled?: () => boolean;
   run(rows: AnalysisMediaRow[]): Promise<AnalyzerOutcome[]>;
 }

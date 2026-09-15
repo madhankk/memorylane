@@ -162,11 +162,13 @@ export async function processMediaItem(
   const destPath = thumbnailPathForMediaId(paths.thumbnailsDir, row.id);
 
   let tags: Tags | null = null;
+  let tagsError: string | null = null;
   let metadata: ReturnType<typeof extractMetadataFields>;
   try {
     tags = isExifToolAvailable() ? await readTags(row.absolute_path) : null;
     metadata = extractMetadataFields(tags);
   } catch (err) {
+    tagsError = err instanceof Error ? err.message : String(err);
     logger.error({ err, mediaId: row.id, path: row.absolute_path }, "Failed to read metadata");
     metadata = extractMetadataFields(null);
   }
@@ -261,6 +263,10 @@ export async function processMediaItem(
     if (tags) {
       new ExifRepo(db).upsertFromTags(row.id, tags, getExifToolVersion());
       new AnalysisRepo(db).markDone(row.id, EXIF_FULL_KEY, EXIF_PROMOTE_VERSION);
+    } else if (tagsError) {
+      // Leave it to the exif_full analyzer to retry later (e.g. once a
+      // network volume is back) rather than recording an empty result.
+      new AnalysisRepo(db).markPending(row.id, EXIF_FULL_KEY, tagsError);
     }
   } catch (err) {
     logger.error({ err, mediaId: row.id, path: row.absolute_path }, "Failed to save media metadata");

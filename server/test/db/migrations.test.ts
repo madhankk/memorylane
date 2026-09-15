@@ -10,6 +10,7 @@ describe("migrations", () => {
     expect(names).toContain("media_engagement");
     expect(names).toContain("media_exif");
     expect(names).toContain("media_analysis");
+    for (const t of ["media_phash", "stacks", "stack_members", "stack_exclusions", "stack_dirty_folders", "media_embeddings", "persons", "faces", "face_person_rejections"]) expect(names).toContain(t);
 
     const root = seedScanRoot(db);
     const folder = seedFolder(db, root, "/library/2019");

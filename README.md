@@ -2,7 +2,7 @@
 
 Self-hosted photo and video browser for rediscovering the memories already sitting in your photo archive.
 
-MemoryLane indexes existing photo folders in place, generates thumbnails, and helps you rediscover old photos through browsing, search, and "Surprise Me" style random rediscovery - all on your own hardware, over your own files. It never renames, moves, or modifies your originals, with one narrow, explicit exception: the opt-in video modernization tool in Settings, which only ever *moves* an original (never deletes it) into a plain, visible folder right next to it, and only after you've reviewed and confirmed the replacement. See [PLAN.md](PLAN.md) for the full engineering plan.
+MemoryLane indexes existing photo folders in place, generates thumbnails, and helps you rediscover old photos through browsing, search, and "Surprise Me" style random rediscovery - all on your own hardware, over your own files. It never renames, moves, or modifies your originals, with one narrow, explicit exception: the opt-in video modernization tool in Settings, which only ever *moves* an original (never deletes it) into a plain, visible folder right next to it, and only after you've reviewed and confirmed the replacement. See [docs/deployment-playbook.md](docs/deployment-playbook.md) to set it up on a Mac or Windows machine, and [docs/architecture/](docs/architecture/) for the design behind the photographer features.
 
 Photos, RAW, video, and Apple Live Photos are all indexed and browsable.
 
@@ -20,6 +20,20 @@ Photos, RAW, video, and Apple Live Photos are all indexed and browsable.
 - **Four themes** - light, dark, dusk, and gallery, switchable at any time.
 - **Multi-folder libraries** - scan multiple folders/drives, reorder them, and trigger a rescan of just one folder at a time from Settings.
 - **Ignore folders you don't want indexed** - a global ignore list (Settings, or click "Ignore folder" while browsing one) tells the scanner to permanently skip a path - it removes that folder and its already-indexed items from your library without touching the original files.
+
+### For photographers with large archives
+
+- **Full EXIF capture and reports** - every tag ExifTool can read is stored per photo; the important ones (lens, body and serial, aperture, shutter, ISO, focal length, drive mode, rating, keywords, GPS) are indexed. The **Reports** page shows facets for lens / camera / aperture / focal length / ISO / year: click any value to narrow the grid and every other facet, add a date range, and **Export CSV** of the selection. Filters live in the URL, so a report is bookmarkable.
+- **Stacks** - bursts collapse to a single tile with a ⧉ count badge. Grouping uses capture time (with sub-second precision), camera body, a perceptual hash of each frame and, when the AI sidecar is running, image similarity - so it also handles tripod and long-exposure series where frames are a minute apart but near-identical. Expand a stack to view it, pick the cover, split it, remove frames or delete it; use **Select** in any folder to stack photos by hand. Anything you edit is never regrouped automatically; thresholds are in Settings › Stacks.
+- **Find similar** - open any photo and press ✨ for a ranked grid of the photos that look most like it, across your whole library.
+- **Describe-it search** - switch Search to *Describe it (AI)* and type what you're after ("a bird taking off from water", "snow on mountains at dusk") instead of remembering filenames.
+- **People (opt-in)** - faces are detected and grouped into people you can name; the **People** page lists them, and a person's page shows their photos (with a date range - "photos of Maya, summer 2019"), plus the faces behind the grouping so you can confirm (✓) or say "not them" (✗). Merge duplicates, hide people you don't care about, and delete all face data in one click. Two face models are available: a default with an open license, and a stronger option for personal libraries where siblings and children are hard to tell apart.
+- **Background analysis with progress** - all of the above runs as a resumable queue after each scan (Settings › Analysis shows progress bars, ETAs and any files that couldn't be read). Stop the app mid-way and it carries on where it left off.
+- **Storage control** - Settings › Storage shows where the cache and index live and how big each part is, and can move all of it to another disk.
+
+## AI features (optional)
+
+Find similar, describe-it search, image-similarity stacking and People use small local models served by the `memorylane-ai` sidecar (CLIP for image/text vectors, YuNet + SFace or InsightFace ArcFace for faces, all via ONNX Runtime). Nothing leaves your machine: the sidecar never sees your file paths - the server sends it thumbnails and keeps the resulting vectors in its own data directory. It runs on Windows, macOS (Apple Silicon) and Linux; CPU is plenty (about 50 photos/s for embeddings on an M2 Max), GPU optional. Start it with `npm run ai` in a second terminal (Python 3.11+ required, ~350 MB model download on first start); see [memorylane-ai/README.md](memorylane-ai/README.md). Without it, everything else works exactly as before - EXIF reports and time/hash-based stacks need no sidecar.
 
 ## Requirements
 
@@ -73,7 +87,7 @@ MemoryLane has no HTTPS/TLS support, so traffic (including your session cookie a
 
 ## Data
 
-MemoryLane's database, thumbnail cache, and logs live in an OS-standard app-data directory (e.g. `%LOCALAPPDATA%\MemoryLane` on Windows) - entirely separate from your photo folders, and safe to delete and rebuild via a rescan at any time. Override the location with the `MEMORYLANE_DATA_DIR` environment variable.
+MemoryLane's database, thumbnail cache, previews, vector index, and logs live in an OS-standard app-data directory (e.g. `%LOCALAPPDATA%\MemoryLane` on Windows) - entirely separate from your photo folders, and safe to delete and rebuild via a rescan at any time. Settings › Storage shows the location and sizes and can move everything to another disk; the `MEMORYLANE_DATA_DIR` environment variable overrides both.
 
 ## Upgrading
 

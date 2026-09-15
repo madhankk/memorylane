@@ -123,6 +123,8 @@ export function toMediaDto(row: MediaRow): MediaDto {
     // db/engagement-repo.ts. Defaults false here since not every call site
     // needs it (or has fetched it yet).
     favorite: false,
+    // Populated by decorateMedia() (api/decorate-media.ts) alongside favorites.
+    stack: null,
   };
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Star } from "lucide-react";
+import { Sparkles, Star } from "lucide-react";
 import type { MediaDto } from "@memorylane/shared";
 import { api } from "../api/client";
 import { formatMemoryBlurb } from "../utils/blurb";
@@ -178,6 +178,24 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
 
   const blurb = formatMemoryBlurb(current);
 
+  // Names of people in the current photo (People must be on; otherwise the
+  // endpoint 404s and we show nothing). Loaded lazily per photo.
+  const [peopleLine, setPeopleLine] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setPeopleLine(null);
+    Promise.all([api.media.faces(current.id), api.persons.list(true)])
+      .then(([faces, persons]) => {
+        if (cancelled) return;
+        const names = [...new Set(faces.filter((f) => f.personId !== null).map((f) => persons.find((p) => p.id === f.personId)?.displayName).filter(Boolean))];
+        setPeopleLine(names.length ? names.join(", ") : null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [current.id]);
+
   const controlButtonClass =
     "h-12 w-12 rounded-full border-none bg-overlay-control text-2xl text-white transition-colors hover:bg-overlay-control-hover";
 
@@ -188,6 +206,17 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
+      <button
+        className={`absolute top-5 right-16 ${controlButtonClass}`}
+        onClick={() => {
+          onClose();
+          navigate(`/similar/${current.id}`);
+        }}
+        aria-label="Find similar photos"
+        title="Find similar photos (AI)"
+      >
+        <Sparkles size={16} strokeWidth={1.8} />
+      </button>
       <button className={`absolute top-5 right-5 ${controlButtonClass}`} onClick={onClose} aria-label="Close">
         ✕
       </button>
@@ -308,6 +337,7 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
         {/* Subtle caption below the photo, overlaid on the image rather than
             floating off to a corner. */}
         {blurb && <p className="text-xs font-medium text-white/60">{blurb}</p>}
+        {peopleLine && <p className="text-xs font-medium text-white/70">People: {peopleLine}</p>}
       </div>
 
       {showInfo && (

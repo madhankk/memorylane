@@ -11,7 +11,7 @@ import {
   type MediaRow,
 } from "./mappers.js";
 import { buildMediaQuery, mediaCountSql, mediaSelectSql } from "../query/media-query.js";
-import { EngagementRepo } from "../db/engagement-repo.js";
+import { decorateMedia } from "./decorate-media.js";
 
 // Recursive CTE selecting a folder and every active descendant - reused by the
 // "all files in this folder tree" flat view.
@@ -90,7 +90,6 @@ export function getRecursiveFolderStats(ctx: AppContext, folderId: number): { co
 
 export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { db } = ctx;
-  const engagement = new EngagementRepo(db);
 
   app.get("/api/folders", { preHandler: app.requireAuth }, async (_request, reply) => {
     // Top-level folders mirror their scan root's manually-arranged order
@@ -176,11 +175,11 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
     const id = Number((request.params as { id: string }).id);
     const parsed = folderMediaQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: "Invalid query" });
-    const { offset, limit, recursive, type } = parsed.data;
+    const { offset, limit, recursive, type, expandStacks } = parsed.data;
 
-    const q = buildMediaQuery({ scope: { kind: "folder", folderId: id, recursive }, type });
+    const q = buildMediaQuery({ scope: { kind: "folder", folderId: id, recursive }, type, collapseStacks: !expandStacks });
     const total = (db.prepare(mediaCountSql(q)).get(...q.bindings) as { c: number }).c;
     const rows = db.prepare(mediaSelectSql(q)).all(...q.bindings, limit, offset) as MediaRow[];
-    return reply.send({ items: engagement.attachFavorites(rows.map(toMediaDto)), total, offset, limit });
+    return reply.send({ items: decorateMedia(ctx, rows.map(toMediaDto)), total, offset, limit });
   });
 }

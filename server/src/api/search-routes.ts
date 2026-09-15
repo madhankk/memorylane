@@ -3,8 +3,11 @@ import { searchQuerySchema, type SearchResultDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { toFolderDto, toMediaDto, type FolderRow, type MediaRow } from "./mappers.js";
 import { buildMediaQuery } from "../query/media-query.js";
+import { ProviderUnavailableError } from "../providers/types.js";
+import { spaceFor } from "../vectors/vector-index.js";
+import { AI_UNAVAILABLE, loadRanked } from "./similar-routes.js";
 import { getFolderCounts, getRecursiveFolderStats } from "./folders-routes.js";
-import { EngagementRepo } from "../db/engagement-repo.js";
+import { decorateMedia } from "./decorate-media.js";
 
 // Builds a safe FTS5 MATCH expression from free-text user input: each
 // whitespace-separated term becomes a quoted prefix match, ANDed together.
@@ -17,12 +20,28 @@ function buildFtsQuery(q: string): string {
 
 export async function registerSearchRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { db } = ctx;
-  const engagement = new EngagementRepo(db);
 
   app.get("/api/search", { preHandler: app.requireAuth }, async (request, reply) => {
     const parsed = searchQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: "Invalid query" });
-    const { q, offset, limit } = parsed.data;
+    const { q, offset, limit, mode } = parsed.data;
+
+    // "Describe it" search: embed the words, rank photos by cosine similarity.
+    if (mode === "semantic") {
+      if (!ctx.provider) return reply.code(503).send({ error: AI_UNAVAILABLE });
+      let vector: Float32Array;
+      try {
+        vector = (await ctx.provider.embedText([q])).vectors[0];
+      } catch (err) {
+        if (err instanceof ProviderUnavailableError) return reply.code(503).send({ error: err.message });
+        throw err;
+      }
+      const hits = await ctx.vectorIndex.search(spaceFor("media", ctx.provider.expectedModel), vector, offset + limit + 20);
+      const ranked = loadRanked(ctx, hits).slice(offset, offset + limit);
+      const items: SearchResultDto[] = ranked.map(({ media, score }) => ({ type: "media" as const, media, score }));
+      return reply.send({ items, total: items.length, offset, limit });
+    }
+
     const ftsQuery = buildFtsQuery(q);
     if (!ftsQuery) return reply.send({ items: [], total: 0, offset, limit });
 
@@ -64,9 +83,7 @@ export async function registerSearchRoutes(app: FastifyInstance, ctx: AppContext
           }),
         };
       }),
-      ...engagement
-        .attachFavorites(mediaRows.map(toMediaDto))
-        .map((media) => ({ type: "media" as const, media })),
+      ...decorateMedia(ctx, mediaRows.map(toMediaDto)).map((media) => ({ type: "media" as const, media })),
     ];
 
     return reply.send({ items, total: items.length, offset, limit });

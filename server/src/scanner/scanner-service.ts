@@ -10,6 +10,7 @@ import { computeFingerprint } from "./fingerprint.js";
 import { getOrCreateFolder } from "./folder-repo.js";
 import { processMediaItem } from "../media/media-processor.js";
 import { AnalysisRepo } from "../analysis/analysis-repo.js";
+import { markFoldersDirty } from "../stacks/dirty.js";
 
 interface ScanRootRow {
   id: number;
@@ -240,11 +241,13 @@ export class ScannerService {
             .prepare(
               `UPDATE media SET status = 'missing'
                WHERE status = 'active' AND last_seen_at < ? AND scan_root_id IN (${placeholders})
-               RETURNING id`,
+               RETURNING id, parent_folder_id`,
             )
-            .all(runStartedAt, ...scannedRootIds) as { id: number }[])
+            .all(runStartedAt, ...scannedRootIds) as { id: number; parent_folder_id: number }[])
         : [];
       stats.filesRemoved = missingMedia.length;
+      // A vanished frame may have been a stack member - its folder needs re-stacking.
+      markFoldersDirty(this.db, missingMedia.map((m) => m.parent_folder_id));
 
       if (scannedRootIds.length) {
         this.db
@@ -395,6 +398,7 @@ export class ScannerService {
           stat.size, fsCreatedAt, stat.mtime.toISOString(), fingerprint,
         );
       stats.filesNew++;
+      markFoldersDirty(this.db, [parentFolderId]);
       enqueueProcessing(Number(info.lastInsertRowid), absolutePath, mediaType, parentFolderId);
       return;
     }
@@ -409,6 +413,7 @@ export class ScannerService {
         .run(stat.size, stat.mtime.toISOString(), fingerprint, parentFolderId, existing.id);
       // Every analyzer's stored result was computed from the old bytes.
       this.analysisRepo.resetForMedia(existing.id);
+      markFoldersDirty(this.db, [parentFolderId]);
       stats.filesChanged++;
       enqueueProcessing(existing.id, absolutePath, mediaType, parentFolderId);
       return;

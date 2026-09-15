@@ -3,6 +3,7 @@ import pLimit from "p-limit";
 import { ExifRepo } from "../../exif/exif-repo.js";
 import { EXIF_PROMOTE_VERSION } from "../../exif/promote.js";
 import { readTags, isExifToolAvailable, getExifToolVersion } from "../../media/exiftool-client.js";
+import { markFoldersDirty } from "../../stacks/dirty.js";
 import type { Analyzer, AnalysisMediaRow, AnalyzerOutcome } from "../types.js";
 
 export const EXIF_FULL_KEY = "exif_full";
@@ -23,11 +24,11 @@ export function createExifFullAnalyzer(db: Database.Database): Analyzer {
       if (!isExifToolAvailable()) {
         return rows.map((r) => ({ mediaId: r.id, status: "unsupported" as const, error: "ExifTool not available" }));
       }
-      return Promise.all(
+      const outcomes = await Promise.all(
         rows.map((row) =>
           limit(async (): Promise<AnalyzerOutcome> => {
             try {
-              const tags = await readTags(row.absolute_path);
+              const tags = await readTags(row.absolute_path); // throws ExifReadError on unreadable files
               repo.upsertFromTags(row.id, tags, getExifToolVersion());
               return { mediaId: row.id, status: "done" };
             } catch (err) {
@@ -36,6 +37,11 @@ export function createExifFullAnalyzer(db: Database.Database): Analyzer {
           }),
         ),
       );
+      // Stacks group by capture time + body, both from media_exif - a folder
+      // whose EXIF just arrived (backfill, or a retry after a volume came
+      // back) needs re-stacking.
+      markFoldersDirty(db, rows.filter((_, i) => outcomes[i].status === "done").map((r) => r.parent_folder_id));
+      return outcomes;
     },
   };
 }
