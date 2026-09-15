@@ -81,7 +81,7 @@ From the existing codebase (see `CLAUDE.md`):
                        │   /v1/health  /v1/embed/image  /v1/embed/text            │
                        │   /v1/faces   /v1/cluster                                │
                        │   models: SigLIP/CLIP image+text, InsightFace buffalo_l  │
-                       │   device: CoreML | CUDA | CPU                            │
+                       │   device: CoreML | CUDA | DirectML | CPU                 │
                        └──────────────────────────────────────────────────────────┘
 ```
 
@@ -433,7 +433,26 @@ The repo has vitest wired but no tests; this work introduces them where the logi
 - No per-image cloud cost in phases 1–4. Disk (500k-image library): `media_exif` ≈ 2–4 GB, embeddings ≈ 1.5 GB in SQLite plus roughly the same again for the LanceDB index under `vectors/`, faces ≈ 2 KB per face — all inside the disposable data dir.
 - Sidecar distribution: Docker image (`docker run -p 4281:4281 memorylane/ai`) and `uv run memorylane-ai`. The tray app stays unchanged and simply shows "AI features: not connected" until a sidecar answers.
 
-## 16. Risks and open decisions
+## 16. Platform support (Windows, macOS, Linux)
+
+Yes — everything here runs on Windows, and the desktop tray installer is Windows-first today. What changes per phase:
+
+| Component | Windows | macOS | Linux | Notes |
+|---|---|---|---|---|
+| Server + Phase 1–2 (EXIF, `media_analysis`, stacks v1, pHash) | ✅ | ✅ | ✅ | Pure Node + better-sqlite3 + Sharp + ExifTool, all already shipping in the tray app's `runtime/`. No new native dependency. |
+| `memorylane-ai` sidecar (Phase 3–4) | ✅ | ✅ | ✅ | Python 3.11 + ONNX Runtime. GPU: **CUDA** EP (NVIDIA) on Windows/Linux, **DirectML** EP on Windows for AMD/Intel/NVIDIA without CUDA, **CoreML** EP on Apple Silicon, CPU everywhere. Also runnable via Docker Desktop on Windows. |
+| Face models | ✅ | ✅ | ✅ | The sidecar loads the RetinaFace/ArcFace **ONNX files directly** through `onnxruntime` rather than depending on the `insightface` pip package, which needs a C++ build toolchain on Windows and is the usual install failure there. |
+| `VectorIndex` (LanceDB, Phase 3) | ✅ | ✅ | ✅ | `@lancedb/lancedb` ships prebuilt binaries for win32-x64, darwin-arm64/x64, linux-x64/arm64. Verified in Phase 3 from the tray app's `runtime/` layout, same as `better-sqlite3`/`sharp` are today. |
+
+Design rules that keep it portable:
+
+- **The sidecar never receives file paths.** The server renders JPEG bytes and POSTs them, so drive letters, UNC paths, and backslashes never cross the process boundary — and a Windows client can talk to a Linux GPU box over the LAN unchanged.
+- **All path logic stays in Node** using `node:path` (already the case for thumbnails/previews); `media_exif` stores nothing path-derived.
+- **Data dir** follows the existing `%LOCALAPPDATA%\MemoryLane` / `~/Library/Application Support/MemoryLane` / `$XDG_DATA_HOME/MemoryLane` resolution; the `vectors/` and `faces/` subfolders live there too.
+- **Sidecar packaging on Windows:** `uv run memorylane-ai` (uv installs its own Python; no system Python required) or Docker Desktop. A later option is bundling the sidecar as a PyInstaller/`onedir` build alongside the tray app so non-developers get AI features from the installer; not planned for Phases 1–4.
+- **Case-insensitive filesystems** (Windows, default macOS): RAW+JPEG pairing already lowercases base names; stacks and persons key on ids, not paths.
+
+## 17. Risks and open decisions
 
 | Item | Notes / proposed resolution |
 |---|---|
