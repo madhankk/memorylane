@@ -193,6 +193,8 @@ All of these are queries over data we already have (or B/C add), surfaced as pag
 
 **Effort:** medium (catalogue sync + People bootstrap), plus small native work for the PhotoKit helper. **Data leaving the machine:** none.
 
+**Implementation plan:** `docs/superpowers/plans/2026-09-15-apple-photos-plugin.md` (10 tasks; introduces the scan-root *kind* seam, reusable by future importers such as Lightroom catalogues or Google Takeout). Verified while planning: `osxphotos` 0.76 (MIT, Python ≥ 3.10) installs against the sidecar venv; reading the package from a VS Code-launched process is denied by macOS until the Photos/Full Disk Access permission is granted — the plan treats that as a first-class state.
+
 ---
 
 ## 3. Plugin architecture — the extension points
@@ -296,6 +298,8 @@ Everything runs through the existing `AnalysisWorker`, `buildMediaQuery`, `Media
 ---
 
 ## 5. Suggested order
+
+Plans written so far: **§M Apple Photos** → `docs/superpowers/plans/2026-09-15-apple-photos-plugin.md` (plan only, not scheduled).
 
 | Phase | Contents | Why this order |
 |---|---|---|
