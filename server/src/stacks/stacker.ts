@@ -1,7 +1,8 @@
 import { hammingHex } from "./phash.js";
 
 // Bump when the grouping rule changes so existing auto stacks are recomputed.
-export const STACK_RULE_VERSION = "burst-v1";
+// v2: embedding cosine similarity also counts as "same moment" (design §8.4).
+export const STACK_RULE_VERSION = "burst-v2";
 
 export interface StackCandidate {
   id: number;
@@ -10,14 +11,26 @@ export interface StackCandidate {
   body: string | null; // camera serial, else model
   phash: string | null;
   burstId: string | null; // maker-note burst UUID when present
+  // CLIP image embedding (L2-normalised) when the AI sidecar has run; null otherwise.
+  embedding?: Float32Array | null;
 }
 
 export interface StackerOptions {
   gapSeconds: number;
   maxHamming: number;
+  // Cosine similarity at or above which two frames count as the same scene
+  // even when their hashes differ (subject moved, hash broke).
+  minCosine: number;
 }
 
-export const DEFAULT_STACKER_OPTIONS: StackerOptions = { gapSeconds: 2, maxHamming: 14 };
+export const DEFAULT_STACKER_OPTIONS: StackerOptions = { gapSeconds: 2, maxHamming: 14, minCosine: 0.9 };
+
+export function cosine(a: Float32Array, b: Float32Array): number {
+  let s = 0;
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) s += a[i] * b[i];
+  return s;
+}
 
 function parseMs(s: string): number {
   // Wall-clock strings carry no offset; treating them as UTC keeps
@@ -28,7 +41,8 @@ function parseMs(s: string): number {
 // Single time-sorted pass per folder (design doc §8.3): O(n), no pairwise
 // blow-up. Photo j joins the open group when it shares a body with the
 // previous member, follows it within gapSeconds, and is visually close
-// (hash distance) OR carries the same camera burst id.
+// (hash distance, or embedding cosine when both have one) OR carries the
+// same camera burst id.
 export function groupBursts(rows: StackCandidate[], opts: StackerOptions = DEFAULT_STACKER_OPTIONS): number[][] {
   const eligible = rows
     .filter((r) => r.capturedAt && r.body)
@@ -49,8 +63,9 @@ export function groupBursts(rows: StackCandidate[], opts: StackerOptions = DEFAU
       const sameBody = prev.body === r.body;
       const closeInTime = r.ms - prev.ms <= opts.gapSeconds * 1000;
       const sameBurst = !!r.burstId && r.burstId === prev.burstId;
-      const similar = !!r.phash && !!prev.phash && hammingHex(r.phash, prev.phash) <= opts.maxHamming;
-      if (sameBody && closeInTime && (sameBurst || similar)) {
+      const hashClose = !!r.phash && !!prev.phash && hammingHex(r.phash, prev.phash) <= opts.maxHamming;
+      const embedClose = !!r.embedding && !!prev.embedding && cosine(r.embedding, prev.embedding) >= opts.minCosine;
+      if (sameBody && closeInTime && (sameBurst || hashClose || embedClose)) {
         current.push(r);
         continue;
       }

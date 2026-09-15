@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { groupBursts, type StackCandidate } from "../../src/stacks/stacker.js";
+import { groupBursts, cosine, type StackCandidate } from "../../src/stacks/stacker.js";
 
 const H0 = "0000000000000000";
 const H1 = "0000000000000001"; // 1 bit from H0
@@ -52,7 +52,23 @@ describe("groupBursts", () => {
   it("honours custom thresholds", () => {
     n = 0;
     const rows = [c({ capturedAt: t(0) }), c({ capturedAt: t(2500) })];
-    expect(groupBursts(rows, { gapSeconds: 2, maxHamming: 14 })).toEqual([]);
-    expect(groupBursts(rows, { gapSeconds: 3, maxHamming: 14 })).toEqual([[1, 2]]);
+    expect(groupBursts(rows, { gapSeconds: 2, maxHamming: 14, minCosine: 0.9 })).toEqual([]);
+    expect(groupBursts(rows, { gapSeconds: 3, maxHamming: 14, minCosine: 0.9 })).toEqual([[1, 2]]);
+  });
+  it("v2: embedding similarity rescues frames whose hashes drifted", () => {
+    n = 0;
+    const e = (x: number, y: number) => {
+      const len = Math.hypot(x, y);
+      return Float32Array.from([x / len, y / len]);
+    };
+    expect(cosine(e(1, 0), e(1, 0))).toBeCloseTo(1, 6);
+    const close = [c({ capturedAt: t(0), phash: H0, embedding: e(1, 0) }), c({ capturedAt: t(100), phash: HFAR, embedding: e(1, 0.2) })]; // cos ≈ 0.98
+    expect(groupBursts(close)).toEqual([[1, 2]]);
+    n = 0;
+    const far = [c({ capturedAt: t(0), phash: H0, embedding: e(1, 0) }), c({ capturedAt: t(100), phash: HFAR, embedding: e(1, 1) })]; // cos ≈ 0.71
+    expect(groupBursts(far)).toEqual([]);
+    n = 0;
+    const oneSide = [c({ capturedAt: t(0), phash: H0, embedding: e(1, 0) }), c({ capturedAt: t(100), phash: H1, embedding: null })]; // hash rule still applies
+    expect(groupBursts(oneSide)).toEqual([[1, 2]]);
   });
 });

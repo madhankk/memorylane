@@ -19,7 +19,9 @@ export async function registerSettingsRoutes(app: FastifyInstance, ctx: AppConte
     }
     const updated = repo.update(parsed.data);
     // New thresholds apply on the worker's next idle pass over every folder.
-    if (parsed.data.stackGapSeconds !== undefined || parsed.data.stackMaxHamming !== undefined) ctx.stacks.markAllDirty();
+    if (parsed.data.stackGapSeconds !== undefined || parsed.data.stackMaxHamming !== undefined || parsed.data.stackMinCosine !== undefined) {
+      ctx.stacks.markAllDirty();
+    }
     return reply.send(updated);
   });
 

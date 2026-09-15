@@ -49,7 +49,7 @@ async function main(): Promise<void> {
   const provider = createProvider();
   const vectorIndex = new LanceVectorIndex(paths.vectorsDir);
   const embeddings = new EmbeddingRepo(db);
-  const stacks = new StackService(db, bootstrapLogger, settingsRepo);
+  const stacks = new StackService(db, bootstrapLogger, settingsRepo, () => provider?.expectedModel ?? null);
   const analyzers = createAnalyzers(db, bootstrapLogger, { paths, settings: settingsRepo, provider, vectorIndex });
   const analysisWorker = new AnalysisWorker(db, bootstrapLogger, analyzers, () => scanner.isRunning(), {
     // Stack recompute runs only once every analyzer is drained (hashes first)
@@ -74,6 +74,10 @@ async function main(): Promise<void> {
   // entirely while a scan is running.
   analysisWorker.start();
   scanner.onScanFinished(() => analysisWorker.kick());
+  if (stacks.hasStaleAutoStacks()) {
+    bootstrapLogger.info("Stacking rule changed - queueing every folder for recompute");
+    stacks.markAllDirty();
+  }
 
   // The vector index is a cache over media_embeddings - rebuild it if the
   // two disagree (deleted vectors/ folder, crash mid-write).

@@ -74,6 +74,26 @@ describe("StackService.recomputeFolder", () => {
   });
 });
 
+describe("StackService v2 candidates", () => {
+  it("uses embeddings for the configured model", async () => {
+    const db = await createTestDb();
+    const root = seedScanRoot(db);
+    const folder = seedFolder(db, root, "/library/burst");
+    const svc = new StackService(db, logger, new SettingsRepo(db), () => "m@1");
+    const exif = db.prepare("INSERT INTO media_exif (media_id, captured_at_precise, camera_serial, tags_json, exiftool_version) VALUES (?, ?, 'R5', '{}', 't')");
+    const emb = db.prepare("INSERT INTO media_embeddings (media_id, model, dim, vector) VALUES (?, 'm@1', 2, ?)");
+    const a = seedMedia(db, folder, root), b = seedMedia(db, folder, root);
+    exif.run(a, t(0)); exif.run(b, t(100));
+    // No hashes at all - only the embedding rule can group these.
+    emb.run(a, Buffer.from(new Float32Array([1, 0]).buffer)); emb.run(b, Buffer.from(new Float32Array([0.99, 0.14]).buffer));
+    expect(svc.recomputeFolder(folder)).toBe(1);
+    expect(svc.getStack(stackOf(db, a)!)!.count).toBe(2);
+    const noModel = new StackService(db, logger, new SettingsRepo(db));
+    expect(noModel.recomputeFolder(folder)).toBe(0);
+    expect(svc.hasStaleAutoStacks()).toBe(false);
+  });
+});
+
 describe("StackService user operations", () => {
   it("createManual, setCover, split, merge, removeMember, deleteStack", async () => {
     const { db, svc, shot } = await setup();
