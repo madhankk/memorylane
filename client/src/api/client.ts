@@ -33,6 +33,8 @@ import type {
   AnalysisStatusDto,
   StackDto,
   StackDetailDto,
+  SimilarResultDto,
+  SearchMode,
 } from "@memorylane/shared";
 
 class ApiError extends Error {
@@ -130,6 +132,7 @@ export const api = {
     list: (filters: ReportFilters, offset = 0, limit = 200) =>
       request<PaginatedResult<MediaDto>>(`/api/media${toQueryString({ ...filters, offset, limit })}`),
     get: (id: number) => request<MediaDto>(`/api/media/${id}`),
+    similar: (id: number, limit = 48) => request<SimilarResultDto>(`/api/media/${id}/similar?limit=${limit}`),
     fileUrl: (id: number) => `/api/media/${id}/file`,
     // `v` busts the browser's 1-year immutable cache when the thumbnail/preview
     // is regenerated (e.g. after an orientation fix) - see thumbnail_version.
@@ -142,8 +145,8 @@ export const api = {
     markShown: (id: number) => request<{ ok: true }>(`/api/media/${id}/shown`, { method: "POST" }),
     markViewed: (id: number) => request<{ ok: true }>(`/api/media/${id}/viewed`, { method: "POST" }),
   },
-  search: (q: string, offset = 0, limit = 50) =>
-    request<PaginatedResult<SearchResultDto>>(`/api/search?q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`),
+  search: (q: string, offset = 0, limit = 50, mode: SearchMode = "text") =>
+    request<PaginatedResult<SearchResultDto>>(`/api/search?q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}&mode=${mode}`),
   memories: {
     random: (count = 100) => request<{ items: MediaDto[] }>(`/api/memories/random?count=${count}`),
     onThisDay: (count = 30) => request<OnThisDayResponse>(`/api/memories/on-this-day?count=${count}`),

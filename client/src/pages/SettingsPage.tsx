@@ -559,6 +559,47 @@ export default function SettingsPage() {
       </section>
 
       <section>
+        <h2 className="mb-1 font-serif text-lg font-semibold text-ink">AI</h2>
+        <p className="mb-3 text-sm text-muted">
+          An optional local sidecar (<code>memorylane-ai</code>) turns photos into vectors for Find similar, describe-it search and
+          smarter stacks. Nothing leaves your machine.
+        </p>
+        <label className="mb-3 flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={settings.aiEnabled}
+            onChange={(e) => updateSchedule({ aiEnabled: e.target.checked })}
+            className="accent-accent"
+          />
+          Analyse photos with the AI sidecar when it's running
+        </label>
+        {analysis && (
+          <div className="rounded-lg border border-border bg-surface px-4 py-3 text-sm">
+            {analysis.provider === null && <p className="text-muted">No AI provider configured (MEMORYLANE_AI_PROVIDER=none).</p>}
+            {analysis.provider && analysis.provider.reachable && (
+              <p className="text-ink">
+                <span className="mr-2 inline-block size-2 rounded-full bg-green-500 align-middle" aria-hidden />
+                Connected to <code>{analysis.provider.url}</code> · {analysis.provider.model} · {analysis.provider.device}
+              </p>
+            )}
+            {analysis.provider && !analysis.provider.reachable && (
+              <div className="text-ink">
+                <p>
+                  <span className="mr-2 inline-block size-2 rounded-full bg-amber-500 align-middle" aria-hidden />
+                  Not connected to <code>{analysis.provider.url}</code>
+                  {analysis.provider.lastError ? ` - ${analysis.provider.lastError}` : ""}
+                </p>
+                <p className="mt-1 text-muted">
+                  Start it with <code>cd memorylane-ai && .venv/bin/memorylane-ai</code> (see memorylane-ai/README.md). Photos queue up
+                  meanwhile and are analysed once it's reachable.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section>
         <h2 className="mb-1 font-serif text-lg font-semibold text-ink">Analysis</h2>
         <p className="mb-3 text-sm text-muted">
           Background processing that runs after scans - full EXIF capture for Reports. Pauses automatically while a scan
@@ -582,6 +623,8 @@ export default function SettingsPage() {
                   <tr key={a.key} className="border-t border-border">
                     <td className="py-1.5 pr-3">
                       {a.key} <span className="text-xs text-faint">{a.version}</span>
+                      {!a.enabled && <span className="ml-2 text-xs text-muted">(off)</span>}
+                      {a.backoffUntil && <span className="ml-2 text-xs text-amber-600">waiting for sidecar</span>}
                     </td>
                     <td className="py-1.5 pr-3">{a.counts.done.toLocaleString()}</td>
                     <td className="py-1.5 pr-3">{(a.counts.pending + a.counts.running).toLocaleString()}</td>
@@ -635,6 +678,21 @@ export default function SettingsPage() {
               onBlur={(e) => {
                 const v = Math.round(Number(e.target.value));
                 if (v >= 0 && v <= 64 && v !== settings.stackMaxHamming) void updateSchedule({ stackMaxHamming: v });
+              }}
+              className={`w-24 ${inputClass}`}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">AI similarity (min cosine, 0.5-1)</span>
+            <input
+              type="number"
+              min={0.5}
+              max={1}
+              step={0.01}
+              defaultValue={settings.stackMinCosine}
+              onBlur={(e) => {
+                const v = Number(e.target.value);
+                if (v >= 0.5 && v <= 1 && v !== settings.stackMinCosine) void updateSchedule({ stackMinCosine: v });
               }}
               className={`w-24 ${inputClass}`}
             />

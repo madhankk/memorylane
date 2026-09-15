@@ -13,6 +13,8 @@ interface MediaGridProps {
   selectable?: boolean;
   selectedIds?: Set<number>;
   onToggleSelect?: (media: MediaDto) => void;
+  // Small text chip per tile (e.g. a similarity score) keyed by media id.
+  captions?: Record<number, string>;
 }
 
 function badgeFor(media: MediaDto): string | null {
@@ -32,7 +34,7 @@ function badgeFor(media: MediaDto): string | null {
 // for browsing. A uniform grid reads left-to-right, top-to-bottom like every
 // other photo browser. Keeps the small rounded corners, border ring, and
 // hover lift/zoom from the life-archive-app-inspired styling.
-export default function MediaGrid({ items, onOpen, onOpenStack, selectable = false, selectedIds, onToggleSelect }: MediaGridProps) {
+export default function MediaGrid({ items, onOpen, onOpenStack, selectable = false, selectedIds, onToggleSelect, captions }: MediaGridProps) {
   // Optimistic per-thumbnail favorite overrides - `items` is an external prop
   // that won't reflect a toggle until the parent refetches, so track it locally.
   const [favoriteOverrides, setFavoriteOverrides] = useState<Record<number, boolean>>({});
@@ -103,6 +105,11 @@ export default function MediaGrid({ items, onOpen, onOpenStack, selectable = fal
               // just marks which member is the cover.
               <span className="absolute top-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
                 Cover
+              </span>
+            )}
+            {captions?.[media.id] && !selectable && (
+              <span className="absolute bottom-1.5 left-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[11px] tabular-nums text-white">
+                {captions[media.id]}
               </span>
             )}
             {selectable && (

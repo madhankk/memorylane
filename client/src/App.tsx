@@ -10,6 +10,7 @@ import SettingsPage from "./pages/SettingsPage";
 import SurprisePage from "./pages/SurprisePage";
 import FavoritesPage from "./pages/FavoritesPage";
 import ReportsPage from "./pages/ReportsPage";
+import SimilarPage from "./pages/SimilarPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, needsSetup, loading } = useAuth();
@@ -42,6 +43,7 @@ export default function App() {
         <Route path="/surprise" element={<SurprisePage />} />
         <Route path="/favorites" element={<FavoritesPage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/similar/:id" element={<SimilarPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Star } from "lucide-react";
+import { Sparkles, Star } from "lucide-react";
 import type { MediaDto } from "@memorylane/shared";
 import { api } from "../api/client";
 import { formatMemoryBlurb } from "../utils/blurb";
@@ -188,6 +188,17 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
+      <button
+        className={`absolute top-5 right-16 ${controlButtonClass}`}
+        onClick={() => {
+          onClose();
+          navigate(`/similar/${current.id}`);
+        }}
+        aria-label="Find similar photos"
+        title="Find similar photos (AI)"
+      >
+        <Sparkles size={16} strokeWidth={1.8} />
+      </button>
       <button className={`absolute top-5 right-5 ${controlButtonClass}`} onClick={onClose} aria-label="Close">
         ✕
       </button>
