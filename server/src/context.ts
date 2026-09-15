@@ -5,6 +5,7 @@ import type { ScannerService } from "./scanner/scanner-service.js";
 import type { RandomSelectionService } from "./media/random-selection-service.js";
 import type { TranscodeWorker } from "./media/transcode-worker.js";
 import type { AnalysisWorker } from "./analysis/analysis-worker.js";
+import type { StackService } from "./stacks/stack-service.js";
 
 // Central set of app-wide singletons, built once at startup and passed to every
 // route module. Keeps routes free of import-order/singleton-init footguns.
@@ -16,4 +17,5 @@ export interface AppContext {
   randomSelection: RandomSelectionService;
   transcodeWorker: TranscodeWorker;
   analysisWorker: AnalysisWorker;
+  stacks: StackService;
 }

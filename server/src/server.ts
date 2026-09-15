@@ -10,6 +10,7 @@ import { checkFfmpegAvailable } from "./media/video-client.js";
 import { TranscodeWorker } from "./media/transcode-worker.js";
 import { AnalysisWorker } from "./analysis/analysis-worker.js";
 import { createAnalyzers } from "./analysis/registry.js";
+import { StackService } from "./stacks/stack-service.js";
 import { buildApp } from "./app.js";
 import type { AppContext } from "./context.js";
 
@@ -39,9 +40,14 @@ async function main(): Promise<void> {
   const randomSelection = new SqliteRandomSelectionService(db);
   const transcodeWorker = new TranscodeWorker(db, paths, bootstrapLogger, scanner);
 
-  const analysisWorker = new AnalysisWorker(db, bootstrapLogger, createAnalyzers(db, bootstrapLogger), () => scanner.isRunning());
+  const stacks = new StackService(db, bootstrapLogger, settingsRepo);
+  const analysisWorker = new AnalysisWorker(db, bootstrapLogger, createAnalyzers(db, bootstrapLogger, paths), () => scanner.isRunning(), {
+    // Stack recompute runs only once every analyzer is drained (hashes first)
+    // and never while a scan is running.
+    onIdle: () => (scanner.isRunning() ? 0 : stacks.recomputeDirty(5)),
+  });
 
-  const ctx: AppContext = { db, paths, sessions, scanner, randomSelection, transcodeWorker, analysisWorker };
+  const ctx: AppContext = { db, paths, sessions, scanner, randomSelection, transcodeWorker, analysisWorker, stacks };
   const app = await buildApp(ctx);
 
   // Reconcile any video transcode job left mid-flight by a previous process

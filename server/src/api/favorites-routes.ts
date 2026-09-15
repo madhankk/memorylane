@@ -3,6 +3,7 @@ import { favoritesQuerySchema } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { toMediaDto, type MediaRow } from "./mappers.js";
 import { EngagementRepo } from "../db/engagement-repo.js";
+import { decorateMedia } from "./decorate-media.js";
 
 export async function registerFavoritesRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { db } = ctx;
@@ -23,7 +24,7 @@ export async function registerFavoritesRoutes(app: FastifyInstance, ctx: AppCont
     // Preserve favorited_at DESC ordering from listFavoriteIds - a plain
     // `WHERE id IN (...)` gives no ordering guarantee.
     const items = ids.map((id) => byId.get(id)).filter((r): r is MediaRow => !!r).map(toMediaDto);
-    engagement.attachFavorites(items); // all true by construction, but keeps the field consistent
+    decorateMedia(ctx, items); // favorites all true by construction; stacks attached too
 
     return reply.send({ items, total, offset, limit });
   });

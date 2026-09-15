@@ -11,6 +11,8 @@ import { SqliteRandomSelectionService } from "../../src/media/random-selection-s
 import type { ScannerService } from "../../src/scanner/scanner-service.js";
 import type { TranscodeWorker } from "../../src/media/transcode-worker.js";
 import type { AppPaths } from "../../src/config/paths.js";
+import { StackService } from "../../src/stacks/stack-service.js";
+import { SettingsRepo } from "../../src/db/settings-repo.js";
 
 const logger = { info() {}, warn() {}, error() {}, debug() {} } as unknown as import("pino").Logger;
 
@@ -47,6 +49,7 @@ export async function createTestApp() {
     randomSelection: new SqliteRandomSelectionService(db),
     transcodeWorker: {} as TranscodeWorker,
     analysisWorker,
+    stacks: new StackService(db, logger, new SettingsRepo(db)),
   };
   const app: FastifyInstance = await buildApp(ctx);
   return {
