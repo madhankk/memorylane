@@ -213,6 +213,7 @@ npm run make                # full: .dmg (macOS) / Squirrel .exe (Windows) in de
 
 | Symptom | Cause / fix |
 |---|---|
+| Settings page stuck on *Loading…*, or some `/api/...` calls return 404 while others work | Two MemoryLane servers on port 4280 — an older checkout's `npm start` (bound to `127.0.0.1`) is still running alongside the new one (bound to `0.0.0.0`), and your browser reaches the old API with the new UI. `lsof -nP -iTCP:4280 -sTCP:LISTEN` (macOS/Linux) / `netstat -ano \| findstr :4280` (Windows) shows both; stop the old PID and reload. |
 | `Cannot find module 'ffmpeg-static'` on typecheck/start | `node_modules` older than the lockfile → `npm install` again. |
 | RAW files show `!` badge, Reports empty | ExifTool not on PATH (`exiftool -ver` in a fresh terminal). Install, restart the server, run **Retry failed** under Settings › Analysis or rescan. |
 | Settings › AI: *Not connected — fetch failed* | Sidecar not running or on another port; check `curl http://127.0.0.1:4281/v1/health`. |

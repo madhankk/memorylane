@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { PersonDto } from "@memorylane/shared";
 import { api, ApiError } from "../api/client";
+import AnalysisProgress from "../components/AnalysisProgress";
 
 // Everyone the library knows about, unnamed "Person N"s first so the user
 // sees what still needs a name. Off = a short explanation, not an empty grid.
@@ -65,8 +66,14 @@ export default function PeoplePage() {
         </div>
       )}
 
+      {!off && (
+        <div className="max-w-2xl">
+          <AnalysisProgress only={["faces"]} />
+        </div>
+      )}
+
       {persons && persons.length === 0 && !off && (
-        <p className="text-sm text-muted">No people yet. Faces are found as the AI queue works through your library (Settings › Analysis); people appear once a few faces of the same person turn up.</p>
+        <p className="text-sm text-muted">No people yet - they appear once a few faces of the same person have been found. Use "Find people now" to group what's been found so far.</p>
       )}
 
       {persons && persons.length > 0 && (

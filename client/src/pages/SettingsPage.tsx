@@ -6,6 +6,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useTheme, THEMES, type Theme } from "../hooks/useTheme";
 import { formatBytes } from "../utils/format";
 import TranscodeCandidatesPanel from "../components/TranscodeCandidatesPanel";
+import AnalysisProgress from "../components/AnalysisProgress";
 
 function scanRootSummary(root: ScanRootDto): string {
   const { stats } = root;
@@ -182,35 +183,11 @@ export default function SettingsPage() {
   const [openTranscodeRootId, setOpenTranscodeRootId] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisStatusDto | null>(null);
-  const analysisPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { theme, setTheme } = useTheme();
 
-  const analysisBusy = (a: AnalysisStatusDto | null) =>
-    !!a && a.analyzers.some((x) => x.counts.pending > 0 || x.counts.running > 0);
-
-  // Poll while the background analysis queue has work; stop once it drains
-  // (same idea as the scan-status poll below, but independent of it).
-  useEffect(() => {
-    let active = true;
-    const tick = async () => {
-      const st = await api.analysis.status();
-      if (active) setAnalysis(st);
-      return st;
-    };
-    void tick();
-    analysisPollRef.current = setInterval(async () => {
-      const st = await tick();
-      if (!analysisBusy(st) && analysisPollRef.current) {
-        clearInterval(analysisPollRef.current);
-        analysisPollRef.current = null;
-      }
-    }, 3000);
-    return () => {
-      active = false;
-      if (analysisPollRef.current) clearInterval(analysisPollRef.current);
-    };
-  }, []);
-
+  // Live counts come from the AnalysisProgress component (it owns the polling);
+  // this copy only drives the provider card and the Retry button.
+  const [analysisKey, setAnalysisKey] = useState(0);
   const [recomputeMsg, setRecomputeMsg] = useState<string | null>(null);
   const recomputeStacks = async () => {
     const res = await api.stacks.recompute();
@@ -219,7 +196,7 @@ export default function SettingsPage() {
 
   const retryAnalysis = async () => {
     await api.analysis.retryFailed();
-    setAnalysis(await api.analysis.status());
+    setAnalysisKey((k) => k + 1); // remount the progress view so it polls again
   };
 
   const loadAll = async () => {
@@ -605,42 +582,12 @@ export default function SettingsPage() {
           Background processing that runs after scans - full EXIF capture for Reports. Pauses automatically while a scan
           is running.
         </p>
-        {analysis && (
-          <div className="flex flex-col gap-2 text-sm">
-            {analysis.paused && <p className="text-muted">Paused while a scan is running.</p>}
-            <table className="w-full max-w-xl text-left">
-              <thead className="text-xs uppercase tracking-wide text-muted">
-                <tr>
-                  <th className="py-1 pr-3 font-medium">Analyzer</th>
-                  <th className="py-1 pr-3 font-medium">Done</th>
-                  <th className="py-1 pr-3 font-medium">Pending</th>
-                  <th className="py-1 pr-3 font-medium">Failed</th>
-                  <th className="py-1 font-medium">Unsupported</th>
-                </tr>
-              </thead>
-              <tbody className="text-ink tabular-nums">
-                {analysis.analyzers.map((a) => (
-                  <tr key={a.key} className="border-t border-border">
-                    <td className="py-1.5 pr-3">
-                      {a.key} <span className="text-xs text-faint">{a.version}</span>
-                      {!a.enabled && <span className="ml-2 text-xs text-muted">(off)</span>}
-                      {a.backoffUntil && <span className="ml-2 text-xs text-amber-600">waiting for sidecar</span>}
-                    </td>
-                    <td className="py-1.5 pr-3">{a.counts.done.toLocaleString()}</td>
-                    <td className="py-1.5 pr-3">{(a.counts.pending + a.counts.running).toLocaleString()}</td>
-                    <td className="py-1.5 pr-3">{a.counts.failed.toLocaleString()}</td>
-                    <td className="py-1.5">{a.counts.unsupported.toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {analysis.analyzers.some((a) => a.counts.failed + a.counts.unsupported > 0) && (
-              <div>
-                <button onClick={() => void retryAnalysis()} className={buttonClass}>
-                  Retry failed
-                </button>
-              </div>
-            )}
+        <AnalysisProgress key={analysisKey} onStatus={setAnalysis} />
+        {analysis && analysis.analyzers.some((a) => a.counts.failed + a.counts.unsupported > 0) && (
+          <div className="mt-3">
+            <button onClick={() => void retryAnalysis()} className={buttonClass}>
+              Retry failed
+            </button>
           </div>
         )}
       </section>
@@ -696,7 +643,7 @@ export default function SettingsPage() {
             onClick={async () => {
               if (window.confirm("Delete all face data? People, faces and their vectors are removed. Photos are untouched. Faces are re-detected only if People is on.")) {
                 await api.persons.deleteAllData();
-                setAnalysis(await api.analysis.status());
+                setAnalysisKey((k) => k + 1);
               }
             }}
           >
