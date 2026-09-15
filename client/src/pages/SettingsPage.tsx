@@ -7,6 +7,7 @@ import { useTheme, THEMES, type Theme } from "../hooks/useTheme";
 import { formatBytes } from "../utils/format";
 import TranscodeCandidatesPanel from "../components/TranscodeCandidatesPanel";
 import AnalysisProgress from "../components/AnalysisProgress";
+import { useConfirm } from "../components/ConfirmDialog";
 
 function scanRootSummary(root: ScanRootDto): string {
   const { stats } = root;
@@ -186,12 +187,18 @@ export default function SettingsPage() {
   const moveData = async () => {
     const target = movePath.trim();
     if (!target) return;
-    if (
-      !window.confirm(
-        `Copy MemoryLane's cache and index to\n${target}\n\nThe copy runs now (a minute or two per GB); MemoryLane keeps working meanwhile. You'll then restart it to use the new location. The old copy stays until you delete it.`,
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: "Move MemoryLane's data?",
+      message: (
+        <>
+          Everything (database, thumbnails, previews, vectors, face crops) is copied to <code className="text-ink">{target}</code> now - about a
+          minute per GB, and MemoryLane keeps working meanwhile. Afterwards you restart it to use the new location; the old copy stays until
+          you delete it.
+        </>
+      ),
+      confirmLabel: "Copy data",
+    });
+    if (!ok) return;
     setMoving(true);
     setMoveError(null);
     try {
@@ -211,6 +218,7 @@ export default function SettingsPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisStatusDto | null>(null);
   const { theme, setTheme } = useTheme();
+  const { confirm, notice } = useConfirm();
 
   // Live counts come from the AnalysisProgress component (it owns the polling);
   // this copy only drives the provider card and the Retry button.
@@ -299,7 +307,18 @@ export default function SettingsPage() {
   };
 
   const removeRoot = async (root: ScanRootDto) => {
-    if (!confirm(`Remove "${root.path}" from MemoryLane? Original files are never touched - this only removes MemoryLane's index for this folder.`)) return;
+    const ok = await confirm({
+      title: "Remove this folder from MemoryLane?",
+      message: (
+        <>
+          <code className="text-ink">{root.path}</code> is removed from the library. Original files are never touched - this only removes
+          MemoryLane's index for the folder.
+        </>
+      ),
+      confirmLabel: "Remove folder",
+      danger: true,
+    });
+    if (!ok) return;
     await api.scanRoots.remove(root.id);
     setScanRoots((prev) => prev.filter((r) => r.id !== root.id));
   };
@@ -642,15 +661,16 @@ export default function SettingsPage() {
             <span className="text-muted">Face model</span>
             <select
               value={settings.faceModel}
-              onChange={(e) => {
+              onChange={async (e) => {
                 const next = e.target.value as SettingsDto["faceModel"];
                 if (next === settings.faceModel) return;
-                if (
-                  window.confirm(
-                    "Switch face model? Every photo is re-analysed with the new model (a few minutes per few thousand photos). Names and your confirmed/rejected faces are kept.",
-                  )
-                )
-                  void updateSchedule({ faceModel: next });
+                const ok = await confirm({
+                  title: "Switch face model?",
+                  message:
+                    "Every photo is re-analysed with the new model - a few minutes per few thousand photos, and a one-time download the first time. Names and your confirmed/rejected faces are kept. Press Regroup once it finishes.",
+                  confirmLabel: "Switch model",
+                });
+                if (ok) void updateSchedule({ faceModel: next });
                 else e.target.value = settings.faceModel;
               }}
               className={inputClass}
@@ -722,10 +742,14 @@ export default function SettingsPage() {
             className={buttonClass}
             title="Regroup all automatically grouped faces with the current settings. Names and your ✓/✗ answers are kept."
             onClick={async () => {
-              if (window.confirm("Regroup faces with the current strictness? Names and your confirmed/rejected faces are kept; automatic groupings are redone.")) {
-                const r = await api.persons.regroup();
-                window.alert(`Regrouped: ${r.persons} new people, ${r.assigned} faces assigned.`);
-              }
+              const ok = await confirm({
+                title: "Regroup faces?",
+                message: "Automatic groupings are redone with the current strictness. Names and your confirmed/rejected faces are kept.",
+                confirmLabel: "Regroup",
+              });
+              if (!ok) return;
+              const r = await api.persons.regroup();
+              await notice({ title: "Regrouped", message: `${r.persons} new ${r.persons === 1 ? "person" : "people"}, ${r.assigned} faces assigned.` });
             }}
           >
             Regroup with these settings
@@ -733,7 +757,13 @@ export default function SettingsPage() {
           <button
             className={`${buttonClass} text-red-600`}
             onClick={async () => {
-              if (window.confirm("Delete all face data? People, faces and their vectors are removed. Photos are untouched. Faces are re-detected only if People is on.")) {
+              const ok = await confirm({
+                title: "Delete all face data?",
+                message: "People, faces and their vectors are removed. Your photos are untouched. Faces are detected again only while People is on.",
+                confirmLabel: "Delete face data",
+                danger: true,
+              });
+              if (ok) {
                 await api.persons.deleteAllData();
                 setAnalysisKey((k) => k + 1);
               }

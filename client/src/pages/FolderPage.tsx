@@ -9,6 +9,7 @@ import MediaGrid from "../components/MediaGrid";
 import MediaTypeFilter from "../components/MediaTypeFilter";
 import Viewer from "../components/Viewer";
 import StackPanel from "../components/StackPanel";
+import { useConfirm } from "../components/ConfirmDialog";
 import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
 
 const PAGE_SIZE = 200;
@@ -35,6 +36,7 @@ export default function FolderPage() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [stackError, setStackError] = useState<string | null>(null);
+  const { confirm } = useConfirm();
   const loadingMoreRef = useRef(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -136,11 +138,13 @@ export default function FolderPage() {
     if (!folder) return;
     setMenuOpen(false);
     const itemsPhrase = folder.recursiveMediaCount > 0 ? ` and ${folder.recursiveMediaCount.toLocaleString()} indexed item(s) in it` : "";
-    if (
-      !confirm(
-        `Ignore "${folder.name}"?\n\nMemoryLane will stop scanning this folder${itemsPhrase} will be removed from your library. Original files on disk are never touched - you can remove it from the ignore list in Settings later and rescan to bring it back.`,
-      )
-    ) {
+    const ok = await confirm({
+      title: `Ignore "${folder.name}"?`,
+      message: `MemoryLane will stop scanning this folder${itemsPhrase} will be removed from your library. Original files on disk are never touched - you can remove it from the ignore list in Settings later and rescan to bring it back.`,
+      confirmLabel: "Ignore folder",
+      danger: true,
+    });
+    if (!ok) {
       return;
     }
     setIgnoring(true);

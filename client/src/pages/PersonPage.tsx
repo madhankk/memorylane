@@ -6,6 +6,7 @@ import FaceChip from "../components/FaceChip";
 import MediaGrid from "../components/MediaGrid";
 import Viewer from "../components/Viewer";
 import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
+import { useConfirm } from "../components/ConfirmDialog";
 
 const PAGE_SIZE = 200;
 const inputClass = "rounded-lg border border-border bg-page px-3 py-1.5 text-ink outline-none focus:border-accent";
@@ -27,6 +28,7 @@ export default function PersonPage() {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadingMoreRef = useRef(false);
+  const { confirm } = useConfirm();
 
   const filters = { personIds: String(personId), from: from || undefined, to: to || undefined };
 
@@ -120,7 +122,13 @@ export default function PersonPage() {
               onChange={async (e) => {
                 const target = Number(e.target.value);
                 if (!target) return;
-                if (window.confirm(`Merge ${person.displayName} into ${others.find((o) => o.id === target)?.displayName}? All their faces move over.`)) {
+                const into = others.find((o) => o.id === target)?.displayName;
+                const ok = await confirm({
+                  title: `Merge into ${into}?`,
+                  message: `All of ${person.displayName}'s faces move to ${into}. This can't be split apart automatically afterwards.`,
+                  confirmLabel: "Merge",
+                });
+                if (ok) {
                   const merged = await api.persons.merge(target, personId);
                   navigate(`/people/${merged.id}`, { replace: true });
                 } else e.target.value = "";
