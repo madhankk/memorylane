@@ -6,7 +6,13 @@ Without it, MemoryLane works exactly as before; those three features simply show
 
 ## Run it
 
-Python 3.11+ (tested on 3.13). The first start downloads the model (~350 MB) into the Hugging Face cache.
+From the repo root, on any OS:
+
+```bash
+npm run ai
+```
+
+That finds a Python 3.11+, creates `.venv` here, installs on first run, and starts the service. Manual equivalent (Python 3.11+, tested on 3.13; the first start downloads the model, ~350 MB):
 
 macOS / Linux:
 

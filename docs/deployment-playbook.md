@@ -10,9 +10,9 @@
 
 | You are… | Recommended launch | Why |
 |---|---|---|
-| **Testing / reviewing** (most people) | **Production-style**: `npm run build` → `npm start`, plus the sidecar in a second terminal | Exactly what end users run; one server on `:4280` serving API + UI. |
-| **Developing the server** | `npm run dev` (tsx watch) + sidecar | Restarts on every server file save. UI is the last built one. |
-| **Developing the UI** | `npm run dev` + `npm run dev:client` (Vite on `:5173`) + sidecar | Hot reload; Vite proxies `/api` to `:4280`. Open `http://127.0.0.1:5173`. |
+| **Testing / reviewing** (most people) | **Production-style**: `npm run build` → `npm start`, plus `npm run ai` in a second terminal | Exactly what end users run; one server on `:4280` serving API + UI. |
+| **Developing the server** | `npm run dev` (tsx watch) + `npm run ai` | Restarts on every server file save. UI is the last built one. |
+| **Developing the UI** | `npm run dev` + `npm run dev:client` (Vite on `:5173`) + `npm run ai` | Hot reload; Vite proxies `/api` to `:4280`. Open `http://127.0.0.1:5173`. |
 | **Testing the Windows/macOS installer** | Desktop tray app (`desktop/`), see §8 | Only when the packaged experience itself is under test. |
 
 Two processes in every AI-enabled setup: the **MemoryLane server** (Node) and the **`memorylane-ai` sidecar** (Python). The sidecar is optional — without it the app works fully; Find similar, Describe-it search, stacks-v2 refinement and People just report "AI not available".
@@ -53,7 +53,7 @@ macOS grants access to **network** and **removable** volumes per app. Launch `np
 
 ### Both
 
-- ~1 GB free for dependencies + the CLIP model (~350 MB, downloaded once into the Hugging Face cache: `~/.cache/huggingface` / `%USERPROFILE%\.cache\huggingface`).
+- ~1.5 GB free for dependencies + models (CLIP ~350 MB in `~/.cache/huggingface`, face models ~38 MB in `~/.cache/memorylane-ai`; Windows: `%USERPROFILE%\.cache\...`). Downloaded once.
 - A test photo folder. Anything works; for burst/stack testing use a real camera burst (same body, frames < 2 s apart).
 
 ---
@@ -71,39 +71,28 @@ npm install
 
 ---
 
-## 4. Start the AI sidecar (optional, recommended for testing Phase 3)
+## 4. Start the AI sidecar (optional — needed for Find similar, Describe-it search, stacks v2 and People)
 
-Open a **second terminal** and leave it running.
+Open a **second terminal**, leave it running:
 
-macOS / Linux:
 ```bash
-cd memorylane/memorylane-ai
-python3 --version                        # needs 3.11+ (3.13 verified); if it says 3.9, use $(brew --prefix python@3.12)/bin/python3.12 below
-python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
-.venv/bin/memorylane-ai
+npm run ai
 ```
 
-Windows (PowerShell):
-```powershell
-cd memorylane\memorylane-ai
-py -3.12 -m venv .venv
-.venv\Scripts\pip install -e ".[dev]"
-.venv\Scripts\memorylane-ai
-```
-
-First start downloads the CLIP model (~350 MB) and then prints `Uvicorn running on http://127.0.0.1:4281`; the face models (~38 MB) download on first use once People is enabled. Check it:
+That one command works on macOS, Windows and Linux: it finds a Python 3.11+ (`python3`, or `py -3` on Windows), creates `memorylane-ai/.venv` if missing, installs the package on first run (or when its dependencies change), and starts the service. First start also downloads the CLIP model (~350 MB); the face models (~38 MB) download the first time People runs. You'll see `Uvicorn running on http://127.0.0.1:4281`. Check it:
 
 ```bash
 curl http://127.0.0.1:4281/v1/health
-# {"ok":true,"device":"cpu","models":{"image_embed":{"id":"clip-vit-base-patch32@1","dim":512},...}}
+# {"ok":true,"device":"cpu","models":{"image_embed":{"id":"clip-vit-base-patch32@1","dim":512},"faces":{"id":"yunet-sface@1","dim":128},...}}
 ```
 
+Environment variables pass straight through (`MEMORYLANE_AI_PORT=4282 npm run ai`, `MEMORYLANE_AI_DEVICE=cuda npm run ai`, …). Manual setup, Docker, and the full variable table are in [memorylane-ai/README.md](../memorylane-ai/README.md).
+
 Notes
-- CPU is the default and does ~50 images/s on an M2 Max — a 50k-photo library embeds in under 20 minutes. GPU is optional: NVIDIA → `pip install onnxruntime-gpu` + `MEMORYLANE_AI_DEVICE=cuda`; Windows without CUDA → `pip install onnxruntime-directml` + `MEMORYLANE_AI_DEVICE=dml`.
-- Docker alternative: `docker build -t memorylane-ai . && docker run -p 4281:4281 -v memorylane-hf:/root/.cache/huggingface memorylane-ai`.
-- Keep it on `127.0.0.1` unless the server runs on another machine; then bind `MEMORYLANE_AI_HOST=0.0.0.0`, set `MEMORYLANE_AI_TOKEN` on both sides, and point the server at it with `MEMORYLANE_AI_URL`.
-- Sidecar tests: `.venv/bin/pytest -q` (macOS) / `.venv\Scripts\pytest -q` (Windows) → 9 passed.
+- CPU is the default and does ~50 images/s (embeddings) and ~10 images/s (faces) on an M2 Max. GPU is optional: NVIDIA → `pip install onnxruntime-gpu` in the venv + `MEMORYLANE_AI_DEVICE=cuda`; Windows without CUDA → `pip install onnxruntime-directml` + `MEMORYLANE_AI_DEVICE=dml`.
+- Keep it on `127.0.0.1` unless the server runs on another machine; then set `MEMORYLANE_AI_HOST=0.0.0.0` and `MEMORYLANE_AI_TOKEN` on both sides, and point the server at it with `MEMORYLANE_AI_URL`.
+- **Launch it from the same kind of terminal as the server** (see the macOS note in §2) — the sidecar itself never touches your photo folders, but the venv lives inside the repo.
+- Sidecar tests: `memorylane-ai/.venv/bin/pytest -q` (macOS/Linux) / `memorylane-ai\.venv\Scripts\pytest -q` (Windows) → 9 passed.
 
 ---
 
@@ -130,8 +119,9 @@ npm run dev:client     # optional, Vite UI on :5173 with hot reload
 
 1. The first page is **Setup** — create the single admin account. Setup is only allowed from the machine itself (loopback) unless `MEMORYLANE_ALLOW_REMOTE_SETUP=1`.
 2. **Settings › Scan Folders** → add your photo folder → **Run Scan Now**. Thumbnails and full EXIF are written during the scan.
-3. Watch **Settings › Analysis**: `exif_full`, `phash`, and (if the sidecar is up) `embed_image` counts move from Pending to Done. Stacks recompute once the queue drains.
+3. Watch **Settings › Analysis**: progress bars for *EXIF metadata*, *Visual fingerprints* and (with the sidecar up) *AI embeddings* run to 100 %, with an ETA while working. Stacks recompute once the queue drains.
 4. **Settings › AI** shows `Connected to http://127.0.0.1:4281 · clip-vit-base-patch32@1 · cpu`. If it says *Not connected*, start the sidecar (§4) — queued photos are analysed automatically when it appears.
+5. Optional — **Settings › People** → *Find and group faces*. The *Faces* bar starts moving; people appear on the **People** page after the queue drains (lower *Faces needed to create a person* to 2 for a small test library).
 
 ### Where the data lives (safe to delete; a rescan rebuilds everything)
 
@@ -165,9 +155,10 @@ $env:MEMORYLANE_DATA_DIR="$env:TEMP\ml-test"; $env:MEMORYLANE_PORT="4299"; npm s
 | `MEMORYLANE_AI_URL` | `http://127.0.0.1:4281` | Where the sidecar is |
 | `MEMORYLANE_AI_TOKEN` | unset | Must match the sidecar's token if set |
 | `MEMORYLANE_AI_MODEL` | `clip-vit-base-patch32@1` | Must equal the id the sidecar reports, or the server refuses to mix vectors |
+| `MEMORYLANE_AI_FACE_MODEL` | `yunet-sface@1` | Same rule for the face model |
 | `LOG_LEVEL` | `info` | pino level |
 
-In-app settings (Settings page): scan schedule, stack thresholds (`gap seconds`, `max hash distance`, `min cosine`), AI on/off.
+In-app settings (Settings page): scan schedule; AI on/off; People on/off, match strictness, faces needed per person; stack thresholds (gap seconds, max hash distance, min cosine).
 
 ---
 
@@ -178,7 +169,7 @@ Run through this after every fresh setup (≈10 minutes). All steps have passed 
 | # | Check | macOS | Windows |
 |---|---|---|---|
 | 1 | `npm test` → all green; `npm run typecheck` clean | ✅ | ☐ |
-| 2 | Sidecar `pytest -q` → 9 passed; `/v1/health` returns `ok: true` | ✅ | ☐ |
+| 2 | `npm run ai` starts the sidecar; `/v1/health` returns `ok: true`; `pytest -q` → 9 passed | ✅ | ☐ |
 | 3 | Setup account → add folder → scan completes; thumbnails render in Browse | ✅ | ☐ |
 | 4 | Settings › Analysis: `exif_full` / `phash` / `embed_image` (and `faces` once People is on) reach Done = scanned count | ✅ | ☐ |
 | 5 | **Reports**: facets populate; clicking a lens/camera narrows the grid and the URL; Export CSV downloads | ✅ | ☐ |
@@ -224,13 +215,13 @@ npm run make                # full: .dmg (macOS) / Squirrel .exe (Windows) in de
 | Settings › AI: *Not connected — fetch failed* | Sidecar not running or on another port; check `curl http://127.0.0.1:4281/v1/health`. |
 | Settings › AI: *Sidecar model X does not match configured Y* | `MEMORYLANE_AI_MODEL` (server) ≠ model the sidecar loaded (`MEMORYLANE_AI_MODEL` repo on the sidecar). Align them; vectors are never mixed across models. |
 | `embed_image` stuck at Pending, row says *waiting for sidecar* | Backoff after an outage (5 s → 5 min). It resumes automatically; restarting the server resets the backoff immediately. |
-| Sidecar fails on first start with an SSL / download error | No access to huggingface.co. Download once on a connected machine and copy `~/.cache/huggingface/hub/models--Xenova--clip-vit-base-patch32` over, or set `HF_HUB_OFFLINE=1` after copying. |
-| Windows: `py` not found | Use `python` instead, or reinstall Python with "Add to PATH". |
-| Windows: sidecar `pip install` builds something | It shouldn't — all deps are prebuilt for 3.11–3.13 x64. Check `py -3.12 --version` isn't 3.14+ or 32-bit. |
+| Sidecar fails on first start with an SSL / download error | No access to huggingface.co / github.com. Download once on a connected machine and copy `~/.cache/huggingface/hub/models--Xenova--clip-vit-base-patch32` and `~/.cache/memorylane-ai/` over, then set `HF_HUB_OFFLINE=1`. |
+| `npm run ai` says *No Python 3.11+ found* | Install Python 3.11–3.13 (`brew install python@3.12` / `winget install Python.Python.3.12`, ticking "Add to PATH"), open a new terminal, run again. |
+| Windows: `npm run ai` compiles something during install | It shouldn't — all deps are prebuilt for 3.11–3.13 x64. Check the Python it picked (printed on the first line) isn't 3.14+ or 32-bit. |
 | Port 4280/4281 in use | `MEMORYLANE_PORT`, `MEMORYLANE_AI_PORT` (+ `MEMORYLANE_AI_URL` on the server). |
 | Want to start over | Stop both processes, delete the data directory (§5), start again, rescan. Photos are never touched. |
 
-Logs: server → terminal (and `<data>/logs/`); sidecar → its terminal.
+Logs: both processes log to their own terminal.
 
 ---
 
