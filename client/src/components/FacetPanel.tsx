@@ -29,7 +29,7 @@ export default function FacetPanel({ title, buckets, selected, onSelect }: Facet
                   aria-pressed={isSelected}
                   title={b.label}
                   className={`relative flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-sm transition ${
-                    isSelected ? "bg-accent text-page" : "text-ink hover:bg-hover"
+                    isSelected ? "bg-photo-shell text-white" : "text-ink hover:bg-hover"
                   }`}
                 >
                   {!isSelected && (
