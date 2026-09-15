@@ -2,7 +2,7 @@
 
 **Status:** Draft for discussion — 2026-09-15
 **Builds on:** `2026-09-14-media-intelligence-design.md` (Phases 1–4, all merged to `main`: full EXIF, stacks, CLIP similarity/search, People).
-**Theme:** A library that spans decades is only valuable if you can *ask it things*, *keep it tidy*, and *make things from it*. This document lays out the features that turn the index we now have into that — conversational search, places, timelines and "best of" mining, housekeeping (delete/hide/export), virtual albums, sharing, light editing, collages and slideshows, and opt-in AI transformations — with the architecture each needs and what, if anything, has to leave the machine.
+**Theme:** A library that spans decades is only valuable if you can *ask it things*, *keep it tidy*, and *make things from it*. This document lays out the features that turn the index we now have into that — conversational search, places, timelines and "best of" mining, housekeeping (delete/hide/export), virtual albums, sharing, light editing, collages, slideshows and video reels, tags and bulk geotagging, display on TVs and frames, an MCP connector for the user's own AI tools, Home-page performance, and opt-in AI transformations — with the architecture each needs and what, if anything, has to leave the machine.
 
 **Structure:** the core stays small (index, analysis pipeline, query builder, UI shell); everything in §2 is delivered as a **plugin** against the extension points in §3, so capabilities can be added — including ones that need paid API keys or a GPU — without the core growing.
 
@@ -230,6 +230,60 @@ Small, self-contained improvements to the existing Browse/Home experience. None 
 
 **Effort:** small for `/tv` and the feed, medium for the rest, large only for native Apple TV. **Data leaving the machine:** none — everything is LAN; Cast custom receivers are served from our own server too.
 
+### P. Loading performance — Home first (core)
+
+**What:** Home should paint in well under a second on a 200k-item library, on every visit, even though every visit shows a fresh random set.
+
+**Where the time goes today (read from the code, to be confirmed with numbers):** Home fires four requests — `folders.listTop`, `home.summary`, `memories.random(30)`, `onThisDay(30)` — and each **top-level folder card** runs `COUNT(*)` twice plus `ORDER BY RANDOM() LIMIT 1` over the folder's whole subtree (a year folder = a sort of every photo in that year, per card, per load). `home.summary` does three library-wide aggregates plus another `ORDER BY RANDOM()` over all photos. Then 60–100 thumbnails load over HTTP/1.1's six connections — and because the random sets change every time, the browser's thumbnail cache rarely helps.
+
+**Plan, in order of payoff:**
+1. **Measure before touching anything.** `Server-Timing` headers on the Home routes and a `npm run bench:home` script against a synthetic 200k-row DB, so each step below has a before/after number. Target: Home interactive < 500 ms server-side on 200k items.
+2. **Pick pools instead of `ORDER BY RANDOM()`.** A `pick_pools(kind, key, media_id)` table refreshed in the background (after scans, on the analysis worker's idle hook, and on a timer): `hero` (≈200 ids honouring the §N preferences), `folder-cover:<folderId>` (16 ids each), `memories` (≈300), `on-this-day:<mm-dd>` (built nightly for the next day). Routes sample from the pool — sorting 200 rows is free — and fall back to today's query only when a pool is empty. Random-*looking* stays random; it just isn't computed from the full table on every request.
+3. **Folder stats table.** `folder_stats(folder_id, media_count, subtree_media_count, child_folder_count, total_bytes)` maintained by the scanner (incrementally on add/remove/move) so a card is one indexed read, and Home/Reports totals come from a summed row rather than `COUNT(*)`.
+4. **One round trip.** `GET /api/home` returns folders, summary, memories and on-this-day together, and **includes the next set**: the client keeps set *K+1* in memory and prefetches its thumbnails during idle time (`requestIdleCallback`, low `fetchpriority`), then swaps it in on the next visit — this is the "pre-cached random set" idea: the visit after this one is instant, and the random feel is preserved because the swap happens off-screen.
+5. **Thumbnail delivery.** Lazy-load below the fold (IntersectionObserver in `MediaGrid`, if not already), `fetchpriority="high"` for the hero and first row, `decoding="async"` everywhere, WebP thumbnails at the sizes the grid actually renders, and — the biggest single lever for many small files — serve over **HTTP/2** when TLS is configured (Fastify supports `http2: true`); on plain HTTP, keep first-screen requests under ~30.
+6. **Same medicine for Folder and Reports pages:** `buildMediaQuery` listings paginate already; the facet counts on Reports should read `folder_stats`/covering indexes on `media_exif` rather than aggregate the joined table per facet per keystroke (debounce + indexed columns; measure first).
+
+**Effort:** small–medium, no new dependencies. **Data leaving the machine:** none.
+
+### Q. Local MCP connector (plugin)
+
+**What:** Expose the library to the user's own AI tools — Claude Desktop, Claude Code, Cursor, and anything else that speaks the **Model Context Protocol** — so they can ask "find the photos of Arjun from the Iceland trip and put them in an album" from the assistant they already use, with no API key configured inside MemoryLane.
+
+**How:** the same tool registry §A defines (`library_summary`, `list_people`, `find_photos`, `refine`, plus `get_photo` returning metadata and a thumbnail as image content, `open_in_viewer`, `create_album`, `add_tags`, `export`) is served two ways: in-app through the `LlmProvider` for Ask, and over MCP for external clients. Transports: **Streamable HTTP** on the running server at `/mcp` (token from Settings › Integrations, the standard for desktop clients now) and a tiny **stdio** bridge (`npx memorylane-mcp`) for clients that only launch local processes. Resources: `memorylane://album/<id>`, `memorylane://person/<id>` so the assistant can reference things by link. Read-only tools by default; mutating tools (albums, tags, marks for deletion, export) are enabled per client token, and every mutation goes through the same staged paths as the UI (§J) — nothing an assistant does can unlink a file.
+
+**Why it matters:** it makes most of Ask free to deliver — the reasoning runs in the user's subscription, MemoryLane only answers tool calls — and it is the first extension point that third parties can build on without touching our code.
+
+**Effort:** small–medium (the MCP TypeScript SDK does the protocol; the work is the tool registry, which Ask needs anyway). **Data leaving the machine:** whatever the connected assistant is — metadata always, thumbnails only if `get_photo` is allowed; labelled per token.
+
+### R. Tags (core)
+
+**What:** User tags on any photo/video/stack — "portfolio", "print", "grandma", "needs-edit" — with a **Tags** section listing every tag with a count and cover, click-through to a grid, tag facet on Reports, and tag filters everywhere (`buildMediaQuery`, Ask, MCP, virtual albums).
+
+**How:** `tags(id, name UNIQUE, color, created_at)` and `media_tags(media_id, tag_id, source user|exif|plugin, PRIMARY KEY (media_id, tag_id))`. **Existing keywords become tags for free:** IPTC/XMP keywords are already promoted to `media_exif.keywords` (Phase 1), so an import step creates `source=exif` tags from them — anyone coming from Lightroom/Bridge sees their keyword taxonomy on day one, marked as imported and never auto-deleted. UI: a tag chip row in the Viewer with autocomplete, **bulk tag/untag** from any selection or a whole stack/folder, rename/merge/delete on the Tags page, keyboard shortcut for the last-used tag while stepping through a folder. Flat namespace; `trip/iceland`-style prefixes work as a convention without a hierarchy table. Optional **write-back** as a `.xmp` sidecar next to the original (export action, never in-place) so tags travel to other tools.
+
+**Effort:** small. **Data leaving the machine:** none.
+
+### S. Bulk geotagging (core, with Places)
+
+**What:** Most DSLR/mirrorless bodies have no GPS, so a large share of the archive has no location. Let the user fix that in bulk: select a folder, date range, stack, trip or arbitrary selection → **Set location** → the photos get coordinates and, via §B, place names.
+
+**How:** never rewrite the file; store `media_location_overrides(media_id, lat, lon, altitude, source user|track|inferred, place_id, set_at)` which the `places` analyzer and every reader prefer over EXIF GPS. Three ways to supply the location:
+1. **Pick a place** — type a name (offline GeoNames search from §B) or drop a pin on a map (the one place a tile server is needed; offline fallback is name search only), or "same as this photo".
+2. **GPX track sync** — the photographers' standard: import a `.gpx` from a phone/watch, match photos by timestamp with a clock-offset control (Lightroom's "Map › Load Tracklog" flow). Also works with **another camera's GPS**: "use my phone's photos as the track" — phone shots from the same day already carry GPS, so interpolate DSLR positions between them by time.
+3. **Inferred suggestions** — "these 214 photos have no GPS but sit between two geotagged photos 40 minutes apart in the same place — apply?" shown as a one-click review, never silent.
+Overrides show in Reports as a "Location source" facet; write-back to `.xmp` sidecar is an export option, like tags.
+
+**Effort:** medium. **Data leaving the machine:** none (map tiles are a user-configured provider, off by default).
+
+### T. Combine short videos into one (Create)
+
+**What:** The typical day out yields twenty 5–15-second clips. One click turns a folder, a day, a stack of videos or a selection into a single **reel**: clips in capture order, normalised to one resolution/codec/fps, short crossfades, an optional title card per day/place ("Reykjavík · 13 May 2016") from the metadata we already have.
+
+**How:** part of §H (Create) — bundled `ffmpeg-static` does everything: transcode each clip to a common intermediate (H.264 1080p or the source resolution ceiling, 30 fps, AAC), `concat` with `xfade`/`acrossfade`, burn title cards rendered by Sharp. Options kept minimal: max length per clip (trim to first N seconds), include/exclude Live Photo companion videos (normally hidden), music track from a file. Output lands in `_MemoryLane-Creations/` as a new indexed video with `derived_from` provenance — the originals are untouched. A quiet suggestion on folder pages when a folder has ≥ 5 clips under 20 s ("Make a reel of today?") is the discovery hook; the CLI-free rule stays: the user never sees ffmpeg.
+
+**Effort:** small–medium on top of H. **Data leaving the machine:** none.
+
 ---
 
 ## 3. Plugin architecture — the extension points
@@ -291,6 +345,8 @@ Rules that keep this from becoming a mess:
 | `ai-transform` | `image-edit` provider slot, AI badge/provenance | image provider (API key or GPU) | pixels (cloud) |
 | `apple-photos` (macOS) | scan-root kind, catalogue sync (osxphotos in the sidecar), People/albums/favourites import, iCloud state + viewer actions, optional PhotoKit helper | Photos/Full Disk Access permission | none |
 | `tv` | `/tv` 10-foot web UI, device pairing, remote rating | — | none |
+| `mcp` | MCP server (`/mcp` Streamable HTTP + stdio bridge) over the shared tool registry | client tokens | metadata (+ thumbnails if allowed) |
+| `geotag` | location overrides, place picker, GPX/phone-track sync, inferred suggestions | `places` | none (tiles optional) |
 | `dlna`, `cast`, `kodi`, `home-assistant`, `frame-feed` | one display integration each on the presentation-queue + device seams | LAN (Cast: HTTPS for the sender page) | none |
 
 The first plugin-refactor step is small and mechanical: give `people`, `stacks` and the sidecar `ai` the manifest shape and load them through the registry, so the seams are proven before new plugins land.
@@ -308,6 +364,8 @@ The first plugin-refactor step is small and mechanical: give `people`, `stacks` 
 | Filtered ranking | `vectors/` | `rankByText(ids, text)`, `rankByVector(ids, v)`. |
 | Ask routes + page | `plugins/ask/` | Tool loop server-side; streaming optional later. |
 | Plugin loader, `PluginContext`, secrets store | `server/src/plugins/` | Manifest validation, namespacing, enable/disable, encrypted secrets, Settings auto-sections, client lazy-loading of plugin pages/actions. |
+| `tags`, `media_tags`, keyword import, Tags page, tag facet/filter | core (`server/src/tags/`) | Flat tags; `source=exif` rows mirror `media_exif.keywords`. |
+| `pick_pools`, `folder_stats`, single `GET /api/home` | core (`server/src/home/`) | Home performance; refreshed in the background. |
 | `deletion_marks`, `media.hidden`, trash/restore, export renderer | `plugins/housekeeping/` | Trash = move to `_MemoryLane-Trash/` beside the original; empty-trash is the only unlink in the app. |
 | `albums`, `album_items` | `plugins/albums/` | Query albums re-run `buildMediaQuery`; manual albums are pinned lists. |
 | `shares`, public `/s/<token>` | `plugins/share/` | Sized derivatives, expiry, password, revoke; hosted upload via provider. |
@@ -333,6 +391,8 @@ Everything runs through the existing `AnalysisWorker`, `buildMediaQuery`, `Media
 | Apple Photos library | Always local | — |
 | Browsing polish | Always local | — |
 | Display & dissemination (TV, DLNA, Cast, frames) | Always local (LAN) | — |
+| Performance, tags, geotagging, video reels | Always local | — |
+| MCP connector | Metadata (+ thumbnails if the token allows) to the user's own assistant | Per-client token, labelled |
 
 ---
 
@@ -342,11 +402,11 @@ Plans written so far: **§M Apple Photos** → `docs/superpowers/plans/2026-09-1
 
 | Phase | Contents | Why this order |
 |---|---|---|
-| **4.5 — Browsing polish** | N (hover slideshow on folder cards, auto-enter a lone root, hero banner preferences + thumbs-down) | Small, visible, no dependencies; ships while Phase 5's seams are being built. |
-| **5 — Plugin seams + Ask** | plugin loader/manifest/secrets, refactor `people`/`stacks`/`ai` onto it; E (filtered ranking), B (places), C (relationships/age), `llm` providers (cloud + local), Ask page | Seams first so every later feature lands as a plugin; Ask is the highest value per effort and makes decades of data *reachable*. |
-| **6 — Housekeeping, albums & Apple Photos** | J (marks → trash → empty, hide, export), K (query + manual albums, save-as-album from people/places/trips/Ask), M (Apple Photos root, catalogue sync, People bootstrap, iCloud state) | The tidying tools a real library needs before "making things" is fun; M reuses albums and hidden state, and brings phone photos in for Mac users. |
+| **4.5 — Browsing polish & performance** | N (hover slideshow on folder cards, auto-enter a lone root, hero banner preferences + thumbs-down); P (measure, pick pools, folder stats, one-round-trip Home with prefetched next set); R (tags + keyword import) | Small, visible, no dependencies; ships while Phase 5's seams are being built. Tags early because every later feature (albums, Ask, MCP, housekeeping) wants a tag filter. |
+| **5 — Plugin seams, Ask & MCP** | plugin loader/manifest/secrets, refactor `people`/`stacks`/`ai` onto it; E (filtered ranking), B (places), C (relationships/age), the shared tool registry, Q (MCP server) first, then `llm` providers (cloud + local) and the Ask page | Seams first so every later feature lands as a plugin; Ask is the highest value per effort and makes decades of data *reachable*. |
+| **6 — Housekeeping, albums, geotagging & Apple Photos** | J (marks → trash → empty, hide, export), K (query + manual albums, save-as-album from people/places/trips/Ask), S (bulk geotagging: place picker, GPX/phone-track sync, suggestions), M (Apple Photos root, catalogue sync, People bootstrap, iCloud state) | The tidying tools a real library needs before "making things" is fun; M reuses albums and hidden state, and brings phone photos in for Mac users. |
 | **7 — Mining, sharing & display** | quality analyzer, Year in review, Best of, timelines, then & now, trips; L tiers 1–2 (export, own-server share links); O core seams + `/tv` mode with remote rating, then DLNA and Cast | Exploits data now in place; share links reuse albums; `/tv` turns the TV into the best rediscovery surface and feeds ratings back. |
-| **8 — Editing & creations** | G (non-destructive edits, exports), H (collages, cards, ffmpeg slideshows), Create menu | Self-contained; Sharp + bundled ffmpeg only. |
+| **8 — Editing & creations** | G (non-destructive edits, exports), H (collages, cards, ffmpeg slideshows), T (combine short clips into a reel), Create menu | Self-contained; Sharp + bundled ffmpeg only. |
 | **9 — AI transformations & hosted sharing** | I (`image-edit` provider, provenance, AI badge), L tier 3 (hosted share plugin) | Last: the only features that must send pixels away or need a GPU/bucket; reuse the People consent UX. |
 | optional | D (captions) | Slot in after 5 for users who want text-only retrieval or album naming. |
 
@@ -363,4 +423,6 @@ Plans written so far: **§M Apple Photos** → `docs/superpowers/plans/2026-09-1
 7. **Plugin client bundling** — one Vite build that includes enabled plugins' pages, or per-plugin bundles loaded lazily? Recommendation: single build with lazy routes for Phase 5; per-plugin bundles only if third-party plugins ever ship.
 8. **Apple Photos originals cache** — when the user asks to download an iCloud original, stream it once or keep a full-res copy in MemoryLane's data dir (their disk-space trade-off)? Recommendation: stream by default, opt-in cache per action.
 9. **TV-mode input model** — D-pad/remote keys arrive as ordinary keyboard events in TV browsers (arrows/Enter/Back), but key codes differ per platform (webOS/Tizen have their own); decide on a small key-map layer early so native wrappers reuse it.
-10. **Share links over the internet** — document reverse-proxy + TLS (as the README already does) or add a built-in tunnel/hosted relay later? Recommendation: document first; hosted relay is the tier-3 plugin's job.
+10. **MCP mutation scope** — read-only by default is clear; should mutating tools (albums, tags, marks) be a per-token switch or per-tool consent prompts in the UI? Recommendation: per-token switch with an activity log in Settings › Integrations.
+11. **Map tiles for geotagging** — no offline tile set is small enough to bundle; name search is the offline path, and a map is a user-configured tile provider (OSM usage policy applies) — off by default.
+12. **Share links over the internet** — document reverse-proxy + TLS (as the README already does) or add a built-in tunnel/hosted relay later? Recommendation: document first; hosted relay is the tier-3 plugin's job.
