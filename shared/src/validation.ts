@@ -39,6 +39,7 @@ export const updateSettingsRequestSchema = z.object({
   stackGapSeconds: z.number().min(0.1).max(60).optional(),
   stackMaxHamming: z.number().int().min(0).max(64).optional(),
   stackMinCosine: z.number().min(0.5).max(1).optional(),
+  stackSeriesGapSeconds: z.number().min(0).max(3600).optional(),
   aiEnabled: z.boolean().optional(),
   personsEnabled: z.boolean().optional(),
   faceAssignThreshold: z.number().min(0.3).max(0.9).optional(),

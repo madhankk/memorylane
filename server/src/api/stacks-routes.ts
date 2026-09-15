@@ -76,15 +76,15 @@ export async function registerStackRoutes(app: FastifyInstance, ctx: AppContext)
     });
   });
 
-  // Marks folders dirty; the actual recompute happens on the analysis
-  // worker's next idle pass (after any pending hashes), never inline.
+  // Explicit request: recompute right away (per-folder work is a few
+  // milliseconds of SQL) rather than waiting for the analysis queue to
+  // drain, which can be a long time during a backfill.
   app.post("/api/stacks/recompute", { preHandler: app.requireAuth }, async (request, reply) => {
     const parsed = recomputeStacksRequestSchema.safeParse(request.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: "Invalid input" });
-    if (parsed.data.folderId !== undefined) {
-      stacks.markFolderDirty(parsed.data.folderId);
-      return reply.send({ folders: 1 });
-    }
-    return reply.send({ folders: stacks.markAllDirty() });
+    if (parsed.data.folderId !== undefined) stacks.markFolderDirty(parsed.data.folderId);
+    else stacks.markAllDirty();
+    const folders = stacks.recomputeDirty(Number.MAX_SAFE_INTEGER);
+    return reply.send({ folders });
   });
 }

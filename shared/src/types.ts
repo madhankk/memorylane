@@ -113,6 +113,8 @@ export interface SettingsDto {
   stackMaxHamming: number;
   // Stacks v2: embedding cosine similarity that also counts as "same moment".
   stackMinCosine: number;
+  // Stacks v3: max gap for tripod/long-exposure series of near-identical frames.
+  stackSeriesGapSeconds: number;
   // Master switch for provider-backed analysis (embeddings today, faces later).
   aiEnabled: boolean;
   // People (design doc §10) is opt-in: faces are biometric data.
@@ -148,6 +150,7 @@ export interface UpdateSettingsRequest {
   stackGapSeconds?: number;
   stackMaxHamming?: number;
   stackMinCosine?: number;
+  stackSeriesGapSeconds?: number;
   aiEnabled?: boolean;
   personsEnabled?: boolean;
   faceAssignThreshold?: number;

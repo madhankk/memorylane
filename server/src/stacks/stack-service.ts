@@ -52,7 +52,7 @@ export class StackService {
       .prepare(
         `SELECT media.id, media.filename, mx.captured_at_precise AS capturedAt,
                 COALESCE(mx.camera_serial, mx.camera_model) AS body, ph.phash, mx.burst_id AS burstId,
-                em.vector AS embeddingBlob
+                mx.shutter_speed_s AS shutterSeconds, em.vector AS embeddingBlob
          FROM media
          LEFT JOIN media_exif mx ON mx.media_id = media.id
          LEFT JOIN media_phash ph ON ph.media_id = media.id
@@ -69,11 +69,12 @@ export class StackService {
   // Replaces every auto stack in the folder with a fresh grouping. Returns
   // the number of stacks created. Idempotent.
   recomputeFolder(folderId: number): number {
-    const { stackGapSeconds, stackMaxHamming, stackMinCosine } = this.settings.getAll();
+    const { stackGapSeconds, stackMaxHamming, stackMinCosine, stackSeriesGapSeconds } = this.settings.getAll();
     const groups = groupBursts(this.listCandidates(folderId), {
       gapSeconds: stackGapSeconds,
       maxHamming: stackMaxHamming,
       minCosine: stackMinCosine,
+      seriesGapSeconds: stackSeriesGapSeconds,
     });
     const tx = this.db.transaction(() => {
       this.db.prepare("DELETE FROM stacks WHERE parent_folder_id = ? AND user_modified = 0").run(folderId);

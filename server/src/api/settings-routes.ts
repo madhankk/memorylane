@@ -20,7 +20,12 @@ export async function registerSettingsRoutes(app: FastifyInstance, ctx: AppConte
     }
     const updated = repo.update(parsed.data);
     // New thresholds apply on the worker's next idle pass over every folder.
-    if (parsed.data.stackGapSeconds !== undefined || parsed.data.stackMaxHamming !== undefined || parsed.data.stackMinCosine !== undefined) {
+    if (
+      parsed.data.stackGapSeconds !== undefined ||
+      parsed.data.stackMaxHamming !== undefined ||
+      parsed.data.stackMinCosine !== undefined ||
+      parsed.data.stackSeriesGapSeconds !== undefined
+    ) {
       ctx.stacks.markAllDirty();
     }
     // A different face model means every stored detection is stale.

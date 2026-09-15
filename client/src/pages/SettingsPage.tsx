@@ -226,7 +226,7 @@ export default function SettingsPage() {
   const [recomputeMsg, setRecomputeMsg] = useState<string | null>(null);
   const recomputeStacks = async () => {
     const res = await api.stacks.recompute();
-    setRecomputeMsg(`Queued ${res.folders} folder(s) - stacks update in the background.`);
+    setRecomputeMsg(`Recomputed stacks in ${res.folders} folder(s).`);
   };
 
   const retryAnalysis = async () => {
@@ -777,8 +777,8 @@ export default function SettingsPage() {
       <section>
         <h2 className="mb-1 font-serif text-lg font-semibold text-ink">Stacks</h2>
         <p className="mb-3 text-sm text-muted">
-          Bursts of near-identical shots (same camera, seconds apart, visually alike) are grouped into one grid item.
-          Stacks you edit are never regrouped automatically.
+          Bursts (same camera, within the burst gap, visually alike) and tripod series (long exposures minutes apart that look
+          near-identical, within the series gap) are grouped into one grid item. Stacks you edit are never regrouped automatically.
         </p>
         <div className="flex flex-wrap items-end gap-4 text-sm text-ink">
           <label className="flex flex-col gap-1">
@@ -822,6 +822,21 @@ export default function SettingsPage() {
               onBlur={(e) => {
                 const v = Number(e.target.value);
                 if (v >= 0.5 && v <= 1 && v !== settings.stackMinCosine) void updateSchedule({ stackMinCosine: v });
+              }}
+              className={`w-24 ${inputClass}`}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">Tripod series gap (seconds)</span>
+            <input
+              type="number"
+              min={0}
+              max={3600}
+              step={10}
+              defaultValue={settings.stackSeriesGapSeconds}
+              onBlur={(e) => {
+                const v = Number(e.target.value);
+                if (v >= 0 && v <= 3600 && v !== settings.stackSeriesGapSeconds) void updateSchedule({ stackSeriesGapSeconds: v });
               }}
               className={`w-24 ${inputClass}`}
             />

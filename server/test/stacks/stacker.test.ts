@@ -19,7 +19,7 @@ const t = (ms: number) => new Date(Date.UTC(2024, 4, 12, 10, 31, 44, 0) + ms).to
 describe("groupBursts", () => {
   it("groups a tight sequence with matching hashes; leaves singles alone", () => {
     n = 0;
-    const rows = [c({ capturedAt: t(0) }), c({ capturedAt: t(100), phash: H1 }), c({ capturedAt: t(200) }), c({ capturedAt: t(10_000) })];
+    const rows = [c({ capturedAt: t(0) }), c({ capturedAt: t(100), phash: H1 }), c({ capturedAt: t(200) }), c({ capturedAt: t(10_000), phash: HFAR })];
     expect(groupBursts(rows)).toEqual([[1, 2, 3]]);
   });
   it("splits on time gap, body change, and visual distance", () => {
@@ -30,7 +30,10 @@ describe("groupBursts", () => {
       c({ capturedAt: t(3700), body: "5D" }), // other body -> alone
       c({ capturedAt: t(3800), phash: HFAR }), // far hash -> alone
     ];
-    expect(groupBursts(rows)).toEqual([[1, 2], [3, 4]]);
+    // Burst rule only (series gap off): the 3s gap splits the pairs.
+    expect(groupBursts(rows, { gapSeconds: 2, maxHamming: 14, minCosine: 0.9, seriesGapSeconds: 0 })).toEqual([[1, 2], [3, 4]]);
+    // With the series rule, identical frames 3s apart are one tripod series.
+    expect(groupBursts(rows)).toEqual([[1, 2, 3, 4]]);
   });
   it("trusts a shared camera burst id even when hashes differ", () => {
     n = 0;
@@ -52,8 +55,9 @@ describe("groupBursts", () => {
   it("honours custom thresholds", () => {
     n = 0;
     const rows = [c({ capturedAt: t(0) }), c({ capturedAt: t(2500) })];
-    expect(groupBursts(rows, { gapSeconds: 2, maxHamming: 14, minCosine: 0.9 })).toEqual([]);
-    expect(groupBursts(rows, { gapSeconds: 3, maxHamming: 14, minCosine: 0.9 })).toEqual([[1, 2]]);
+    // Identical hashes qualify for the series rule, so pin that off to test the burst gap alone.
+    expect(groupBursts(rows, { gapSeconds: 2, maxHamming: 14, minCosine: 0.9, seriesGapSeconds: 0 })).toEqual([]);
+    expect(groupBursts(rows, { gapSeconds: 3, maxHamming: 14, minCosine: 0.9, seriesGapSeconds: 0 })).toEqual([[1, 2]]);
   });
   it("v2: embedding similarity rescues frames whose hashes drifted", () => {
     n = 0;
@@ -70,5 +74,26 @@ describe("groupBursts", () => {
     n = 0;
     const oneSide = [c({ capturedAt: t(0), phash: H0, embedding: e(1, 0) }), c({ capturedAt: t(100), phash: H1, embedding: null })]; // hash rule still applies
     expect(groupBursts(oneSide)).toEqual([[1, 2]]);
+  });
+
+  it("v3: tripod series - long gaps group only near-identical frames, measured from exposure end", () => {
+    n = 0;
+    // 30s exposures a minute apart with (near-)identical hashes: a series.
+    const series = [
+      c({ capturedAt: t(0), shutterSeconds: 30 }),
+      c({ capturedAt: t(60_000), shutterSeconds: 30, phash: H1 }),
+      c({ capturedAt: t(120_000), shutterSeconds: 30 }),
+    ];
+    expect(groupBursts(series)).toEqual([[1, 2, 3]]);
+    n = 0;
+    // Same timing but hashes only "burst-close" (10 bits), not tight: no series.
+    const H10 = "00000000000003ff";
+    expect(groupBursts([c({ capturedAt: t(0), shutterSeconds: 30 }), c({ capturedAt: t(60_000), shutterSeconds: 30, phash: H10 })])).toEqual([]);
+    n = 0;
+    // Beyond the series gap even if identical.
+    expect(groupBursts([c({ capturedAt: t(0) }), c({ capturedAt: t(200_000) })])).toEqual([]);
+    n = 0;
+    // A 121s exposure followed 122s later: gap from exposure end is 1s -> burst rule applies.
+    expect(groupBursts([c({ capturedAt: t(0), shutterSeconds: 121, phash: H0 }), c({ capturedAt: t(122_000), phash: H10 })])).toEqual([[1, 2]]);
   });
 });
