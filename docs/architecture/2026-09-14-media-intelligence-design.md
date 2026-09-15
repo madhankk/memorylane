@@ -235,7 +235,7 @@ CREATE TABLE media_exif (
   gps_lat REAL, gps_lon REAL, gps_alt REAL,
   software TEXT,
   -- everything else
-  tags_json           TEXT NOT NULL,   -- full ExifTool dump (-G1 groups), binary/preview tags stripped
+  tags_json           TEXT NOT NULL,   -- full ExifTool dump (flat tag names as exiftool-vendored returns them), binary/preview tags stripped
   exiftool_version    TEXT NOT NULL
 );
 CREATE INDEX idx_media_exif_lens     ON media_exif(lens_id);
@@ -248,7 +248,7 @@ CREATE INDEX idx_media_exif_captured ON media_exif(captured_at_precise);
 
 - The existing `media.camera_make/model/lens_model/…` columns stay (they feed today's DTOs) and are written from the same extraction; `media_exif` is the superset. A later cleanup can drop them.
 - `tags_json` sizing: typically 3–8 KB/file after stripping `ThumbnailImage`/`PreviewImage`/`JpgFromRaw*`/maker-note binary blobs. 500k files ≈ 2–4 GB. Acceptable for a "disposable cache" DB; if it matters, store as SQLite JSONB (3.45+) or zstd later — the column is internal.
-- Ad-hoc questions not covered by promoted columns go through `json_extract(tags_json, '$.ExifIFD:FocusMode')` — slow but fine for the report page's "any tag" mode.
+- Ad-hoc questions not covered by promoted columns go through `json_extract(tags_json, '$.FocusMode')` — slow but fine for the report page's "any tag" mode.
 
 ### 7.2 Extraction
 
