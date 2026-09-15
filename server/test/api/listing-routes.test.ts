@@ -20,6 +20,31 @@ const get = (t: Awaited<ReturnType<typeof createTestApp>>, url: string) =>
   t.app.inject({ method: "GET", url, headers: { cookie: t.cookie } });
 
 describe("listing routes on the query builder", () => {
+  it("folder cards retain subtree totals and exclude companions from fallback covers", async () => {
+    const t = await createTestApp();
+    try {
+      const root = seedScanRoot(t.db);
+      const top = seedFolder(t.db, root, "/library");
+      const sub = seedFolder(t.db, root, "/library/sub", top);
+      const jpg = seedMedia(t.db, sub, root);
+      const raw = seedMedia(t.db, sub, root, { media_type: "raw" });
+      const video = seedMedia(t.db, sub, root, { media_type: "video" });
+      seedMedia(t.db, sub, root, { status: "missing" });
+      seedMedia(t.db, sub, root, { thumbnail_status: "pending" });
+      t.db.prepare("UPDATE media SET raw_pair_id = ?, live_photo_video_id = ? WHERE id = ?").run(raw, video, jpg);
+      t.db.exec("ANALYZE media; ANALYZE folders;");
+      const response = await get(t, "/api/folders");
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toHaveLength(1);
+      expect(response.json()[0]).toMatchObject({
+        id: top, mediaCount: 0, childFolderCount: 1,
+        recursiveMediaCount: 4, recursiveSizeBytes: 4000, thumbnailMediaId: jpg,
+      });
+    } finally {
+      await t.close();
+    }
+  });
+
   it("folder media: direct, recursive, and type filter; paired RAW hidden", async () => {
     const S = await seeded();
     try {

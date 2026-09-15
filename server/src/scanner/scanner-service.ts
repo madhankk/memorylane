@@ -270,6 +270,14 @@ export class ScannerService {
         );
 
       this.logger.info({ runId, stats }, "Scan completed");
+      // Consider all tables, including those not queried by this connection
+      // yet. SQLite bounds this work and refreshes statistics when needed
+      // after library growth; keep it off the request path.
+      try {
+        this.db.pragma("optimize = 0x10002");
+      } catch (err) {
+        this.logger.warn({ err }, "Could not refresh database planner statistics");
+      }
     } catch (err) {
       this.logger.error({ err, runId }, "Scan failed");
       this.db
