@@ -77,6 +77,14 @@ export const searchQuerySchema = z.object({
   q: z.string().min(1).max(200),
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(200).default(50),
+  // "text" = FTS over names/camera/lens; "semantic" = CLIP text->image kNN
+  // (needs the AI sidecar, returns media only).
+  mode: z.enum(["text", "semantic"]).default("text"),
+});
+export type SearchMode = z.infer<typeof searchQuerySchema>["mode"];
+
+export const similarQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(48),
 });
 
 export const randomMediaQuerySchema = z.object({

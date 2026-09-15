@@ -291,6 +291,14 @@ export interface SearchResultDto {
   type: SearchResultType;
   folder?: FolderDto;
   media?: MediaDto;
+  // Cosine similarity (0-1) for semantic results; absent for text matches.
+  score?: number;
+}
+
+// "Find similar" (design doc §9): nearest neighbours of one photo's embedding.
+export interface SimilarResultDto {
+  source: MediaDto;
+  items: { media: MediaDto; score: number }[];
 }
 
 export interface RandomMediaRequest {
