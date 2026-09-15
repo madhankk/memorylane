@@ -440,16 +440,17 @@ Yes — everything here runs on Windows, and the desktop tray installer is Windo
 | Component | Windows | macOS | Linux | Notes |
 |---|---|---|---|---|
 | Server + Phase 1–2 (EXIF, `media_analysis`, stacks v1, pHash) | ✅ | ✅ | ✅ | Pure Node + better-sqlite3 + Sharp + ExifTool, all already shipping in the tray app's `runtime/`. No new native dependency. |
-| `memorylane-ai` sidecar (Phase 3–4) | ✅ | ✅ | ✅ | Python 3.11 + ONNX Runtime. GPU: **CUDA** EP (NVIDIA) on Windows/Linux, **DirectML** EP on Windows for AMD/Intel/NVIDIA without CUDA, **CoreML** EP on Apple Silicon, CPU everywhere. Also runnable via Docker Desktop on Windows. |
-| Face models | ✅ | ✅ | ✅ | The sidecar loads the RetinaFace/ArcFace **ONNX files directly** through `onnxruntime` rather than depending on the `insightface` pip package, which needs a C++ build toolchain on Windows and is the usual install failure there. |
-| `VectorIndex` (LanceDB, Phase 3) | ✅ | ✅ | ✅ | `@lancedb/lancedb` ships prebuilt binaries for win32-x64, darwin-arm64/x64, linux-x64/arm64. Verified in Phase 3 from the tray app's `runtime/` layout, same as `better-sqlite3`/`sharp` are today. |
+| `memorylane-ai` sidecar (Phase 3–4) | ✅ | ✅ | ✅ | Python 3.11–3.13 (verified 3.13) + FastAPI + `onnxruntime` (verified: `win_amd64` wheels for `onnxruntime` and `tokenizers`; model files are platform-neutral ONNX). GPU: `onnxruntime-gpu` (CUDA) on Windows/Linux, `onnxruntime-directml` on Windows for AMD/Intel/NVIDIA without CUDA, CoreML on Apple Silicon (opt-in — CPU is within 5 % on M2 Max), CPU everywhere. Also runnable via Docker Desktop on Windows. |
+| Embedding model | ✅ | ✅ | ✅ | `Xenova/clip-vit-base-patch32` ONNX export (512-d, ~350 MB) loaded directly by `onnxruntime`; no PyTorch, no compiler. Measured 52 img/s on CPU (M2 Max). |
+| Face models (Phase 4) | ✅ | ✅ | ✅ | RetinaFace/ArcFace **ONNX files loaded directly** through `onnxruntime` rather than the `insightface` pip package, which needs a C++ build toolchain on Windows and is the usual install failure there. |
+| `VectorIndex` (LanceDB, Phase 3) | ✅ | ✅ Apple Silicon only | ✅ | Pinned to `@lancedb/lancedb@0.33.0`, the last line supporting Node 20 (0.34+ requires Node 22). Verified prebuilt binaries: `win32-x64-msvc`, `win32-arm64-msvc`, `darwin-arm64`, `linux-x64/arm64` (gnu + musl). **No `darwin-x64` (Intel Mac) build** — Intel Macs get Phase 1–2 features but not vector search until the app moves to Node 22 / a newer LanceDB. Verified in Phase 3 from the tray app's `runtime/` layout, same as `better-sqlite3`/`sharp` are today. |
 
 Design rules that keep it portable:
 
 - **The sidecar never receives file paths.** The server renders JPEG bytes and POSTs them, so drive letters, UNC paths, and backslashes never cross the process boundary — and a Windows client can talk to a Linux GPU box over the LAN unchanged.
 - **All path logic stays in Node** using `node:path` (already the case for thumbnails/previews); `media_exif` stores nothing path-derived.
 - **Data dir** follows the existing `%LOCALAPPDATA%\MemoryLane` / `~/Library/Application Support/MemoryLane` / `$XDG_DATA_HOME/MemoryLane` resolution; the `vectors/` and `faces/` subfolders live there too.
-- **Sidecar packaging on Windows:** `uv run memorylane-ai` (uv installs its own Python; no system Python required) or Docker Desktop. A later option is bundling the sidecar as a PyInstaller/`onedir` build alongside the tray app so non-developers get AI features from the installer; not planned for Phases 1–4.
+- **Sidecar packaging on Windows:** `py -m venv .venv && .venv\\Scripts\\pip install -e . && .venv\\Scripts\\memorylane-ai` with the python.org installer, `uv run memorylane-ai` (uv installs its own Python), or Docker Desktop. A later option is bundling the sidecar as a PyInstaller/`onedir` build alongside the tray app so non-developers get AI features from the installer; not planned for Phases 1–4.
 - **Case-insensitive filesystems** (Windows, default macOS): RAW+JPEG pairing already lowercases base names; stacks and persons key on ids, not paths.
 
 ## 17. Risks and open decisions
