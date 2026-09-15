@@ -46,6 +46,17 @@ export class AnalysisRepo {
       .run(mediaId, analyzerKey, version, mediaId);
   }
 
+  // Explicitly queue one row (used by the scan path when its inline attempt
+  // failed for a retryable reason, e.g. an unreadable file).
+  markPending(mediaId: number, analyzerKey: string, error: string | null): void {
+    this.db
+      .prepare(
+        `INSERT INTO media_analysis (media_id, analyzer, status, error, updated_at) VALUES (?, ?, 'pending', ?, ${NOW})
+         ON CONFLICT(media_id, analyzer) DO UPDATE SET status = 'pending', error = excluded.error, updated_at = excluded.updated_at`,
+      )
+      .run(mediaId, analyzerKey, error);
+  }
+
   // The file changed on disk (fingerprint mismatch) - every analyzer's result is stale.
   resetForMedia(mediaId: number): void {
     this.db

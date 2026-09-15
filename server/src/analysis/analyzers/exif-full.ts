@@ -27,7 +27,7 @@ export function createExifFullAnalyzer(db: Database.Database): Analyzer {
         rows.map((row) =>
           limit(async (): Promise<AnalyzerOutcome> => {
             try {
-              const tags = await readTags(row.absolute_path);
+              const tags = await readTags(row.absolute_path); // throws ExifReadError on unreadable files
               repo.upsertFromTags(row.id, tags, getExifToolVersion());
               return { mediaId: row.id, status: "done" };
             } catch (err) {
