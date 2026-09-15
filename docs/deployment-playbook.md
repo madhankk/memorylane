@@ -47,6 +47,10 @@ winget install OliverBetz.ExifTool        # puts exiftool.exe on PATH
 - No C++ build tools are needed: `better-sqlite3`, `sharp`, `@lancedb/lancedb`, `onnxruntime` and `tokenizers` all ship prebuilt Windows binaries.
 - Keep the repo on a local disk (not OneDrive/network) — SQLite WAL and LanceDB want a normal filesystem.
 
+### macOS: photo libraries on a NAS or external drive
+
+macOS grants access to **network** and **removable** volumes per app. Launch `npm start` (and the sidecar) from a terminal app that has that permission — Terminal.app usually prompts the first time; VS Code's integrated terminal often doesn't and silently gets *Operation not permitted*. Check under System Settings → Privacy & Security → Files and Folders.
+
 ### Both
 
 - ~1 GB free for dependencies + the CLIP model (~350 MB, downloaded once into the Hugging Face cache: `~/.cache/huggingface` / `%USERPROFILE%\.cache\huggingface`).
@@ -215,6 +219,7 @@ npm run make                # full: .dmg (macOS) / Squirrel .exe (Windows) in de
 |---|---|
 | Settings page stuck on *Loading…*, or some `/api/...` calls return 404 while others work | Two MemoryLane servers on port 4280 — an older checkout's `npm start` (bound to `127.0.0.1`) is still running alongside the new one (bound to `0.0.0.0`), and your browser reaches the old API with the new UI. `lsof -nP -iTCP:4280 -sTCP:LISTEN` (macOS/Linux) / `netstat -ano \| findstr :4280` (Windows) shows both; stop the old PID and reload. |
 | `Cannot find module 'ffmpeg-static'` on typecheck/start | `node_modules` older than the lockfile → `npm install` again. |
+| Analysis rows fail with *Error opening file* / Faces *unsupported* on a NAS or external drive, although the folder scanned fine before | macOS privacy (TCC): the app you launched `npm start` from (e.g. VS Code's integrated terminal) has no **Network Volumes** / **Removable Volumes** permission, so every open on that volume returns *Operation not permitted*. System Settings → Privacy & Security → Files and Folders → that app → enable Network/Removable Volumes (or Full Disk Access), restart the server, then **Retry failed** under Settings › Analysis. Or launch from Terminal.app. |
 | RAW files show `!` badge, Reports empty | ExifTool not on PATH (`exiftool -ver` in a fresh terminal). Install, restart the server, run **Retry failed** under Settings › Analysis or rescan. |
 | Settings › AI: *Not connected — fetch failed* | Sidecar not running or on another port; check `curl http://127.0.0.1:4281/v1/health`. |
 | Settings › AI: *Sidecar model X does not match configured Y* | `MEMORYLANE_AI_MODEL` (server) ≠ model the sidecar loaded (`MEMORYLANE_AI_MODEL` repo on the sidecar). Align them; vectors are never mixed across models. |
