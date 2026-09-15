@@ -61,3 +61,24 @@ describe("SidecarProvider", () => {
     expect(() => createProvider({ MEMORYLANE_AI_PROVIDER: "cloud" })).toThrow();
   });
 });
+
+describe("SidecarProvider faces", () => {
+  it("detects faces and clusters through the sidecar", async () => {
+    const p = new SidecarProvider(fake.url, { expectedModel: fake.model, expectedFaceModel: "yunet-sface@1" });
+    expect((await p.health(true)).faceModel).toBe("yunet-sface@1");
+    expect(p.facesAvailable()).toBe(true);
+    const twoFaces = Buffer.from([2, 10, 20, 30]); // first byte % 3 = 2 faces
+    const noFaces = Buffer.from([3, 1, 1, 1]);
+    const res = await p.detectFaces([twoFaces, noFaces]);
+    expect(res.model).toBe("yunet-sface@1");
+    expect(res.images[0]).toHaveLength(2);
+    expect(res.images[1]).toHaveLength(0);
+    expect(res.images[0][0].embedding).toBeInstanceOf(Float32Array);
+    expect(res.images[0][0].bbox).toHaveLength(4);
+    const v = res.images[0].map((f) => f.embedding);
+    const labels = await p.cluster([v[0], v[0], v[1]], { threshold: 0.99, minClusterSize: 2 });
+    expect(labels).toEqual([0, 0, -1]);
+    const mismatch = new SidecarProvider(fake.url, { expectedModel: fake.model, expectedFaceModel: "other@1" });
+    await expect(mismatch.detectFaces([twoFaces])).rejects.toBeInstanceOf(ProviderUnavailableError);
+  });
+});

@@ -33,6 +33,8 @@ export interface AppPaths {
   // LanceDB vector index (design doc §6.3a) - a rebuildable cache over
   // media_embeddings, never the source of truth.
   vectorsDir: string;
+  // Face crop cache (People pages) - regenerated on demand.
+  facesDir: string;
   logsDir: string;
   clientDistDir: string;
 }
@@ -48,13 +50,14 @@ export function resolveAppPaths(): AppPaths {
     previewsDir: path.join(dataDir, "previews"),
     transcodingDir: path.join(dataDir, "transcoding"),
     vectorsDir: path.join(dataDir, "vectors"),
+    facesDir: path.join(dataDir, "faces"),
     logsDir: path.join(dataDir, "logs"),
     // import.meta.dirname is server/src/config (dev, tsx) or server/dist/config
     // (built) - either way, two levels up is the server package root, where
     // the Vite client build outputs directly (see client/vite.config.ts).
     clientDistDir: path.resolve(import.meta.dirname, "..", "..", "public"),
   };
-  for (const dir of [paths.dataDir, paths.thumbnailsDir, paths.previewsDir, paths.transcodingDir, paths.vectorsDir, paths.logsDir]) {
+  for (const dir of [paths.dataDir, paths.thumbnailsDir, paths.previewsDir, paths.transcodingDir, paths.vectorsDir, paths.facesDir, paths.logsDir]) {
     fs.mkdirSync(dir, { recursive: true });
   }
   return paths;
@@ -88,4 +91,8 @@ export function transcodingPathForMediaId(transcodingDir: string, mediaId: numbe
 // mounting a real <video> element for every row at once.
 export function transcodingThumbnailPathForMediaId(transcodingDir: string, mediaId: number): string {
   return path.join(transcodingDir, `${mediaId}.jpg`);
+}
+
+export function faceCropPath(facesDir: string, faceId: number): string {
+  return shardedMediaPath(facesDir, faceId);
 }

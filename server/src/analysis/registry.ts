@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import type { Logger } from "pino";
 import type { AppPaths } from "../config/paths.js";
 import type { SettingsRepo } from "../db/settings-repo.js";
-import type { EmbeddingProvider } from "../providers/types.js";
+import type { AiProvider } from "../providers/types.js";
 import type { VectorIndex } from "../vectors/vector-index.js";
 import type { Analyzer } from "./types.js";
 import { createExifFullAnalyzer } from "./analyzers/exif-full.js";
@@ -13,7 +13,7 @@ export interface AnalyzerDeps {
   paths: AppPaths;
   settings: SettingsRepo;
   // null when MEMORYLANE_AI_PROVIDER=none - provider-backed analyzers are then not registered at all.
-  provider: EmbeddingProvider | null;
+  provider: AiProvider | null;
   vectorIndex: VectorIndex;
 }
 

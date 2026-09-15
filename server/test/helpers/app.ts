@@ -15,13 +15,13 @@ import { StackService } from "../../src/stacks/stack-service.js";
 import { SettingsRepo } from "../../src/db/settings-repo.js";
 import { LanceVectorIndex } from "../../src/vectors/lance-vector-index.js";
 import { EmbeddingRepo } from "../../src/vectors/embedding-repo.js";
-import type { EmbeddingProvider } from "../../src/providers/types.js";
+import type { AiProvider } from "../../src/providers/types.js";
 
 const logger = { info() {}, warn() {}, error() {}, debug() {} } as unknown as import("pino").Logger;
 
 // A fully routed Fastify app over an in-memory DB with one logged-in user.
 // Scanner/transcode are inert stubs - route tests never trigger real scans.
-export async function createTestApp(opts: { provider?: EmbeddingProvider | null } = {}) {
+export async function createTestApp(opts: { provider?: AiProvider | null } = {}) {
   process.env.LOG_LEVEL = "silent";
   const db = await createTestDb();
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "memorylane-test-"));
@@ -32,6 +32,7 @@ export async function createTestApp(opts: { provider?: EmbeddingProvider | null 
     previewsDir: path.join(dataDir, "previews"),
     transcodingDir: path.join(dataDir, "transcoding"),
     vectorsDir: path.join(dataDir, "vectors"),
+    facesDir: path.join(dataDir, "faces"),
     logsDir: path.join(dataDir, "logs"),
     clientDistDir: path.join(dataDir, "no-client"),
   };

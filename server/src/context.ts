@@ -6,7 +6,7 @@ import type { RandomSelectionService } from "./media/random-selection-service.js
 import type { TranscodeWorker } from "./media/transcode-worker.js";
 import type { AnalysisWorker } from "./analysis/analysis-worker.js";
 import type { StackService } from "./stacks/stack-service.js";
-import type { EmbeddingProvider } from "./providers/types.js";
+import type { AiProvider } from "./providers/types.js";
 import type { VectorIndex } from "./vectors/vector-index.js";
 import type { EmbeddingRepo } from "./vectors/embedding-repo.js";
 
@@ -22,7 +22,7 @@ export interface AppContext {
   analysisWorker: AnalysisWorker;
   stacks: StackService;
   // null when no AI provider is configured (MEMORYLANE_AI_PROVIDER=none).
-  provider: EmbeddingProvider | null;
+  provider: AiProvider | null;
   vectorIndex: VectorIndex;
   embeddings: EmbeddingRepo;
 }

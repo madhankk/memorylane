@@ -377,6 +377,7 @@ export interface ProviderStatusDto {
   reachable: boolean;
   model: string | null;
   dim: number | null;
+  faceModel: string | null;
   device: string | null;
   lastError: string | null;
   checkedAt: string | null;

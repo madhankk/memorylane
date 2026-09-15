@@ -3,7 +3,7 @@ import type { Logger } from "pino";
 import type { AnalysisStatusDto, AnalysisStatus } from "@memorylane/shared";
 import { AnalysisRepo } from "./analysis-repo.js";
 import type { Analyzer } from "./types.js";
-import { ProviderUnavailableError, type EmbeddingProvider } from "../providers/types.js";
+import { ProviderUnavailableError, type AiProvider } from "../providers/types.js";
 
 const BACKOFF_MIN_MS = 5_000;
 const BACKOFF_MAX_MS = 300_000;
@@ -26,7 +26,7 @@ export class AnalysisWorker {
   // Runs when every analyzer is drained (e.g. stack recompute, which wants
   // hashes finished first). Returns how much work it did; 0 = sleep.
   private onIdle: (() => number) | undefined;
-  private provider: EmbeddingProvider | null;
+  private provider: AiProvider | null;
   // Per-analyzer exponential backoff while its provider is unreachable.
   private backoff = new Map<string, { until: number; delayMs: number }>();
 
@@ -35,7 +35,7 @@ export class AnalysisWorker {
     private logger: Logger,
     private analyzers: Analyzer[],
     private isPaused: () => boolean,
-    opts: { idleMs?: number; pausedMs?: number; onIdle?: () => number; provider?: EmbeddingProvider | null } = {},
+    opts: { idleMs?: number; pausedMs?: number; onIdle?: () => number; provider?: AiProvider | null } = {},
   ) {
     this.repo = new AnalysisRepo(db);
     this.idleMs = opts.idleMs ?? 2000;

@@ -1,9 +1,22 @@
-import { ProviderUnavailableError, type EmbeddingBatch, type EmbeddingProvider, type ProviderInfo } from "./types.js";
+import {
+  ProviderUnavailableError,
+  type AiProvider,
+  type EmbeddingBatch,
+  type FaceBatch,
+  type FaceDetection,
+  type ProviderInfo,
+} from "./types.js";
 
 interface SidecarHealth {
   ok: boolean;
   device: string;
-  models: { image_embed: { id: string; dim: number }; text_embed: { id: string; dim: number } };
+  models: { image_embed: { id: string; dim: number }; text_embed: { id: string; dim: number }; faces?: { id: string; dim: number } };
+}
+
+interface SidecarFaces {
+  model: string;
+  dim: number;
+  images: { bbox: number[]; landmarks: number[][]; det_score: number; embedding: number[] }[][];
 }
 
 interface SidecarVectors {
@@ -15,6 +28,7 @@ interface SidecarVectors {
 export interface SidecarProviderOptions {
   token?: string;
   expectedModel: string;
+  expectedFaceModel?: string;
   healthTtlMs?: number;
   requestTimeoutMs?: number;
 }
@@ -23,9 +37,10 @@ export interface SidecarProviderOptions {
 // so the analyzer's per-batch check is free; every failure classification
 // matters: outages -> ProviderUnavailableError (back off), 4xx -> Error (the
 // batch is bad, mark it failed).
-export class SidecarProvider implements EmbeddingProvider {
+export class SidecarProvider implements AiProvider {
   readonly id = "sidecar";
   readonly expectedModel: string;
+  readonly expectedFaceModel: string;
   private info: ProviderInfo;
   private healthTtlMs: number;
   private requestTimeoutMs: number;
@@ -36,10 +51,11 @@ export class SidecarProvider implements EmbeddingProvider {
     opts: SidecarProviderOptions,
   ) {
     this.expectedModel = opts.expectedModel;
+    this.expectedFaceModel = opts.expectedFaceModel ?? "yunet-sface@1";
     this.token = opts.token;
     this.healthTtlMs = opts.healthTtlMs ?? 30_000;
     this.requestTimeoutMs = opts.requestTimeoutMs ?? 60_000;
-    this.info = { url, reachable: false, model: null, dim: null, device: null, lastError: null, checkedAt: null };
+    this.info = { url, reachable: false, model: null, dim: null, faceModel: null, device: null, lastError: null, checkedAt: null };
   }
 
   getInfo(): ProviderInfo {
@@ -59,13 +75,12 @@ export class SidecarProvider implements EmbeddingProvider {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as SidecarHealth;
       const model = body.models.image_embed.id;
+      const faceModel = body.models.faces?.id ?? null;
+      const base = { url: this.url, model, dim: body.models.image_embed.dim, faceModel, device: body.device, checkedAt };
       if (model !== this.expectedModel) {
-        this.info = {
-          url: this.url, reachable: false, model, dim: body.models.image_embed.dim, device: body.device, checkedAt,
-          lastError: `Sidecar model ${model} does not match configured ${this.expectedModel}`,
-        };
+        this.info = { ...base, reachable: false, lastError: `Sidecar model ${model} does not match configured ${this.expectedModel}` };
       } else {
-        this.info = { url: this.url, reachable: true, model, dim: body.models.image_embed.dim, device: body.device, lastError: null, checkedAt };
+        this.info = { ...base, reachable: true, lastError: null };
       }
     } catch (err) {
       this.info = { ...this.info, reachable: false, lastError: err instanceof Error ? err.message : String(err), checkedAt };
@@ -73,7 +88,12 @@ export class SidecarProvider implements EmbeddingProvider {
     return this.getInfo();
   }
 
-  private async post(path: string, init: RequestInit): Promise<SidecarVectors> {
+  // True only when the sidecar is up AND serves the configured face model.
+  facesAvailable(): boolean {
+    return this.info.reachable && this.info.faceModel === this.expectedFaceModel;
+  }
+
+  private async post<T extends object>(path: string, init: RequestInit, expectModel?: string): Promise<T> {
     let res: Response;
     try {
       res = await fetch(`${this.url}${path}`, { ...init, signal: AbortSignal.timeout(this.requestTimeoutMs) });
@@ -94,9 +114,10 @@ export class SidecarProvider implements EmbeddingProvider {
       }
       throw new Error(`Sidecar rejected request (${res.status}): ${detail}`);
     }
-    const body = (await res.json()) as SidecarVectors;
-    if (body.model !== this.expectedModel) {
-      this.info = { ...this.info, reachable: false, lastError: `Sidecar model ${body.model} does not match configured ${this.expectedModel}` };
+    const body = (await res.json()) as T;
+    const reported = (body as { model?: string }).model;
+    if (expectModel && reported !== expectModel) {
+      this.info = { ...this.info, reachable: false, lastError: `Sidecar model ${reported} does not match configured ${expectModel}` };
       throw new ProviderUnavailableError(this.info.lastError as string);
     }
     return body;
@@ -109,16 +130,46 @@ export class SidecarProvider implements EmbeddingProvider {
   async embedImages(jpegs: Buffer[]): Promise<EmbeddingBatch> {
     const form = new FormData();
     jpegs.forEach((buf, i) => form.append("files", new Blob([buf], { type: "image/jpeg" }), `${i}.jpg`));
-    return this.toBatch(await this.post("/v1/embed/image", { method: "POST", body: form, headers: this.headers() }));
+    return this.toBatch(await this.post<SidecarVectors>("/v1/embed/image", { method: "POST", body: form, headers: this.headers() }, this.expectedModel));
   }
 
   async embedText(texts: string[]): Promise<EmbeddingBatch> {
     return this.toBatch(
-      await this.post("/v1/embed/text", {
-        method: "POST",
-        body: JSON.stringify({ texts }),
-        headers: this.headers({ "Content-Type": "application/json" }),
-      }),
+      await this.post<SidecarVectors>(
+        "/v1/embed/text",
+        { method: "POST", body: JSON.stringify({ texts }), headers: this.headers({ "Content-Type": "application/json" }) },
+        this.expectedModel,
+      ),
     );
+  }
+
+  async detectFaces(jpegs: Buffer[]): Promise<FaceBatch> {
+    const form = new FormData();
+    jpegs.forEach((buf, i) => form.append("files", new Blob([buf], { type: "image/jpeg" }), `${i}.jpg`));
+    const body = await this.post<SidecarFaces>("/v1/faces", { method: "POST", body: form, headers: this.headers() }, this.expectedFaceModel);
+    return {
+      model: body.model,
+      dim: body.dim,
+      images: body.images.map((faces) =>
+        faces.map(
+          (f): FaceDetection => ({
+            bbox: [f.bbox[0], f.bbox[1], f.bbox[2], f.bbox[3]],
+            landmarks: f.landmarks.map((p) => [p[0], p[1]] as [number, number]),
+            detScore: f.det_score,
+            embedding: Float32Array.from(f.embedding),
+          }),
+        ),
+      ),
+    };
+  }
+
+  async cluster(vectors: Float32Array[], opts: { threshold: number; minClusterSize: number }): Promise<number[]> {
+    if (vectors.length === 0) return [];
+    const body = await this.post<{ labels: number[] }>("/v1/cluster", {
+      method: "POST",
+      body: JSON.stringify({ vectors: vectors.map((v) => Array.from(v)), threshold: opts.threshold, min_cluster_size: opts.minClusterSize }),
+      headers: this.headers({ "Content-Type": "application/json" }),
+    });
+    return body.labels;
   }
 }

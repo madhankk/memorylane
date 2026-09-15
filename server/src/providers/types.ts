@@ -10,6 +10,7 @@ export interface ProviderInfo {
   reachable: boolean;
   model: string | null;
   dim: number | null;
+  faceModel: string | null;
   device: string | null;
   lastError: string | null;
   checkedAt: string | null;
@@ -33,7 +34,29 @@ export interface TextEmbeddingProvider {
   embedText(texts: string[]): Promise<EmbeddingBatch>;
 }
 
+export interface FaceDetection {
+  bbox: [number, number, number, number]; // x, y, w, h normalised to the sent image
+  landmarks: [number, number][];
+  detScore: number;
+  embedding: Float32Array;
+}
+
+export interface FaceBatch {
+  model: string;
+  dim: number;
+  images: FaceDetection[][];
+}
+
+export interface FaceProvider {
+  readonly expectedFaceModel: string;
+  detectFaces(jpegs: Buffer[]): Promise<FaceBatch>;
+  cluster(vectors: Float32Array[], opts: { threshold: number; minClusterSize: number }): Promise<number[]>;
+}
+
 export interface EmbeddingProvider extends ImageEmbeddingProvider, TextEmbeddingProvider {
   health(force?: boolean): Promise<ProviderInfo>;
   getInfo(): ProviderInfo;
 }
+
+// Everything the sidecar offers, behind one health check.
+export interface AiProvider extends EmbeddingProvider, FaceProvider {}
