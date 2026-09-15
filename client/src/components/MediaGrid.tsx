@@ -82,13 +82,13 @@ export default function MediaGrid({ items, onOpen, onOpenStack, selectable = fal
                 {badge}
               </span>
             )}
-            {stackCount !== null && (
+            {stackCount !== null && onOpenStack && (
               <span
                 role="button"
                 tabIndex={-1}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onOpenStack?.(media);
+                  onOpenStack(media);
                 }}
                 title={`Stack of ${stackCount} - click to expand`}
                 aria-label={`Stack of ${stackCount}`}
@@ -96,6 +96,13 @@ export default function MediaGrid({ items, onOpen, onOpenStack, selectable = fal
               >
                 <Layers size={11} strokeWidth={2} />
                 {stackCount}
+              </span>
+            )}
+            {stackCount !== null && !onOpenStack && (
+              // Inside an expanded stack there's nothing to expand - the badge
+              // just marks which member is the cover.
+              <span className="absolute top-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
+                Cover
               </span>
             )}
             {selectable && (
