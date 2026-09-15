@@ -47,12 +47,15 @@ interface AnalysisProgressProps {
   only?: string[];
   onStatus?: (status: AnalysisStatusDto) => void;
   pollMs?: number;
+  // Render nothing once every shown analyzer is done without failures - for
+  // pages that only need a "still working" banner (Reports, People).
+  hideWhenDone?: boolean;
 }
 
 // Live progress for the background analysis queue. Polls while anything is
 // outstanding, estimates time left from the rate between polls, and stops
 // polling once everything is done or off.
-export default function AnalysisProgress({ only, onStatus, pollMs = 3000 }: AnalysisProgressProps) {
+export default function AnalysisProgress({ only, onStatus, pollMs = 3000, hideWhenDone = false }: AnalysisProgressProps) {
   const [status, setStatus] = useState<AnalysisStatusDto | null>(null);
   const [eta, setEta] = useState<Record<string, number>>({});
   const last = useRef<{ at: number; done: Record<string, number> } | null>(null);
@@ -95,9 +98,10 @@ export default function AnalysisProgress({ only, onStatus, pollMs = 3000 }: Anal
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pollMs]);
 
-  if (!status) return <p className="text-sm text-muted">Loading…</p>;
+  if (!status) return hideWhenDone ? null : <p className="text-sm text-muted">Loading…</p>;
   const rows = status.analyzers.filter((a) => !only || only.includes(a.key));
-  if (rows.length === 0) return <p className="text-sm text-muted">Nothing to analyse yet.</p>;
+  if (rows.length === 0) return hideWhenDone ? null : <p className="text-sm text-muted">Nothing to analyse yet.</p>;
+  if (hideWhenDone && rows.every((a) => a.counts.pending + a.counts.running + a.counts.failed === 0)) return null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -130,6 +134,12 @@ export default function AnalysisProgress({ only, onStatus, pollMs = 3000 }: Anal
               <p className="text-xs text-muted">Turn on People below to start finding faces.</p>
             )}
             {!a.enabled && a.key === "embed_image" && <p className="text-xs text-muted">AI analysis is switched off above.</p>}
+            {a.counts.failed > 0 && (
+              <p className="text-xs text-muted">
+                {a.counts.failed.toLocaleString()} file{a.counts.failed === 1 ? "" : "s"} couldn't be read - usually an unmounted or
+                permission-restricted volume. Fix access, then use Retry failed under Settings › Analysis.
+              </p>
+            )}
           </div>
         );
       })}
