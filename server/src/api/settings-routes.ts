@@ -22,6 +22,9 @@ export async function registerSettingsRoutes(app: FastifyInstance, ctx: AppConte
     if (parsed.data.stackGapSeconds !== undefined || parsed.data.stackMaxHamming !== undefined || parsed.data.stackMinCosine !== undefined) {
       ctx.stacks.markAllDirty();
     }
+    // A different face model means every stored detection is stale.
+    if (parsed.data.faceModel !== undefined) ctx.analysisWorker.requeueStale();
+    if (parsed.data.personsEnabled !== undefined || parsed.data.aiEnabled !== undefined) ctx.analysisWorker.kick();
     return reply.send(updated);
   });
 

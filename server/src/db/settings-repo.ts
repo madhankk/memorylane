@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { SettingsDto } from "@memorylane/shared";
+import type { SettingsDto, FaceModelName } from "@memorylane/shared";
 
 const DEFAULTS: SettingsDto = {
   bindAddress: "0.0.0.0",
@@ -14,6 +14,7 @@ const DEFAULTS: SettingsDto = {
   faceAssignThreshold: 0.45,
   faceMinClusterSize: 3,
   faceLinkThreshold: 0.5,
+  faceModel: "yunet-sface",
 };
 
 export class SettingsRepo {
@@ -45,6 +46,7 @@ export class SettingsRepo {
       faceAssignThreshold: map.has("faceAssignThreshold") ? Number(map.get("faceAssignThreshold")) : DEFAULTS.faceAssignThreshold,
       faceMinClusterSize: map.has("faceMinClusterSize") ? Number(map.get("faceMinClusterSize")) : DEFAULTS.faceMinClusterSize,
       faceLinkThreshold: map.has("faceLinkThreshold") ? Number(map.get("faceLinkThreshold")) : DEFAULTS.faceLinkThreshold,
+      faceModel: (map.get("faceModel") as FaceModelName | undefined) ?? DEFAULTS.faceModel,
     };
   }
 
@@ -71,6 +73,7 @@ export class SettingsRepo {
     if (patch.faceAssignThreshold !== undefined) entries.push(["faceAssignThreshold", String(patch.faceAssignThreshold)]);
     if (patch.faceMinClusterSize !== undefined) entries.push(["faceMinClusterSize", String(patch.faceMinClusterSize)]);
     if (patch.faceLinkThreshold !== undefined) entries.push(["faceLinkThreshold", String(patch.faceLinkThreshold)]);
+    if (patch.faceModel !== undefined) entries.push(["faceModel", patch.faceModel]);
 
     if (entries.length > 0) tx(entries);
     return this.getAll();

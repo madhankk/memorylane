@@ -27,6 +27,9 @@ MODELS = {
 }
 FACE_MODEL_ID = "yunet-sface@1"
 FACE_DIM = 128
+ARCFACE_MODEL_ID = "buffalo_l@1"
+ARCFACE_DIM = 512
+ARCFACE_REPO = "immich-app/buffalo_l"
 DET_SIZE = 640
 STRIDES = (8, 16, 32)
 SCORE_THRESHOLD = 0.6
@@ -174,3 +177,78 @@ class FaceModel:
                     )
             results.append(faces)
         return results
+
+
+def _nms(cands, iou_thr):
+    cands.sort(key=lambda c: -c[0])
+    kept = []
+    for c in cands:
+        if all(_iou(c[1], k[1]) <= iou_thr for k in kept):
+            kept.append(c)
+        if len(kept) >= MAX_FACES:
+            break
+    return kept
+
+
+class ArcFaceModel(FaceModel):
+    """InsightFace buffalo_l: SCRFD-10G detector + ArcFace-R50 recogniser (512-d).
+
+    License: InsightFace model zoo weights are for non-commercial research use.
+    Opt-in only (MEMORYLANE_AI_FACE_MODEL=buffalo_l); never the default.
+    """
+
+    NUM_ANCHORS = 2
+
+    def __init__(self, providers: list):  # noqa: D107 - see class docstring
+        from huggingface_hub import snapshot_download
+
+        path = snapshot_download(ARCFACE_REPO, allow_patterns=["detection/model.onnx", "recognition/model.onnx"])
+        self.det = ort.InferenceSession(f"{path}/detection/model.onnx", providers=providers)
+        self.rec = ort.InferenceSession(f"{path}/recognition/model.onnx", providers=providers)
+        self.det_input = self.det.get_inputs()[0].name
+        self.rec_input = self.rec.get_inputs()[0].name
+
+    def _detect(self, img: Image.Image):
+        w, h = img.size
+        scale = DET_SIZE / max(w, h)
+        rw, rh = max(1, round(w * scale)), max(1, round(h * scale))
+        canvas = Image.new("RGB", (DET_SIZE, DET_SIZE), (0, 0, 0))
+        canvas.paste(img.resize((rw, rh), Image.BILINEAR), (0, 0))
+        x = ((np.asarray(canvas, dtype=np.float32) - 127.5) / 128.0).transpose(2, 0, 1)[None]  # RGB
+        outs = self.det.run(None, {self.det_input: x})
+        cands = []
+        for i, s in enumerate(STRIDES):
+            scores, bbox, kps = outs[i][:, 0], outs[i + 3] * s, outs[i + 6] * s
+            n = DET_SIZE // s
+            ys, xs = np.divmod(np.arange(n * n), n)
+            cx, cy = np.repeat(xs * s, self.NUM_ANCHORS), np.repeat(ys * s, self.NUM_ANCHORS)
+            for k in np.where(scores > 0.5)[0]:
+                x1, y1 = cx[k] - bbox[k, 0], cy[k] - bbox[k, 1]
+                x2, y2 = cx[k] + bbox[k, 2], cy[k] + bbox[k, 3]
+                kp = np.stack([cx[k] + kps[k, 0::2], cy[k] + kps[k, 1::2]], 1)
+                cands.append((float(scores[k]), [x1, y1, x2 - x1, y2 - y1], kp))
+        kept = _nms(cands, 0.4)
+        return [(sc, np.array(box) / scale, k / scale) for sc, box, k in kept], (w, h)
+
+    def _embed(self, crops: list[Image.Image]) -> np.ndarray:
+        x = np.stack([((np.asarray(c, dtype=np.float32) - 127.5) / 127.5).transpose(2, 0, 1) for c in crops])  # RGB
+        vs = np.concatenate([self.rec.run(None, {self.rec_input: x[i : i + 1]})[0] for i in range(len(x))])
+        return vs / np.clip(np.linalg.norm(vs, axis=1, keepdims=True), 1e-12, None)
+
+
+FACE_MODELS = {
+    "yunet-sface": {"id": FACE_MODEL_ID, "dim": FACE_DIM, "license": "Apache-2.0", "label": "Standard (YuNet + SFace)"},
+    "buffalo_l": {"id": ARCFACE_MODEL_ID, "dim": ARCFACE_DIM, "license": "non-commercial", "label": "ArcFace (InsightFace buffalo_l)"},
+}
+
+
+def face_model_id(name: str) -> tuple[str, int]:
+    if name == "buffalo_l":
+        return ARCFACE_MODEL_ID, ARCFACE_DIM
+    if name in ("yunet-sface", "default"):
+        return FACE_MODEL_ID, FACE_DIM
+    raise ValueError(f"Unknown face model '{name}' (expected yunet-sface or buffalo_l)")
+
+
+def create_face_model(name: str, providers: list) -> FaceModel:
+    return ArcFaceModel(providers) if name == "buffalo_l" else FaceModel(providers)

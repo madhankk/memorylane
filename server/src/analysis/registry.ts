@@ -28,7 +28,7 @@ export function createAnalyzers(db: Database.Database, _logger: Logger, deps: An
     analyzers.push(createEmbedImageAnalyzer(db, deps.paths, deps.provider, deps.vectorIndex, () => deps.settings.getAll().aiEnabled));
     analyzers.push(
       createFacesAnalyzer(
-        db, deps.paths, deps.provider, deps.vectorIndex,
+        db, deps.paths, deps.provider, deps.vectorIndex, deps.settings,
         () => {
           const s = deps.settings.getAll();
           return s.aiEnabled && s.personsEnabled;

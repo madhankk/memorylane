@@ -610,6 +610,36 @@ export default function SettingsPage() {
           />
           Find and group faces (needs the AI sidecar)
         </label>
+        <div className="mb-3 flex flex-wrap items-end gap-3 text-sm text-ink">
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">Face model</span>
+            <select
+              value={settings.faceModel}
+              onChange={(e) => {
+                const next = e.target.value as SettingsDto["faceModel"];
+                if (next === settings.faceModel) return;
+                if (
+                  window.confirm(
+                    "Switch face model? Every photo is re-analysed with the new model (a few minutes per few thousand photos). Names and your confirmed/rejected faces are kept.",
+                  )
+                )
+                  void updateSchedule({ faceModel: next });
+                else e.target.value = settings.faceModel;
+              }}
+              className={inputClass}
+            >
+              <option value="yunet-sface">Standard - YuNet + SFace (open license)</option>
+              <option value="buffalo_l">ArcFace - InsightFace buffalo_l (stronger, personal use only)</option>
+            </select>
+          </label>
+          <p className="max-w-xl text-xs text-muted">
+            ArcFace tells similar faces (siblings, children) apart much better, costs ~60% more time per photo and a one-time ~190 MB
+            download, and its weights are licensed for <em>non-commercial</em> use - fine for your own library, not for redistribution.
+            {analysis?.provider && analysis.provider.reachable && !analysis.provider.faceModels.some((m) => m.name === settings.faceModel) && (
+              <span className="text-amber-600"> The running sidecar doesn't offer this model - update and restart it (npm run ai).</span>
+            )}
+          </p>
+        </div>
         <p className="mb-2 text-xs text-muted">
           Siblings and young children look alike to the model - if one person collects several kids, raise both strictness values
           (0.55-0.6 is a good start) and press Regroup. Stricter means more small "Person N" entries to merge, which is cheaper than

@@ -92,7 +92,7 @@ async function main(): Promise<void> {
         if (r === "rebuilt") bootstrapLogger.info({ space, count: embeddings.count(model) }, "Rebuilt vector index from media_embeddings");
       })
       .catch((err) => bootstrapLogger.error({ err }, "Vector index sync failed"));
-    const faceModel = provider.expectedFaceModel;
+    const faceModel = settings.faceModel === "buffalo_l" ? "buffalo_l@1" : "yunet-sface@1";
     const faceSpace = spaceFor("faces", faceModel);
     const faceCount = (db.prepare("SELECT COUNT(*) AS c FROM faces WHERE model = ?").get(faceModel) as { c: number }).c;
     vectorIndex

@@ -44,6 +44,7 @@ export const updateSettingsRequestSchema = z.object({
   faceAssignThreshold: z.number().min(0.3).max(0.9).optional(),
   faceMinClusterSize: z.number().int().min(2).max(20).optional(),
   faceLinkThreshold: z.number().min(0.3).max(0.9).optional(),
+  faceModel: z.enum(["yunet-sface", "buffalo_l"]).optional(),
 });
 
 export const paginationQuerySchema = z.object({

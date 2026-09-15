@@ -97,14 +97,22 @@ export async function startFakeSidecar(opts: { model?: string; dim?: number; fac
     return {
       ok: true, device: "fake", providers: ["FakeExecutionProvider"], max_batch: 32,
       models: { image_embed: { id: model, dim }, text_embed: { id: model, dim }, faces: { id: faceModel, dim } },
+      face_models: [
+        { name: "yunet-sface", id: faceModel, dim, license: "Apache-2.0", label: "Standard" },
+        { name: "buffalo_l", id: "buffalo_l@1", dim, license: "non-commercial", label: "ArcFace" },
+      ],
     };
   });
   app.post("/v1/faces", async (req, reply) => {
     if (failing) return reply.code(failing).send({ detail: "failing" });
     calls.faces++;
-    const files = parseMultipart(req.body as Buffer, req.headers["content-type"] ?? "");
+    const parts = parseMultipart(req.body as Buffer, req.headers["content-type"] ?? "");
+    // The first part may be the `model` form field (short, non-JPEG).
+    const modelPart = parts.find((p) => p.length < 32 && /^[a-z_-]+$/.test(p.toString()));
+    const files = parts.filter((p) => p !== modelPart);
+    const requested = modelPart?.toString() ?? "yunet-sface";
     if (files.length === 0) return reply.code(422).send({ detail: "no files" });
-    return { model: faceModel, dim, images: files.map((f) => facesForBytes(f, dim)) };
+    return { model: requested === "buffalo_l" ? "buffalo_l@1" : faceModel, dim, images: files.map((f) => facesForBytes(f, dim)) };
   });
   app.post("/v1/cluster", async (req, reply) => {
     if (failing) return reply.code(failing).send({ detail: "failing" });

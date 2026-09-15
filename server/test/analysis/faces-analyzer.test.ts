@@ -10,6 +10,7 @@ import { SidecarProvider } from "../../src/providers/sidecar-provider.js";
 import { LanceVectorIndex } from "../../src/vectors/lance-vector-index.js";
 import { spaceFor } from "../../src/vectors/vector-index.js";
 import type { AppPaths } from "../../src/config/paths.js";
+import { SettingsRepo } from "../../src/db/settings-repo.js";
 
 let fake: FakeSidecar;
 let dir: string;
@@ -41,7 +42,7 @@ describe("faces analyzer", () => {
     const provider = new SidecarProvider(fake.url, { expectedModel: fake.model, healthTtlMs: 0 });
     const index = new LanceVectorIndex(paths.vectorsDir);
     const received: number[][] = [];
-    const analyzer = createFacesAnalyzer(db, paths, provider, index, () => true, async (ids) => {
+    const analyzer = createFacesAnalyzer(db, paths, provider, index, new SettingsRepo(db), () => true, async (ids) => {
       received.push(ids);
     });
     const rows = [

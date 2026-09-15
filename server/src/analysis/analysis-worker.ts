@@ -49,14 +49,22 @@ export class AnalysisWorker {
     this.stopped = false;
     const reset = this.repo.resetRunning();
     if (reset > 0) this.logger.warn({ count: reset }, "Re-queued analysis rows interrupted by a restart");
-    for (const a of this.analyzers) {
-      const stale = this.repo.requeueStaleVersions(a);
-      if (stale > 0) {
-        this.logger.info({ analyzer: a.key, version: a.version, count: stale }, "Re-queued analysis rows from an older version");
-      }
-    }
+    this.requeueStale();
     this.enqueueAll();
     this.loopPromise = this.loop();
+  }
+
+  // Re-queues every done row whose model_version no longer matches its
+  // analyzer (startup, or after a model setting changed at runtime).
+  requeueStale(): number {
+    let total = 0;
+    for (const a of this.analyzers) {
+      const stale = this.repo.requeueStaleVersions(a);
+      if (stale > 0) this.logger.info({ analyzer: a.key, version: a.version, count: stale }, "Re-queued analysis rows from an older version");
+      total += stale;
+    }
+    if (total > 0) this.wake?.();
+    return total;
   }
 
   async stop(): Promise<void> {

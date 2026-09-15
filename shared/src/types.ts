@@ -105,6 +105,20 @@ export interface SettingsDto {
   // Cosine at/above which two unassigned faces are linked during discovery.
   // Higher = stricter grouping (more, smaller persons - merge is cheap).
   faceLinkThreshold: number;
+  // Which face model the sidecar should use (see FaceModelName). Changing it
+  // re-detects every photo under the new model; names and corrections survive.
+  faceModel: FaceModelName;
+}
+
+export type FaceModelName = "yunet-sface" | "buffalo_l";
+
+// One of the face models the sidecar can serve (from its health report).
+export interface FaceModelInfoDto {
+  name: FaceModelName | string;
+  id: string;
+  dim: number;
+  license: string;
+  label: string;
 }
 
 export interface UpdateSettingsRequest {
@@ -120,6 +134,7 @@ export interface UpdateSettingsRequest {
   faceAssignThreshold?: number;
   faceMinClusterSize?: number;
   faceLinkThreshold?: number;
+  faceModel?: FaceModelName;
 }
 
 export interface FolderDto {
@@ -391,6 +406,7 @@ export interface ProviderStatusDto {
   model: string | null;
   dim: number | null;
   faceModel: string | null;
+  faceModels: FaceModelInfoDto[];
   device: string | null;
   lastError: string | null;
   checkedAt: string | null;

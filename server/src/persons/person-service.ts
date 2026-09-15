@@ -3,7 +3,7 @@ import type Database from "better-sqlite3";
 import type { Logger } from "pino";
 import type { FaceDto, PersonDto } from "@memorylane/shared";
 import type { SettingsRepo } from "../db/settings-repo.js";
-import type { AiProvider } from "../providers/types.js";
+import { FACE_MODEL_IDS, type AiProvider } from "../providers/types.js";
 import { spaceFor, type VectorIndex } from "../vectors/vector-index.js";
 import { FaceRepo, type FaceRow } from "./face-repo.js";
 
@@ -78,7 +78,9 @@ export class PersonService {
   }
 
   private model(): string | null {
-    return this.provider()?.expectedFaceModel ?? null;
+    if (!this.provider()) return null;
+    const name = this.settings.getAll().faceModel;
+    return FACE_MODEL_IDS[name] ?? name;
   }
 
   private enabled(): boolean {
@@ -98,7 +100,7 @@ export class PersonService {
     const centroids = new Map<number, Float32Array | null>();
     const centroidOf = (personId: number) => {
       if (!centroids.has(personId)) {
-        const vs = this.faces.personVectors(personId);
+        const vs = this.faces.personVectors(personId, model);
         centroids.set(personId, vs.length ? centroid(vs) : null);
       }
       return centroids.get(personId) ?? null;
@@ -140,7 +142,7 @@ export class PersonService {
     const existing = (this.db.prepare("SELECT id FROM persons WHERE merged_into IS NULL").all() as { id: number }[]).map((p) => ({
       id: p.id,
       centroid: (() => {
-        const vs = this.faces.personVectors(p.id);
+        const vs = this.faces.personVectors(p.id, model);
         return vs.length ? centroid(vs) : null;
       })(),
     }));

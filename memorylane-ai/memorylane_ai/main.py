@@ -1,12 +1,12 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from .clip_model import ClipModel, _providers
 from .cluster import chinese_whispers
 from .config import Settings
-from .face_model import FACE_DIM, FACE_MODEL_ID, FaceModel
+from .face_model import FACE_MODELS, FaceModel, create_face_model, face_model_id
 
 settings = Settings()
 state: dict = {}
@@ -43,10 +43,19 @@ def model() -> ClipModel:
 
 # Loaded on first use so CLIP-only setups keep their fast startup; the
 # detector download is ~38 MB.
-def face_model() -> FaceModel:
-    if "faces" not in state:
-        state["faces"] = FaceModel(_providers(settings.device))
-    return state["faces"]
+FACE_ID, FACE_DIM_ACTIVE = face_model_id(settings.face_model)
+
+
+# Any known face model can be requested per call (Settings › People picks
+# one); each loads lazily on first use and stays resident.
+def face_model(name: str | None = None) -> FaceModel:
+    name = name or settings.face_model
+    if name not in FACE_MODELS:
+        raise HTTPException(status_code=400, detail=f"Unknown face model '{name}'")
+    key = f"faces:{name}"
+    if key not in state:
+        state[key] = create_face_model(name, _providers(settings.device))
+    return state[key]
 
 
 @app.get("/v1/health")
@@ -60,8 +69,9 @@ def health(_: None = Depends(require_token)):
         "models": {
             "image_embed": {"id": info.id, "dim": info.dim},
             "text_embed": {"id": info.id, "dim": info.dim},
-            "faces": {"id": FACE_MODEL_ID, "dim": FACE_DIM},
+            "faces": {"id": FACE_ID, "dim": FACE_DIM_ACTIVE},
         },
+        "face_models": [{"name": n, **m} for n, m in FACE_MODELS.items()],
     }
 
 
@@ -86,12 +96,16 @@ def embed_text(req: TextRequest, _: None = Depends(require_token)):
 
 
 @app.post("/v1/faces")
-async def faces(files: list[UploadFile] = File(...), _: None = Depends(require_token)):
+async def faces(files: list[UploadFile] = File(...), model: str | None = Form(default=None), _: None = Depends(require_token)):
     if not 1 <= len(files) <= 16:
         raise HTTPException(status_code=400, detail="Send between 1 and 16 files")
     data = [await f.read() for f in files]
+    name = model or settings.face_model
+    if name not in FACE_MODELS:
+        raise HTTPException(status_code=400, detail=f"Unknown face model '{name}'")
+    model_id, dim = face_model_id(name)
     try:
-        fm = face_model()
+        fm = face_model(name)
     except Exception as exc:  # model download/load failure is an outage, not a bad request
         raise HTTPException(status_code=503, detail=f"Face model unavailable: {exc}") from exc
     try:
@@ -99,8 +113,8 @@ async def faces(files: list[UploadFile] = File(...), _: None = Depends(require_t
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Could not process an image: {exc}") from exc
     return {
-        "model": FACE_MODEL_ID,
-        "dim": FACE_DIM,
+        "model": model_id,
+        "dim": dim,
         "images": [
             [{"bbox": f.bbox, "landmarks": f.landmarks, "det_score": f.det_score, "embedding": f.embedding.tolist()} for f in image]
             for image in results

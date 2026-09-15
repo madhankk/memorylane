@@ -154,9 +154,12 @@ export class FaceRepo {
     tx(faceIds);
   }
 
-  // Mean vector of a person's faces (unnormalised OK - callers normalise).
-  personVectors(personId: number): Float32Array[] {
-    return (this.db.prepare("SELECT embedding FROM faces WHERE person_id = ?").all(personId) as { embedding: Buffer }[]).map((r) => blobToVector(r.embedding));
+  // A person's face vectors for one model (vectors from different models
+  // never mix - during a model switch a person briefly has both).
+  personVectors(personId: number, model: string): Float32Array[] {
+    return (this.db.prepare("SELECT embedding FROM faces WHERE person_id = ? AND model = ?").all(personId, model) as { embedding: Buffer }[]).map((r) =>
+      blobToVector(r.embedding),
+    );
   }
 
   deleteAll(): void {

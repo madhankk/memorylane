@@ -1,4 +1,5 @@
 import {
+  FACE_MODEL_IDS,
   ProviderUnavailableError,
   type AiProvider,
   type EmbeddingBatch,
@@ -11,6 +12,7 @@ interface SidecarHealth {
   ok: boolean;
   device: string;
   models: { image_embed: { id: string; dim: number }; text_embed: { id: string; dim: number }; faces?: { id: string; dim: number } };
+  face_models?: { name: string; id: string; dim: number; license: string; label: string }[];
 }
 
 interface SidecarFaces {
@@ -28,7 +30,6 @@ interface SidecarVectors {
 export interface SidecarProviderOptions {
   token?: string;
   expectedModel: string;
-  expectedFaceModel?: string;
   healthTtlMs?: number;
   requestTimeoutMs?: number;
 }
@@ -40,7 +41,6 @@ export interface SidecarProviderOptions {
 export class SidecarProvider implements AiProvider {
   readonly id = "sidecar";
   readonly expectedModel: string;
-  readonly expectedFaceModel: string;
   private info: ProviderInfo;
   private healthTtlMs: number;
   private requestTimeoutMs: number;
@@ -51,11 +51,10 @@ export class SidecarProvider implements AiProvider {
     opts: SidecarProviderOptions,
   ) {
     this.expectedModel = opts.expectedModel;
-    this.expectedFaceModel = opts.expectedFaceModel ?? "yunet-sface@1";
     this.token = opts.token;
     this.healthTtlMs = opts.healthTtlMs ?? 30_000;
     this.requestTimeoutMs = opts.requestTimeoutMs ?? 60_000;
-    this.info = { url, reachable: false, model: null, dim: null, faceModel: null, device: null, lastError: null, checkedAt: null };
+    this.info = { url, reachable: false, model: null, dim: null, faceModel: null, faceModels: [], device: null, lastError: null, checkedAt: null };
   }
 
   getInfo(): ProviderInfo {
@@ -76,7 +75,8 @@ export class SidecarProvider implements AiProvider {
       const body = (await res.json()) as SidecarHealth;
       const model = body.models.image_embed.id;
       const faceModel = body.models.faces?.id ?? null;
-      const base = { url: this.url, model, dim: body.models.image_embed.dim, faceModel, device: body.device, checkedAt };
+      const faceModels = body.face_models ?? (faceModel ? [{ name: "yunet-sface", id: faceModel, dim: body.models.faces?.dim ?? 0, license: "", label: "" }] : []);
+      const base = { url: this.url, model, dim: body.models.image_embed.dim, faceModel, faceModels, device: body.device, checkedAt };
       if (model !== this.expectedModel) {
         this.info = { ...base, reachable: false, lastError: `Sidecar model ${model} does not match configured ${this.expectedModel}` };
       } else {
@@ -88,9 +88,9 @@ export class SidecarProvider implements AiProvider {
     return this.getInfo();
   }
 
-  // True only when the sidecar is up AND serves the configured face model.
-  facesAvailable(): boolean {
-    return this.info.reachable && this.info.faceModel === this.expectedFaceModel;
+  // True when the sidecar is up and lists the given face model.
+  facesAvailable(model: string): boolean {
+    return this.info.reachable && this.info.faceModels.some((m) => m.name === model);
   }
 
   private async post<T extends object>(path: string, init: RequestInit, expectModel?: string): Promise<T> {
@@ -143,10 +143,12 @@ export class SidecarProvider implements AiProvider {
     );
   }
 
-  async detectFaces(jpegs: Buffer[]): Promise<FaceBatch> {
+  async detectFaces(jpegs: Buffer[], model: string): Promise<FaceBatch> {
     const form = new FormData();
+    form.append("model", model);
     jpegs.forEach((buf, i) => form.append("files", new Blob([buf], { type: "image/jpeg" }), `${i}.jpg`));
-    const body = await this.post<SidecarFaces>("/v1/faces", { method: "POST", body: form, headers: this.headers() }, this.expectedFaceModel);
+    const expected = FACE_MODEL_IDS[model] ?? model;
+    const body = await this.post<SidecarFaces>("/v1/faces", { method: "POST", body: form, headers: this.headers() }, expected);
     return {
       model: body.model,
       dim: body.dim,

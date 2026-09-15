@@ -26,9 +26,13 @@ def portraits(client):
     return r.json()
 
 
-def test_health_reports_face_model(client):
+def test_health_reports_face_models(client):
     body = client.get("/v1/health").json()
     assert body["models"]["faces"] == {"id": "yunet-sface@1", "dim": 128}
+    names = {m["name"]: m for m in body["face_models"]}
+    assert names["yunet-sface"]["id"] == "yunet-sface@1" and names["buffalo_l"]["dim"] == 512
+    r = client.post("/v1/faces", files=[("files", ("x.jpg", (FIXTURES / "lincoln1.jpg").read_bytes(), "image/jpeg"))], data={"model": "nope"})
+    assert r.status_code == 400
 
 
 def test_one_face_per_portrait(portraits):

@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import type { AppPaths } from "../../config/paths.js";
-import { ProviderUnavailableError, type AiProvider } from "../../providers/types.js";
+import { FACE_MODEL_IDS, ProviderUnavailableError, type AiProvider } from "../../providers/types.js";
+import type { SettingsRepo } from "../../db/settings-repo.js";
 import { renderAnalysisJpeg } from "../../media/analysis-input.js";
 import { FaceRepo } from "../../persons/face-repo.js";
 import { spaceFor, type VectorIndex } from "../../vectors/vector-index.js";
@@ -16,21 +17,28 @@ export function createFacesAnalyzer(
   paths: AppPaths,
   provider: AiProvider,
   index: VectorIndex,
+  settings: SettingsRepo,
   isEnabled: () => boolean,
   onNewFaces: (faceIds: number[]) => Promise<void>,
 ): Analyzer {
   const repo = new FaceRepo(db);
+  const modelName = () => settings.getAll().faceModel;
   return {
     key: FACES_KEY,
-    version: provider.expectedFaceModel,
+    // Follows Settings › People › Face model; a change makes every done row
+    // stale (see AnalysisWorker.requeueStale) so photos are re-detected.
+    get version() {
+      return FACE_MODEL_IDS[modelName()] ?? modelName();
+    },
     batchSize: 8,
     appliesTo: "media_type IN ('image', 'raw') AND thumbnail_status = 'done'",
     isEnabled,
     async run(rows: AnalysisMediaRow[]): Promise<AnalyzerOutcome[]> {
       const health = await provider.health();
       if (!health.reachable) throw new ProviderUnavailableError(health.lastError ?? "Sidecar not reachable");
-      if (health.faceModel !== provider.expectedFaceModel) {
-        throw new ProviderUnavailableError(`Sidecar face model ${health.faceModel ?? "none"} does not match configured ${provider.expectedFaceModel}`);
+      const model = modelName();
+      if (!health.faceModels.some((m) => m.name === model)) {
+        throw new ProviderUnavailableError(`Sidecar does not offer face model "${model}" (has: ${health.faceModels.map((m) => m.name).join(", ") || "none"})`);
       }
 
       const outcomes = new Map<number, AnalyzerOutcome>();
@@ -42,7 +50,7 @@ export function createFacesAnalyzer(
       }
 
       if (inputs.length > 0) {
-        const batch = await provider.detectFaces(inputs.map((i) => i.jpeg));
+        const batch = await provider.detectFaces(inputs.map((i) => i.jpeg), model);
         if (batch.images.length !== inputs.length) throw new Error(`Sidecar returned ${batch.images.length} results for ${inputs.length} images`);
         const space = spaceFor("faces", batch.model);
         const newIds: number[] = [];

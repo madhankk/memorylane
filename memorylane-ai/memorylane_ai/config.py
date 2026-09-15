@@ -9,5 +9,8 @@ class Settings:
     model_repo: str = os.environ.get("MEMORYLANE_AI_MODEL", "Xenova/clip-vit-base-patch32")
     # cpu (default: fastest reliable choice measured on Apple Silicon), coreml, cuda, auto
     device: str = os.environ.get("MEMORYLANE_AI_DEVICE", "cpu")
+    # yunet-sface (default, Apache-2.0) or buffalo_l (InsightFace ArcFace,
+    # stronger, non-commercial license - opt-in for personal use).
+    face_model: str = os.environ.get("MEMORYLANE_AI_FACE_MODEL", "yunet-sface")
     token: str | None = os.environ.get("MEMORYLANE_AI_TOKEN") or None
     max_batch: int = int(os.environ.get("MEMORYLANE_AI_MAX_BATCH", "32"))
