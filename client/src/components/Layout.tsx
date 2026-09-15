@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { FolderOpen, LogOut, Search, Settings as SettingsIcon, Star, type LucideIcon } from "lucide-react";
+import { BarChart3, FolderOpen, LogOut, Search, Settings as SettingsIcon, Star, type LucideIcon } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 
 // Mirrors life-archive-app's ArchiveNav.tsx: sticky glass header, serif
@@ -8,6 +8,7 @@ import { useAuth } from "../hooks/useAuth";
 const navItems: { to: string; label: string; icon: LucideIcon; end?: boolean }[] = [
   { to: "/", label: "Browse", icon: FolderOpen, end: true },
   { to: "/favorites", label: "Favorites", icon: Star },
+  { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
