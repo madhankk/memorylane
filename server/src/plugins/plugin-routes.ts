@@ -59,6 +59,22 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
   const resolveRoot = (id: number) => ctx.db.prepare("SELECT id, path, enabled FROM scan_roots WHERE id = ? AND kind = 'apple-photos'")
     .get(id) as { id: number; path: string; enabled: number } | undefined;
 
+  app.get("/api/plugins/apple-photos/roots/:id/preview", { preHandler: app.requireAuth }, async (request, reply) => {
+    if (!isApplePhotosEnabled(ctx.db)) return reply.code(404).send({ error: "Apple Photos is disabled" });
+    const id = Number((request.params as { id: string }).id);
+    const root = Number.isSafeInteger(id) ? resolveRoot(id) : undefined;
+    if (!root || !root.enabled) return reply.code(404).send({ error: "Apple Photos root not found" });
+    const parsed = z.object({
+      year: z.union([z.literal("all"), z.literal("unknown"), z.string().regex(/^\d{4}$/)]).optional(),
+      month: z.string().regex(/^(0[1-9]|1[0-2])$/).optional(),
+    }).strict().safeParse(request.query);
+    if (!parsed.success || (parsed.data.month && (!parsed.data.year || parsed.data.year === "all" || parsed.data.year === "unknown"))) {
+      return reply.code(400).send({ error: "Invalid preview query" });
+    }
+    const { previewApplePhotos } = await import("./apple-photos/browse.js");
+    return reply.send({ items: previewApplePhotos(ctx.db, id, parsed.data.year ?? null, parsed.data.month ?? null, 6) });
+  });
+
   app.get("/api/plugins/apple-photos/roots/:id/browse", { preHandler: app.requireAuth }, async (request, reply) => {
     if (!isApplePhotosEnabled(ctx.db)) return reply.code(404).send({ error: "Apple Photos is disabled" });
     const id = Number((request.params as { id: string }).id);

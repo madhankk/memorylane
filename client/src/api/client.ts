@@ -109,6 +109,8 @@ export const api = {
     openInPhotos: (mediaId: number) => request<{ ok: true }>("/api/plugins/apple-photos/open-in-photos", { method: "POST", body: JSON.stringify({ mediaId }) }),
     browseApplePhotos: (rootId: number, year?: string, month?: string, offset = 0, limit = 100) =>
       request<AppleBrowseDto>(`/api/plugins/apple-photos/roots/${rootId}/browse${toQueryString({ year, month, offset, limit })}`),
+    previewApplePhotos: (rootId: number, year?: string, month?: string) =>
+      request<{ items: { id: number; thumbnailVersion: number }[] }>(`/api/plugins/apple-photos/roots/${rootId}/preview${toQueryString({ year, month })}`),
     openCatalogItemInPhotos: (rootId: number, uuid: string) => request<{ ok: true }>(`/api/plugins/apple-photos/roots/${rootId}/items/open-in-photos`, { method: "POST", body: JSON.stringify({ uuid }) }),
     checkApplePhotoLocal: (rootId: number, uuid: string) => request<{ available: boolean }>(`/api/plugins/apple-photos/roots/${rootId}/items/check-local`, { method: "POST", body: JSON.stringify({ uuid }) }),
   },
@@ -149,6 +151,7 @@ export const api = {
     get: (id: number) => request<{ folder: FolderDto; breadcrumbs: FolderBreadcrumbDto[] }>(`/api/folders/${id}`),
     children: (id: number, offset = 0, limit = 100) =>
       request<PaginatedResult<FolderDto>>(`/api/folders/${id}/children?offset=${offset}&limit=${limit}`),
+    preview: (id: number) => request<{ items: { id: number; thumbnailVersion: number }[] }>(`/api/folders/${id}/preview`),
     media: (id: number, offset = 0, limit = 200, recursive = false, type: MediaTypeFilter = "all", expandStacks = false) =>
       request<PaginatedResult<MediaDto>>(
         `/api/folders/${id}/media?offset=${offset}&limit=${limit}&recursive=${recursive}&type=${type}&expandStacks=${expandStacks}`,

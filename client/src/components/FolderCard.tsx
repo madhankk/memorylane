@@ -1,8 +1,10 @@
+import { useCallback } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import type { FolderDto } from "@memorylane/shared";
 import { api } from "../api/client";
 import { formatBytes } from "../utils/format";
+import { useHoverPreview } from "../hooks/useHoverPreview";
 
 // Every folder card reads the same way - whole-subtree item count and size -
 // whether it's a top-level "Your Library" card, a subfolder you've browsed
@@ -17,15 +19,22 @@ function summaryFor(folder: FolderDto): string {
 // in a bottom gradient, hover lift + zoom, and a footer row with the item
 // count on one side and an arrow link on the other.
 export default function FolderCard({ folder }: { folder: FolderDto }) {
+  const load = useCallback(() => api.folders.preview(folder.id).then((result) => result.items), [folder.id]);
+  const { frame, onMouseEnter, onMouseLeave } = useHoverPreview(
+    folder.thumbnailMediaId === null ? null : { id: folder.thumbnailMediaId, thumbnailVersion: folder.thumbnailVersion }, load,
+  );
+  const display = frame ?? (folder.thumbnailMediaId === null ? null : { id: folder.thumbnailMediaId, thumbnailVersion: folder.thumbnailVersion });
   return (
     <Link
       to={`/folder/${folder.id}`}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       className="group block cursor-pointer overflow-hidden rounded-xl bg-surface ring-1 ring-border transition hover:-translate-y-0.5 hover:shadow-xl"
     >
       <div className="relative aspect-[4/3] overflow-hidden bg-media">
-        {folder.thumbnailMediaId ? (
+        {display ? (
           <img
-            src={api.media.thumbnailUrl(folder.thumbnailMediaId, folder.thumbnailVersion)}
+            src={api.media.thumbnailUrl(display.id, display.thumbnailVersion)}
             alt=""
             loading="lazy"
             className="h-full w-full object-cover transition duration-500 group-hover:scale-105"

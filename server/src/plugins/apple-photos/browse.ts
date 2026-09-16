@@ -31,6 +31,26 @@ const FROM = `FROM apple_photos_assets a
   WHERE a.scan_root_id = ? AND a.hidden = 0 AND a.in_trash = 0`;
 const DATE = "COALESCE(m.captured_date, a.catalog_date)";
 
+export function previewApplePhotos(
+  db: Database.Database, rootId: number, year: string | null, month: string | null, limit: number,
+): { id: number; thumbnailVersion: number }[] {
+  const bindings: (number | string)[] = [rootId];
+  let dateFilter = "";
+  if (year === "unknown") dateFilter = ` AND ${DATE} IS NULL`;
+  else if (year && year !== "all") {
+    dateFilter = ` AND substr(${DATE}, 1, 4) = ?`;
+    bindings.push(year);
+    if (month) {
+      dateFilter += ` AND substr(${DATE}, 6, 2) = ?`;
+      bindings.push(month);
+    }
+  }
+  return db.prepare(`SELECT m.id, m.thumbnail_version AS thumbnailVersion ${FROM}
+    AND m.thumbnail_status = 'done' AND m.media_type IN ('image', 'raw')${dateFilter}
+    ORDER BY ${DATE} DESC, m.id DESC LIMIT ?`)
+    .all(...bindings, Math.min(Math.max(limit, 1), 6)) as { id: number; thumbnailVersion: number }[];
+}
+
 export function browseApplePhotos(
   db: Database.Database, rootId: number, year: string | null, month: string | null, offset: number, limit: number,
 ): AppleBrowseResult {
