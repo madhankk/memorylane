@@ -6,6 +6,7 @@ import { renderAnalysisJpeg } from "../../media/analysis-input.js";
 import { FaceRepo } from "../../persons/face-repo.js";
 import { spaceFor, type VectorIndex } from "../../vectors/vector-index.js";
 import type { Analyzer, AnalysisMediaRow, AnalyzerOutcome } from "../types.js";
+import { isApplePhotosEnabled, isMediaSourceVisible } from "../../plugins/registry.js";
 
 export const FACES_KEY = "faces";
 
@@ -44,19 +45,29 @@ export function createFacesAnalyzer(
       const outcomes = new Map<number, AnalyzerOutcome>();
       const inputs: { row: AnalysisMediaRow; jpeg: Buffer }[] = [];
       for (const row of rows) {
+        if (!isMediaSourceVisible(db, row.id)) {
+          outcomes.set(row.id, { mediaId: row.id, status: "unsupported", error: "Media source disabled" });
+          continue;
+        }
         const jpeg = await renderAnalysisJpeg(paths, row);
         if (!jpeg) outcomes.set(row.id, { mediaId: row.id, status: "unsupported", error: "No analysable image" });
         else inputs.push({ row, jpeg });
       }
 
-      if (inputs.length > 0) {
-        const batch = await provider.detectFaces(inputs.map((i) => i.jpeg), model);
-        if (batch.images.length !== inputs.length) throw new Error(`Sidecar returned ${batch.images.length} results for ${inputs.length} images`);
+      const activeInputs = inputs.filter((i) => isMediaSourceVisible(db, i.row.id));
+      for (const input of inputs) if (!activeInputs.includes(input)) outcomes.set(input.row.id, { mediaId: input.row.id, status: "unsupported", error: "Media source disabled" });
+      if (activeInputs.length > 0) {
+        const batch = await provider.detectFaces(activeInputs.map((i) => i.jpeg), model);
+        if (batch.images.length !== activeInputs.length) throw new Error(`Sidecar returned ${batch.images.length} results for ${activeInputs.length} images`);
         const space = spaceFor("faces", batch.model);
         const newIds: number[] = [];
         const upserts: { id: number; vector: Float32Array }[] = [];
         const removals: number[] = [];
-        inputs.forEach((input, k) => {
+        activeInputs.forEach((input, k) => {
+          if (!isMediaSourceVisible(db, input.row.id)) {
+            outcomes.set(input.row.id, { mediaId: input.row.id, status: "unsupported", error: "Media source disabled" });
+            return;
+          }
           const dets = batch.images[k];
           const { ids, removed } = repo.replaceForMedia(input.row.id, batch.model, dets);
           removals.push(...removed);
@@ -66,6 +77,10 @@ export function createFacesAnalyzer(
         });
         await index.remove(space, removals);
         await index.upsert(space, upserts);
+        if (isApplePhotosEnabled(db)) {
+          const { applyApplePersonSuggestions } = await import("../../plugins/apple-photos/people.js");
+          for (const input of activeInputs) if (isMediaSourceVisible(db, input.row.id)) applyApplePersonSuggestions(db, input.row.id);
+        }
         await onNewFaces(newIds);
       }
       return rows.map((r) => outcomes.get(r.id) as AnalyzerOutcome);

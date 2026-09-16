@@ -4,6 +4,10 @@ import { z } from "zod";
 import type { CatalogPage } from "./sync.js";
 
 const faceSchema = z.object({ name: z.string(), x: z.number(), y: z.number(), w: z.number(), h: z.number() });
+const exifSchema = z.object({
+  camera_make: z.string().nullable(), camera_model: z.string().nullable(), lens_model: z.string().nullable(),
+  focal_length: z.number().nullable(), aperture: z.number().nullable(), iso: z.number().nullable(), shutter_speed: z.number().nullable(),
+});
 const assetSchema = z.object({
   uuid: z.string().min(1), original_filename: z.string().nullable(),
   original_path: z.string().nullable(), derivative_path: z.string().nullable(),
@@ -11,8 +15,10 @@ const assetSchema = z.object({
   title: z.string().nullable(), description: z.string().nullable(), keywords: z.array(z.string()),
   favorite: z.boolean(), hidden: z.boolean(), in_trash: z.boolean(),
   latitude: z.number().nullable(), longitude: z.number().nullable(), faces: z.array(faceSchema),
+  exif: exifSchema.nullable().optional(),
 });
-const pageSchema = z.object({ assets: z.array(assetSchema).max(500), next_cursor: z.number().int().nonnegative().nullable(), total: z.number().int().nonnegative() });
+const pageSchema = z.object({ assets: z.array(z.unknown()).max(500), failures: z.array(z.object({ uuid: z.string(), error: z.string() })).max(500).optional(),
+  next_cursor: z.number().int().nonnegative().nullable(), total: z.number().int().nonnegative() });
 
 function helperUrl(): string {
   const rawPort = process.env.MEMORYLANE_PHOTOS_HELPER_PORT ?? "4282";
@@ -53,5 +59,14 @@ export async function photosHelperHealth(dataDir: string): Promise<{ status: "re
 }
 
 export async function fetchCatalogPage(dataDir: string, libraryPath: string, cursor: number): Promise<CatalogPage> {
-  return pageSchema.parse(await helperRequest(dataDir, "/catalog", { library_path: libraryPath, cursor, limit: 200 }));
+  const page = pageSchema.parse(await helperRequest(dataDir, "/catalog", { library_path: libraryPath, cursor, limit: 200 }));
+  const assets: CatalogPage["assets"] = [];
+  const failures = [...(page.failures ?? [])];
+  for (const raw of page.assets) {
+    const parsed = assetSchema.safeParse(raw);
+    if (parsed.success) assets.push(parsed.data);
+    else failures.push({ uuid: typeof raw === "object" && raw !== null && "uuid" in raw ? String(raw.uuid) : "unknown",
+      error: "Invalid Photos catalogue item" });
+  }
+  return { assets, failures, next_cursor: page.next_cursor, total: page.total };
 }

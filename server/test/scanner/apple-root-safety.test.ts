@@ -43,4 +43,23 @@ describe("Photos library scanner boundary", () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("delegates an enabled Apple root to catalogue sync without walking its package", async () => {
+    const db = await createTestDb();
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "memorylane-photos-delegate-"));
+    const library = path.join(root, "Pictures.photoslibrary");
+    fs.mkdirSync(path.join(library, "originals"), { recursive: true });
+    fs.writeFileSync(path.join(library, "originals", "photo.jpg"), "test");
+    const rootId = Number(db.prepare("INSERT INTO scan_roots (path, enabled, kind) VALUES (?, 1, 'apple-photos')").run(library).lastInsertRowid);
+    db.prepare("INSERT INTO plugin_settings (id, enabled) VALUES ('apple-photos', 1)").run();
+    const paths = { dataDir: root, thumbnailsDir: path.join(root, "thumbs"), previewsDir: path.join(root, "previews") } as AppPaths;
+    const scanner = new ScannerService(db, paths, logger);
+    const called: number[] = [];
+    scanner.onAppleRootSync(async (id) => { called.push(id); });
+    try {
+      await scanner.runScan("manual", rootId);
+      expect(called).toEqual([rootId]);
+      expect((db.prepare("SELECT COUNT(*) AS c FROM media").get() as { c: number }).c).toBe(0);
+    } finally { db.close(); fs.rmSync(root, { recursive: true, force: true }); }
+  });
 });

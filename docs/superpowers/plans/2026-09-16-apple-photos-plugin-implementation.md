@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-16-apple-photos-plugin-design.md`
 
+**Implementation checkpoint (2026-09-16):** The plugin lifecycle, dedicated helper, catalogue sync, visibility/analysis gates, People suggestions, and Settings/Viewer controls are implemented on `feature/apple-photos`. Automated server, client, helper, typecheck, and build verification has run; a smoke test against a real Photos library and macOS Automation prompt is still outstanding. `osxphotos.PhotosDB.photos()` returns a complete list by API contract, so the helper maps responses page-by-page but retains that source list in memory during a sync. Stop the dedicated helper after disabling the plugin to release it.
+
 ## Global Constraints
 
 - Apple Photos is shipped but disabled by default; disabled cold starts do not import or start its implementation or Python dependencies.
@@ -50,10 +52,10 @@
 
 **Interfaces:** Folder walk skips directory entries whose names end in `.photoslibrary` case-insensitively. An Apple root is never walked by the generic scanner; sync is delegated to a lazily loaded service only when enabled.
 
-- [ ] Write tests with a parent folder containing `Library.photoslibrary/originals/a.jpg`; assert the folder scan never indexes it. Add an Apple root and assert disabled scan never descends into the package.
-- [ ] Run the targeted test and observe the unexpected media row or descent.
-- [ ] Add the directory guard before `getOrCreateFolder`; branch on root kind before `walkDirectory`. Do not mark Apple media missing when sync is skipped or fails.
-- [ ] Run targeted and full server tests; commit.
+- [x] Write tests with a parent folder containing `Library.photoslibrary/originals/a.jpg`; assert the folder scan never indexes it. Add an Apple root and assert disabled scan never descends into the package.
+- [x] Run the targeted test and observe the unexpected media row or descent.
+- [x] Add the directory guard before `getOrCreateFolder`; branch on root kind before `walkDirectory`. Do not mark Apple media missing when sync is skipped or fails.
+- [x] Run targeted and full server tests; commit.
 
 ### Task 3: Dedicated authenticated catalogue helper
 

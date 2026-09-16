@@ -7,6 +7,7 @@ import { formatMemoryBlurb } from "../utils/blurb";
 import { displaySrc } from "../utils/mediaSrc";
 import { formatBytes, formatDuration } from "../utils/format";
 import { useEngagementTracking } from "../hooks/useEngagementTracking";
+import { ApplePreviewNotice } from "./ApplePreviewNotice";
 
 interface ViewerProps {
   items: MediaDto[];
@@ -35,6 +36,7 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
   const [showInfo, setShowInfo] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [favoriteOverrides, setFavoriteOverrides] = useState<Record<number, boolean>>({});
+  const [openInPhotosError, setOpenInPhotosError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
@@ -48,6 +50,7 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
   // Always land on the still image first when navigating to a new item.
   useEffect(() => {
     setLivePlaying(false);
+    setOpenInPhotosError(null);
   }, [current?.id]);
 
   const totalCount = total ?? items.length;
@@ -220,6 +223,14 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
       <button className={`absolute top-5 right-5 ${controlButtonClass}`} onClick={onClose} aria-label="Close">
         ✕
       </button>
+
+      {current.sourceKind === "apple-photos" && !current.originalAvailable && (
+        <ApplePreviewNotice error={openInPhotosError} onOpen={() => {
+          void api.plugins.openInPhotos(current.id).catch((error: unknown) => {
+            setOpenInPhotosError(error instanceof Error ? error.message : "Could not open Photos");
+          });
+        }} />
+      )}
 
       <button
         className={`absolute top-5 right-24 grid place-items-center ${controlButtonClass}`}

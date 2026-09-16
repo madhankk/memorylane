@@ -39,6 +39,8 @@ import type {
   PersonDto,
   PersonDetailDto,
   FaceDto,
+  PluginDto,
+  ApplePhotosSyncStatusDto,
 } from "@memorylane/shared";
 import { trackPageRead } from "../utils/pageLoad";
 
@@ -96,6 +98,15 @@ export function toQueryString(params: Record<string, string | number | undefined
 }
 
 export const api = {
+  plugins: {
+    list: () => request<PluginDto[]>("/api/plugins"),
+    setApplePhotosEnabled: (enabled: boolean) => request<PluginDto>("/api/plugins/apple-photos", { method: "PUT", body: JSON.stringify({ enabled }) }),
+    applePhotosHealth: () => request<{ status: "ready" }>("/api/plugins/apple-photos/health"),
+    detectApplePhotosLibraries: () => request<{ path: string; readable: boolean; reason?: string }[]>("/api/plugins/apple-photos/libraries"),
+    applePhotosSync: (rootId: number) => request<void>(`/api/plugins/apple-photos/roots/${rootId}/sync`, { method: "POST" }),
+    applePhotosSyncStatus: (rootId: number) => request<ApplePhotosSyncStatusDto>(`/api/plugins/apple-photos/roots/${rootId}/sync`),
+    openInPhotos: (mediaId: number) => request<{ ok: true }>("/api/plugins/apple-photos/open-in-photos", { method: "POST", body: JSON.stringify({ mediaId }) }),
+  },
   auth: {
     me: () => request<{ user: UserDto | null; needsSetup: boolean }>("/api/auth/me"),
     setup: (body: SetupRequest) => request<{ ok: true }>("/api/auth/setup", { method: "POST", body: JSON.stringify(body) }),

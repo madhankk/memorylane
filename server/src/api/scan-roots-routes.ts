@@ -51,7 +51,8 @@ function getScanRootStats(db: Database.Database, scanRootId: number): ScanRootSt
     db
       .prepare(
         `SELECT COUNT(*) as c FROM media
-         WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active' AND ${NEEDS_TRANSCODE_SQL_CLAUSE}`,
+         WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active'
+           AND (source_kind IS NULL OR source_kind != 'apple-photos') AND ${NEEDS_TRANSCODE_SQL_CLAUSE}`,
       )
       .get(scanRootId) as { c: number }
   ).c;

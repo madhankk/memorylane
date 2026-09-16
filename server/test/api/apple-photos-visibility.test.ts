@@ -27,6 +27,11 @@ describe("disabled Apple Photos media visibility", () => {
       expect((await get(`/api/media/${appleId}`)).statusCode).toBe(404);
       expect((await get(`/api/media/${appleId}/thumbnail`)).statusCode).toBe(404);
       expect((await get(`/api/media/${appleId}/file`)).statusCode).toBe(404);
+      const search = (await get("/api/search?q=apple")).json();
+      expect(search.items.some((item: { type: string; folder?: { id: number } }) => item.type === "folder" && item.folder?.id === appleFolder)).toBe(false);
+      const ignored = await t.app.inject({ method: "POST", url: `/api/folders/${appleFolder}/ignore`, headers: { cookie: t.cookie } });
+      expect(ignored.statusCode).toBe(409);
+      expect(t.db.prepare("SELECT id FROM media WHERE id = ?").get(appleId)).toEqual({ id: appleId });
     } finally {
       await t.close();
     }

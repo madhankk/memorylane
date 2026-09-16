@@ -8,11 +8,13 @@ import { useTheme, type Theme } from "../hooks/useTheme";
 import { formatBytes } from "../utils/format";
 import TranscodeCandidatesPanel from "../components/TranscodeCandidatesPanel";
 import AnalysisProgress from "../components/AnalysisProgress";
+import PluginsSettings from "../components/PluginsSettings";
 import { useConfirm } from "../components/ConfirmDialog";
 
 const SETTINGS_TABS = [
   { id: "folders", label: "Folders & Exclusions" },
   { id: "analysis", label: "AI & Analysis" },
+  { id: "plugins", label: "Plugins" },
   { id: "storage", label: "Storage" },
   { id: "account", label: "Account" },
 ] as const;
@@ -890,6 +892,10 @@ export default function SettingsPage() {
         </details>
       </section>
 
+      </div>
+
+      <div role="tabpanel" id="settings-panel-plugins" aria-labelledby="settings-tab-plugins" hidden={activeTab !== "plugins"} tabIndex={0} className="space-y-8 focus-visible:outline-accent">
+        {activeTab === "plugins" && <PluginsSettings />}
       </div>
 
       <div role="tabpanel" id="settings-panel-storage" aria-labelledby="settings-tab-storage" hidden={activeTab !== "storage"} tabIndex={0} className="space-y-8 focus-visible:outline-accent">

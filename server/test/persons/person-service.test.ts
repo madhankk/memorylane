@@ -52,6 +52,23 @@ async function setup() {
 }
 
 describe("PersonService discovery + assignment", () => {
+  it("remembers the Photos identity when a renamed Apple person is dismissed", async () => {
+    const S = await setup();
+    const faceId = await S.addFace(vec(0, 0.1));
+    const mediaId = S.faces.get(faceId)!.media_id;
+    const rootId = (S.db.prepare("SELECT scan_root_id FROM media WHERE id = ?").get(mediaId) as { scan_root_id: number }).scan_root_id;
+    S.db.prepare("INSERT INTO plugin_settings (id, enabled) VALUES ('apple-photos', 1)").run();
+    S.db.prepare("UPDATE media SET source_kind = 'apple-photos' WHERE id = ?").run(mediaId);
+    S.db.prepare("INSERT INTO apple_photos_assets (scan_root_id, uuid, media_id, faces_json) VALUES (?, 'apple-person', ?, ?)")
+      .run(rootId, mediaId, JSON.stringify([{ name: "Maya", x: 0.1, y: 0.1, w: 0.3, h: 0.3 }]));
+    const personId = Number(S.db.prepare("INSERT INTO persons (name, auto_label) VALUES ('Maya', 'Person 1')").run().lastInsertRowid);
+    S.faces.setAssignment(faceId, personId, "apple", 1);
+    S.svc.rename(personId, "Renamed");
+    S.svc.dismiss(personId);
+    expect(S.db.prepare("SELECT name_key FROM apple_photos_dismissed_people WHERE name_key = 'maya'").get())
+      .toEqual({ name_key: "maya" });
+  });
+
   it("discovers two people from two tight groups, leaves a singleton, then assigns new faces incrementally", async () => {
     const S = await setup();
     const a1 = await S.addFace(vec(0, 0.1)), a2 = await S.addFace(vec(0, 0.15)), a3 = await S.addFace(vec(0, 0.2));

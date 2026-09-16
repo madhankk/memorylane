@@ -84,6 +84,7 @@ export class ScannerService {
   private running = false;
   private scheduleTimer: NodeJS.Timeout | null = null;
   private finishedListeners: (() => void)[] = [];
+  private appleRootSync: ((rootId: number) => Promise<void>) | null = null;
   private analysisRepo: AnalysisRepo;
 
   constructor(
@@ -102,6 +103,10 @@ export class ScannerService {
   // this to queue newly indexed media without the scanner importing it.
   onScanFinished(cb: () => void): void {
     this.finishedListeners.push(cb);
+  }
+
+  onAppleRootSync(cb: (rootId: number) => Promise<void>): void {
+    this.appleRootSync = cb;
   }
 
   getStatus(): ScanStatusDto {
@@ -224,8 +229,13 @@ export class ScannerService {
         persistProgress();
         if (root.kind === "apple-photos") {
           if (isApplePhotosEnabled(this.db)) {
-            stats.errorCount++;
-            this.logger.warn({ root: root.path }, "Apple Photos catalogue sync is unavailable");
+            try {
+              if (!this.appleRootSync) throw new Error("Apple Photos sync is not configured");
+              await this.appleRootSync(root.id);
+            } catch (err) {
+              stats.errorCount++;
+              this.logger.error({ err, root: root.path }, "Apple Photos catalogue sync failed");
+            }
           }
           continue;
         }

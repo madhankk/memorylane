@@ -22,16 +22,24 @@ def _iso(value):
 def map_photo(photo) -> dict:
     original = getattr(photo, "path", None)
     derivatives = getattr(photo, "path_derivatives", None) or []
-    preview = next((p for p in derivatives if Path(p).suffix.lower() in {".jpg", ".jpeg", ".heic", ".png"}), None)
+    filename = getattr(photo, "original_filename", None) or getattr(photo, "filename", None)
+    is_video = filename and Path(filename).suffix.lower() in {".mov", ".mp4", ".m4v", ".avi", ".mkv"}
+    preview_exts = {".mov", ".mp4", ".m4v"} if is_video else {".jpg", ".jpeg", ".heic", ".png"}
+    preview = next((p for p in derivatives if Path(p).suffix.lower() in preview_exts), None)
     faces = []
     for face in getattr(photo, "face_info", None) or []:
         area = getattr(face, "mwg_rs_area", None)
         name = getattr(face, "name", None)
         if name and area:
-            faces.append({"name": name, "x": area.x, "y": area.y, "w": area.w, "h": area.h})
+            faces.append({"name": name, "x": area.x - area.w / 2, "y": area.y - area.h / 2, "w": area.w, "h": area.h})
+    exif = getattr(photo, "exif_info", None)
+    exif_summary = None if exif is None else {
+        key: getattr(exif, key, None)
+        for key in ("camera_make", "camera_model", "lens_model", "focal_length", "aperture", "iso", "shutter_speed")
+    }
     return {
         "uuid": str(photo.uuid),
-        "original_filename": getattr(photo, "original_filename", None) or getattr(photo, "filename", None),
+        "original_filename": filename,
         "original_path": original,
         "derivative_path": preview,
         "original_available": bool(original),
@@ -45,12 +53,15 @@ def map_photo(photo) -> dict:
         "latitude": getattr(photo, "latitude", None),
         "longitude": getattr(photo, "longitude", None),
         "faces": faces,
+        "exif": exif_summary,
     }
 
 
-def load_catalog(library: Path) -> list[dict]:
+def load_catalog(library: Path) -> list:
     # Deliberately imported only after a user enables the plugin and requests sync.
     import osxphotos
 
     photos_db = osxphotos.PhotosDB(str(library))
-    return [map_photo(photo) for photo in photos_db.photos()]
+    # osxphotos indexes the catalogue once; do not materialize every mapped
+    # metadata payload before the first page can be sent.
+    return photos_db.photos()

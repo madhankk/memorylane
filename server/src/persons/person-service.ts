@@ -6,6 +6,8 @@ import type { SettingsRepo } from "../db/settings-repo.js";
 import { FACE_MODEL_IDS, type AiProvider } from "../providers/types.js";
 import { spaceFor, type VectorIndex } from "../vectors/vector-index.js";
 import { FaceRepo, type FaceRow } from "./face-repo.js";
+import { ACTIVE_SOURCE_SQL } from "../query/media-query.js";
+import { isMediaSourceVisible } from "../plugins/registry.js";
 
 export class PersonError extends Error {
   constructor(
@@ -25,6 +27,7 @@ interface PersonRow {
   merged_into: number | null;
   face_count: number;
   media_count: number;
+  apple_face_count: number;
 }
 
 const KNN = 20;
@@ -55,8 +58,9 @@ function cosine(a: Float32Array, b: Float32Array): number {
 
 const PERSON_SELECT = `
   SELECT p.*,
-    (SELECT COUNT(*) FROM faces f WHERE f.person_id = p.id) AS face_count,
-    (SELECT COUNT(DISTINCT f.media_id) FROM faces f WHERE f.person_id = p.id) AS media_count
+    (SELECT COUNT(*) FROM faces f JOIN media ON media.id = f.media_id WHERE f.person_id = p.id AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL}) AS face_count,
+    (SELECT COUNT(DISTINCT f.media_id) FROM faces f JOIN media ON media.id = f.media_id WHERE f.person_id = p.id AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL}) AS media_count,
+    (SELECT COUNT(*) FROM faces f JOIN media m ON m.id = f.media_id WHERE f.person_id = p.id AND m.source_kind = 'apple-photos') AS apple_face_count
   FROM persons p`;
 
 // Identity management (design doc §10.2/10.3). Two automatic paths -
@@ -252,7 +256,7 @@ export class PersonService {
       name: row.name,
       autoLabel: row.auto_label,
       displayName: row.name ?? row.auto_label,
-      coverFaceId: row.cover_face_id,
+      coverFaceId: row.cover_face_id && this.getFace(row.cover_face_id) ? row.cover_face_id : (this.faces.listForPerson(row.id, 1, 0)[0]?.id ?? null),
       faceCount: row.face_count,
       mediaCount: row.media_count,
       hidden: row.hidden === 1,
@@ -277,13 +281,14 @@ export class PersonService {
       .all() as PersonRow[];
     // An unnamed person with no faces left (all rejected, or lost in a
     // re-detection) is noise; named ones stay visible so the name isn't lost.
-    return rows.filter((r) => r.face_count > 0 || r.name !== null).map((r) => this.toPerson(r));
+    return rows.filter((r) => r.face_count > 0 || (r.name !== null && r.apple_face_count === 0)).map((r) => this.toPerson(r));
   }
 
   getPerson(id: number): PersonDto | null {
     const row = this.db.prepare(`${PERSON_SELECT} WHERE p.id = ?`).get(id) as PersonRow | undefined;
     if (!row) return null;
     if (row.merged_into !== null) return this.getPerson(row.merged_into);
+    if (row.face_count === 0 && row.apple_face_count > 0) return null;
     return this.toPerson(row);
   }
 
@@ -298,11 +303,13 @@ export class PersonService {
   }
 
   facesForMedia(mediaId: number): FaceDto[] {
+    if (!isMediaSourceVisible(this.db, mediaId)) return [];
     return this.faces.listForMedia(mediaId).map((r) => this.toFace(r));
   }
 
   getFace(faceId: number): FaceRow | null {
-    return this.faces.get(faceId);
+    const face = this.faces.get(faceId);
+    return face && isMediaSourceVisible(this.db, face.media_id) ? face : null;
   }
 
   // ---- user corrections --------------------------------------------------------
@@ -334,6 +341,33 @@ export class PersonService {
     ).map((row) => row.id);
     const placeholders = identityIds.map(() => "?").join(",");
     const tx = this.db.transaction(() => {
+      const appleName = this.db.prepare(`SELECT p.name FROM persons p
+        WHERE p.id = ? AND p.name IS NOT NULL AND EXISTS (
+          SELECT 1 FROM faces f JOIN media m ON m.id = f.media_id
+          WHERE f.person_id = p.id AND m.source_kind = 'apple-photos')`)
+        .get(canonicalId) as { name: string } | undefined;
+      if (appleName) {
+        this.db.prepare("INSERT OR IGNORE INTO apple_photos_dismissed_people (name_key) VALUES (?)")
+          .run(appleName.name.trim().toLocaleLowerCase());
+      }
+      const appleFaces = this.db.prepare(`SELECT f.bbox_x AS x, f.bbox_y AS y, f.bbox_w AS w, f.bbox_h AS h, a.faces_json
+        FROM faces f JOIN apple_photos_assets a ON a.media_id = f.media_id
+        WHERE f.person_id IN (${placeholders}) AND a.faces_json IS NOT NULL`)
+        .all(...identityIds) as { x: number; y: number; w: number; h: number; faces_json: string }[];
+      const rememberName = this.db.prepare("INSERT OR IGNORE INTO apple_photos_dismissed_people (name_key) VALUES (?)");
+      for (const face of appleFaces) {
+        let names: { name?: string; x?: number; y?: number; w?: number; h?: number }[];
+        try { names = JSON.parse(face.faces_json) as typeof names; } catch { continue; }
+        if (!Array.isArray(names)) continue;
+        for (const named of names) {
+          if (!named.name?.trim() || ![named.x, named.y, named.w, named.h].every((n) => typeof n === "number" && Number.isFinite(n))) continue;
+          const left = Math.max(face.x, named.x!), top = Math.max(face.y, named.y!);
+          const right = Math.min(face.x + face.w, named.x! + named.w!), bottom = Math.min(face.y + face.h, named.y! + named.h!);
+          const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
+          const union = face.w * face.h + named.w! * named.h! - intersection;
+          if (union > 0 && intersection / union >= 0.4) rememberName.run(named.name.trim().toLocaleLowerCase());
+        }
+      }
       this.db
         .prepare(`UPDATE faces SET person_id = NULL, assigned_by = NULL, assign_score = NULL, dismissed = 1, discovered_at = ${NOW} WHERE person_id IN (${placeholders})`)
         .run(...identityIds);

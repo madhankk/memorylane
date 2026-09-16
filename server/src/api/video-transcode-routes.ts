@@ -11,6 +11,9 @@ import { toMediaDto, toTranscodeJobDto, type MediaRow, type TranscodeJobRow } fr
 import { streamFile } from "./file-streaming.js";
 import { transcodingPathForMediaId, transcodingThumbnailPathForMediaId } from "../config/paths.js";
 import { NEEDS_TRANSCODE_SQL_CLAUSE } from "../media/video-compatibility.js";
+import { isMediaSourceVisible } from "../plugins/registry.js";
+
+const WRITABLE_SOURCE_SQL = "(media.source_kind IS NULL OR media.source_kind != 'apple-photos')";
 
 // Every video in this root still needing a transcode attempt - used both by
 // the (paginated) candidates list and by "Transcode All", which targets this
@@ -19,8 +22,8 @@ import { NEEDS_TRANSCODE_SQL_CLAUSE } from "../media/video-compatibility.js";
 // after a partial batch only picks up what's actually still untouched.
 function needsTranscodeIdsSql(): string {
   return `
-    SELECT id FROM media
-    WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active' AND ${NEEDS_TRANSCODE_SQL_CLAUSE}
+    SELECT media.id FROM media
+    WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active' AND ${WRITABLE_SOURCE_SQL} AND ${NEEDS_TRANSCODE_SQL_CLAUSE}
       AND id NOT IN (SELECT media_id FROM video_transcode_jobs WHERE status IN ('pending', 'transcoding', 'done'))
   `;
 }
@@ -29,7 +32,7 @@ function verifiedIdsSql(): string {
   return `
     SELECT vtj.media_id as id FROM video_transcode_jobs vtj
     JOIN media ON media.id = vtj.media_id
-    WHERE media.scan_root_id = ? AND vtj.status = 'done' AND vtj.verified = 1
+    WHERE media.scan_root_id = ? AND ${WRITABLE_SOURCE_SQL} AND vtj.status = 'done' AND vtj.verified = 1
   `;
 }
 
@@ -45,7 +48,7 @@ export async function registerVideoTranscodeRoutes(app: FastifyInstance, ctx: Ap
     const total = (
       db
         .prepare(
-          `SELECT COUNT(*) as c FROM media WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active' AND ${NEEDS_TRANSCODE_SQL_CLAUSE}`,
+          `SELECT COUNT(*) as c FROM media WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active' AND ${WRITABLE_SOURCE_SQL} AND ${NEEDS_TRANSCODE_SQL_CLAUSE}`,
         )
         .get(id) as { c: number }
     ).c;
@@ -56,7 +59,7 @@ export async function registerVideoTranscodeRoutes(app: FastifyInstance, ctx: Ap
 
     const rows = db
       .prepare(
-        `SELECT * FROM media WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active' AND ${NEEDS_TRANSCODE_SQL_CLAUSE}
+        `SELECT * FROM media WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active' AND ${WRITABLE_SOURCE_SQL} AND ${NEEDS_TRANSCODE_SQL_CLAUSE}
          ORDER BY captured_date IS NULL, captured_date, filename LIMIT ? OFFSET ?`,
       )
       .all(id, limit, offset) as MediaRow[];
@@ -85,7 +88,7 @@ export async function registerVideoTranscodeRoutes(app: FastifyInstance, ctx: Ap
 
     const mediaIds = parsed.data.all
       ? ((db.prepare(needsTranscodeIdsSql()).all(scanRootId) as { id: number }[]).map((r) => r.id))
-      : parsed.data.mediaIds!;
+      : parsed.data.mediaIds!.filter((id) => !!db.prepare(`SELECT media.id FROM media WHERE id = ? AND ${WRITABLE_SOURCE_SQL}`).get(id));
     transcodeWorker.startTranscode(mediaIds, parsed.data.quality);
     return reply.send({ ok: true, count: mediaIds.length });
   });
@@ -94,7 +97,7 @@ export async function registerVideoTranscodeRoutes(app: FastifyInstance, ctx: Ap
     const id = Number((request.params as { id: string }).id);
     const rows = db
       .prepare(
-        `SELECT vtj.* FROM video_transcode_jobs vtj JOIN media ON media.id = vtj.media_id WHERE media.scan_root_id = ?`,
+        `SELECT vtj.* FROM video_transcode_jobs vtj JOIN media ON media.id = vtj.media_id WHERE media.scan_root_id = ? AND ${WRITABLE_SOURCE_SQL}`,
       )
       .all(id) as TranscodeJobRow[];
     return reply.send(rows.map(toTranscodeJobDto));
@@ -107,7 +110,7 @@ export async function registerVideoTranscodeRoutes(app: FastifyInstance, ctx: Ap
 
     const mediaIds = parsed.data.all
       ? ((db.prepare(verifiedIdsSql()).all(scanRootId) as { id: number }[]).map((r) => r.id))
-      : parsed.data.mediaIds!;
+      : parsed.data.mediaIds!.filter((id) => !!db.prepare(`SELECT media.id FROM media WHERE id = ? AND ${WRITABLE_SOURCE_SQL}`).get(id));
     const result = await transcodeWorker.archive(mediaIds);
     return reply.send(result);
   });
@@ -117,6 +120,7 @@ export async function registerVideoTranscodeRoutes(app: FastifyInstance, ctx: Ap
   // original) since the new file isn't indexed media until Archive runs.
   app.get("/api/media/:id/transcode-preview", { preHandler: app.requireAuth }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
+    if (!isMediaSourceVisible(db, id)) return reply.code(404).send({ error: "No transcoded preview available" });
     const job = db.prepare(`SELECT * FROM video_transcode_jobs WHERE media_id = ? AND status = 'done'`).get(id) as
       | TranscodeJobRow
       | undefined;
@@ -129,6 +133,7 @@ export async function registerVideoTranscodeRoutes(app: FastifyInstance, ctx: Ap
   // for every single one, which doesn't scale past a handful at once.
   app.get("/api/media/:id/transcode-preview-thumbnail", { preHandler: app.requireAuth }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
+    if (!isMediaSourceVisible(db, id)) return reply.code(404).send({ error: "No preview thumbnail available" });
     const job = db.prepare(`SELECT * FROM video_transcode_jobs WHERE media_id = ? AND status = 'done'`).get(id) as
       | TranscodeJobRow
       | undefined;

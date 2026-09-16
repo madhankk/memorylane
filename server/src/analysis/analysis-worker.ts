@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import type { Logger } from "pino";
 import type { AnalysisStatusDto, AnalysisStatus } from "@memorylane/shared";
 import { AnalysisRepo } from "./analysis-repo.js";
+import { isMediaSourceVisible } from "../plugins/registry.js";
 import type { Analyzer } from "./types.js";
 import { ProviderUnavailableError, type AiProvider } from "../providers/types.js";
 
@@ -31,7 +32,7 @@ export class AnalysisWorker {
   private backoff = new Map<string, { until: number; delayMs: number }>();
 
   constructor(
-    db: Database.Database,
+    private db: Database.Database,
     private logger: Logger,
     private analyzers: Analyzer[],
     private isPaused: () => boolean,
@@ -109,9 +110,14 @@ export class AnalysisWorker {
       if (backoff && backoff.until > Date.now()) continue;
       const rows = this.repo.claimBatch(a.key, a.batchSize);
       if (rows.length === 0) continue;
+      const runnable = rows.filter((row) => isMediaSourceVisible(this.db, row.id));
+      this.repo.unclaim(a.key, rows.filter((row) => !isMediaSourceVisible(this.db, row.id)).map((row) => row.id));
+      if (runnable.length === 0) continue;
       try {
-        const outcomes = await a.run(rows);
-        this.repo.complete(a.key, a.version, outcomes);
+        const outcomes = await a.run(runnable);
+        const completed = outcomes.filter((outcome) => isMediaSourceVisible(this.db, outcome.mediaId));
+        this.repo.unclaim(a.key, runnable.filter((row) => !isMediaSourceVisible(this.db, row.id)).map((row) => row.id));
+        this.repo.complete(a.key, a.version, completed);
         if (backoff) {
           this.backoff.delete(a.key);
           this.logger.info({ analyzer: a.key }, "Provider reachable again - resuming");
@@ -120,17 +126,19 @@ export class AnalysisWorker {
         if (err instanceof ProviderUnavailableError) {
           // Not the rows' fault: release them untouched and wait before
           // trying this analyzer again (5s, 10s, ... capped at 5min).
-          this.repo.unclaim(a.key, rows.map((r) => r.id));
+          this.repo.unclaim(a.key, runnable.map((r) => r.id));
           const delayMs = Math.min(backoff ? backoff.delayMs * 2 : BACKOFF_MIN_MS, BACKOFF_MAX_MS);
           this.backoff.set(a.key, { until: Date.now() + delayMs, delayMs });
           this.logger.warn({ analyzer: a.key, retryInMs: delayMs, reason: err.message }, "Provider unavailable - backing off");
           continue;
         }
         const message = err instanceof Error ? err.message : String(err);
-        this.logger.error({ err, analyzer: a.key, count: rows.length }, "Analyzer batch failed");
-        this.repo.complete(a.key, a.version, rows.map((r) => ({ mediaId: r.id, status: "failed" as const, error: message })));
+        this.logger.error({ err, analyzer: a.key, count: runnable.length }, "Analyzer batch failed");
+        this.repo.unclaim(a.key, runnable.filter((row) => !isMediaSourceVisible(this.db, row.id)).map((row) => row.id));
+        this.repo.complete(a.key, a.version, runnable.filter((row) => isMediaSourceVisible(this.db, row.id))
+          .map((r) => ({ mediaId: r.id, status: "failed" as const, error: message })));
       }
-      processed += rows.length;
+      processed += runnable.length;
     }
     return processed;
   }

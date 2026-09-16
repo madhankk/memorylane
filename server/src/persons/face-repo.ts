@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import type { FaceDetection } from "../providers/types.js";
 import { blobToVector, vectorToBlob } from "../vectors/embedding-repo.js";
+import { ACTIVE_SOURCE_SQL } from "../query/media-query.js";
 
 export interface FaceRow {
   id: number;
@@ -123,7 +124,9 @@ export class FaceRepo {
 
   listForPerson(personId: number, limit: number, offset: number): FaceRow[] {
     return this.db
-      .prepare("SELECT * FROM faces WHERE person_id = ? ORDER BY quality DESC, id LIMIT ? OFFSET ?")
+      .prepare(`SELECT faces.* FROM faces JOIN media ON media.id = faces.media_id
+        WHERE faces.person_id = ? AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL}
+        ORDER BY faces.quality DESC, faces.id LIMIT ? OFFSET ?`)
       .all(personId, limit, offset) as FaceRow[];
   }
 
@@ -134,19 +137,25 @@ export class FaceRepo {
 
   unassignedQuality(model: string): FaceRow[] {
     return this.db
-      .prepare("SELECT * FROM faces WHERE model = ? AND person_id IS NULL AND dismissed = 0 AND quality >= ? ORDER BY id")
+      .prepare(`SELECT faces.* FROM faces JOIN media ON media.id = faces.media_id
+        WHERE faces.model = ? AND faces.person_id IS NULL AND faces.dismissed = 0 AND faces.quality >= ?
+        AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL} ORDER BY faces.id`)
       .all(model, QUALITY_FACE_MIN) as FaceRow[];
   }
 
   hasUndiscovered(model: string): boolean {
     return !!this.db
-      .prepare("SELECT 1 FROM faces WHERE model = ? AND person_id IS NULL AND dismissed = 0 AND quality >= ? AND discovered_at IS NULL LIMIT 1")
+      .prepare(`SELECT 1 FROM faces JOIN media ON media.id = faces.media_id
+        WHERE faces.model = ? AND faces.person_id IS NULL AND faces.dismissed = 0 AND faces.quality >= ?
+        AND faces.discovered_at IS NULL AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL} LIMIT 1`)
       .get(model, QUALITY_FACE_MIN);
   }
 
   // face id -> person id for every assigned face (drives kNN assignment).
   assignedMap(model: string): Map<number, number> {
-    const rows = this.db.prepare("SELECT id, person_id FROM faces WHERE model = ? AND person_id IS NOT NULL").all(model) as { id: number; person_id: number }[];
+    const rows = this.db.prepare(`SELECT faces.id, faces.person_id FROM faces JOIN media ON media.id = faces.media_id
+      WHERE faces.model = ? AND faces.person_id IS NOT NULL AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL}`)
+      .all(model) as { id: number; person_id: number }[];
     return new Map(rows.map((r) => [r.id, r.person_id]));
   }
 
@@ -155,7 +164,7 @@ export class FaceRepo {
     return new Set(rows.map((r) => r.person_id));
   }
 
-  setAssignment(faceId: number, personId: number | null, by: "auto" | "user" | null, score: number | null): void {
+  setAssignment(faceId: number, personId: number | null, by: "auto" | "user" | "apple" | null, score: number | null): void {
     this.db.prepare("UPDATE faces SET person_id = ?, assigned_by = ?, assign_score = ? WHERE id = ?").run(personId, personId === null ? null : by, score, faceId);
   }
 
@@ -177,7 +186,9 @@ export class FaceRepo {
   // A person's face vectors for one model (vectors from different models
   // never mix - during a model switch a person briefly has both).
   personVectors(personId: number, model: string): Float32Array[] {
-    return (this.db.prepare("SELECT embedding FROM faces WHERE person_id = ? AND model = ?").all(personId, model) as { embedding: Buffer }[]).map((r) =>
+    return (this.db.prepare(`SELECT faces.embedding FROM faces JOIN media ON media.id = faces.media_id
+      WHERE faces.person_id = ? AND faces.model = ? AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL}`)
+      .all(personId, model) as { embedding: Buffer }[]).map((r) =>
       blobToVector(r.embedding),
     );
   }

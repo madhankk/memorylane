@@ -1,6 +1,6 @@
 # Apple Photos Plugin — First Release Design
 
-**Status:** For user review — 2026-09-16
+**Status:** Approved for implementation — 2026-09-16
 
 **Supersedes for implementation:** the plugin lifecycle and sidecar assumptions in `docs/superpowers/plans/2026-09-15-apple-photos-plugin.md`. That plan must be revised before code work.
 

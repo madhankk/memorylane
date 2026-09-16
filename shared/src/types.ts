@@ -59,6 +59,26 @@ export interface ScanRootDto {
   stats: ScanRootStatsDto;
 }
 
+export interface PluginDto {
+  id: "apple-photos";
+  name: string;
+  available: boolean;
+  enabled: boolean;
+}
+
+export interface ApplePhotosSyncStatusDto {
+  status: "idle" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
+  processed: number;
+  total: number;
+  failed: number;
+  previewOnly: number;
+  unavailable: number;
+  error: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  lastSuccessAt?: string | null;
+}
+
 export type MoveDirection = "up" | "down";
 
 export interface MoveScanRootRequest {
@@ -544,7 +564,7 @@ export interface FaceDto {
   detScore: number;
   quality: number;
   personId: number | null;
-  assignedBy: "auto" | "user" | null;
+  assignedBy: "auto" | "user" | "apple" | null;
 }
 
 export interface PersonDetailDto {

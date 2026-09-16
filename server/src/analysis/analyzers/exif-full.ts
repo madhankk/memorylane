@@ -5,6 +5,7 @@ import { EXIF_PROMOTE_VERSION } from "../../exif/promote.js";
 import { readTags, isExifToolAvailable, getExifToolVersion } from "../../media/exiftool-client.js";
 import { markFoldersDirty } from "../../stacks/dirty.js";
 import type { Analyzer, AnalysisMediaRow, AnalyzerOutcome } from "../types.js";
+import { isMediaSourceVisible } from "../../plugins/registry.js";
 
 export const EXIF_FULL_KEY = "exif_full";
 
@@ -38,9 +39,11 @@ export function createExifFullAnalyzer(db: Database.Database): Analyzer {
       const outcomes = await Promise.all(
         rows.map((row) =>
           limit(async (): Promise<AnalyzerOutcome> => {
+            if (!isMediaSourceVisible(db, row.id)) return { mediaId: row.id, status: "unsupported", error: "Media source disabled" };
             if (row.file_size === 0) return emptyFileOutcome(row.id);
             try {
               const tags = await readTags(row.absolute_path); // throws ExifReadError on unreadable files
+              if (!isMediaSourceVisible(db, row.id)) return { mediaId: row.id, status: "unsupported", error: "Media source disabled" };
               repo.upsertFromTags(row.id, tags, getExifToolVersion());
               return { mediaId: row.id, status: "done" };
             } catch (err) {

@@ -2,12 +2,13 @@
 
 import argparse
 import hmac
+import importlib.util
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from .catalog import load_catalog, validate_library
+from .catalog import load_catalog, map_photo, validate_library
 
 
 def make_server(host: str, port: int, token: str, catalog_loader=load_catalog):
@@ -43,6 +44,8 @@ def make_server(host: str, port: int, token: str, catalog_loader=load_catalog):
                 return
             if self.path != "/health":
                 return self.send_json(404, {"error": "Not found"})
+            if importlib.util.find_spec("osxphotos") is None:
+                return self.send_json(503, {"error": "osxphotos is not installed; restart with npm run photos-helper"})
             self.send_json(200, {"status": "ready"})
 
         def do_POST(self):
@@ -65,7 +68,19 @@ def make_server(host: str, port: int, token: str, catalog_loader=load_catalog):
                     self.catalog_cache[key] = catalog_loader(library)
                 assets = self.catalog_cache[key]
                 next_cursor = cursor + limit if cursor + limit < len(assets) else None
-                self.send_json(200, {"assets": assets[cursor:cursor + limit], "next_cursor": next_cursor, "total": len(assets)})
+                page = assets[cursor:cursor + limit]
+                mapped, failures = [], []
+                for item in page:
+                    try:
+                        mapped.append(item if isinstance(item, dict) else map_photo(item))
+                    except Exception as error:
+                        try:
+                            uuid = str(getattr(item, "uuid", "unknown"))
+                        except Exception:
+                            uuid = "unknown"
+                        failures.append({"uuid": uuid, "error": str(error)})
+                self.send_json(200, {"assets": mapped, "failures": failures,
+                                     "next_cursor": next_cursor, "total": len(assets)})
                 if next_cursor is None:
                     self.catalog_cache.pop(key, None)
             except (ValueError, KeyError, TypeError, json.JSONDecodeError) as error:

@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -48,9 +48,15 @@ function main() {
   const tokenFile = ensureHelperToken(dataDir);
   const venv = path.join(dataDir, "photos-helper-venv");
   const python = path.join(venv, "bin", "python");
-  if (!fs.existsSync(python)) {
-    run("python3", ["-m", "venv", venv]);
-    run(python, ["-m", "pip", "install", "-r", path.join(projectRoot, "photos-helper", "requirements.txt")]);
+  const requirements = path.join(projectRoot, "photos-helper", "requirements.txt");
+  const fingerprint = createHash("sha256").update(fs.readFileSync(requirements)).digest("hex");
+  const installedMarker = path.join(venv, "memorylane-requirements.sha256");
+  if (!fs.existsSync(python)) run("python3", ["-m", "venv", venv]);
+  let installedFingerprint = "";
+  try { installedFingerprint = fs.readFileSync(installedMarker, "utf8").trim(); } catch { /* First install or prior failed install. */ }
+  if (installedFingerprint !== fingerprint) {
+    run(python, ["-m", "pip", "install", "-r", requirements]);
+    fs.writeFileSync(installedMarker, fingerprint + "\n");
   }
   const child = spawn(python, ["-m", "memorylane_photos.server", "--token-file", tokenFile], {
     stdio: "inherit",

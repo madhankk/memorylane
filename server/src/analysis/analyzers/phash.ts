@@ -6,6 +6,7 @@ import { thumbnailPathForMediaId, type AppPaths } from "../../config/paths.js";
 import { phashFromGray, PHASH_SIZE, PHASH_VERSION } from "../../stacks/phash.js";
 import { markFoldersDirty } from "../../stacks/dirty.js";
 import type { Analyzer, AnalysisMediaRow, AnalyzerOutcome } from "../types.js";
+import { isMediaSourceVisible } from "../../plugins/registry.js";
 
 export const PHASH_KEY = "phash";
 
@@ -27,10 +28,12 @@ export function createPhashAnalyzer(db: Database.Database, paths: AppPaths): Ana
       const outcomes = await Promise.all(
         rows.map((row) =>
           limit(async (): Promise<AnalyzerOutcome> => {
+            if (!isMediaSourceVisible(db, row.id)) return { mediaId: row.id, status: "unsupported", error: "Media source disabled" };
             const thumb = thumbnailPathForMediaId(paths.thumbnailsDir, row.id);
             if (!fs.existsSync(thumb)) return { mediaId: row.id, status: "unsupported", error: "No thumbnail on disk" };
             try {
               const gray = await sharp(thumb).grayscale().resize(PHASH_SIZE, PHASH_SIZE, { fit: "fill" }).raw().toBuffer();
+              if (!isMediaSourceVisible(db, row.id)) return { mediaId: row.id, status: "unsupported", error: "Media source disabled" };
               upsert.run(row.id, phashFromGray(gray), PHASH_VERSION);
               return { mediaId: row.id, status: "done" };
             } catch (err) {
