@@ -6,7 +6,7 @@
 
 **Architecture:** A persisted plugin switch gates a dedicated scan-root kind and every media read path. A dedicated loopback Python helper reads the Photos catalogue and streams bounded records; the Node server owns the durable index and media processing. The client exposes lifecycle and sync controls under Settings → Plugins.
 
-**Tech Stack:** Fastify, SQLite, TypeScript/React, Python 3, `osxphotos`, Vitest, pytest.
+**Tech Stack:** Fastify, SQLite, TypeScript/React, Python 3, `osxphotos`, Vitest, Python unittest.
 
 **Spec:** `docs/superpowers/specs/2026-09-16-apple-photos-plugin-design.md`
 
@@ -62,9 +62,9 @@
 **Interfaces:** `GET /health` and `POST /catalog` on loopback; request header `X-MemoryLane-Token`; response is bounded batches of UUID, original/derivative paths and Photos metadata. Python imports `osxphotos` only inside a catalog request.
 
 - [ ] Write Python tests for unauthenticated rejection, malformed package rejection, bounded pagination/streaming from a fixture adapter, and no writes to fixture package.
-- [ ] Run `python3 -m pytest photos-helper/tests -q` and confirm failure from the absent implementation.
+- [x] Run `PYTHONPATH=photos-helper python3 -m unittest discover -s photos-helper/tests -v` and confirm failure from the absent implementation.
 - [ ] Implement the minimal helper. Read a SQLite-safe catalogue snapshot through `osxphotos`; map documented `PhotoInfo` fields to JSON. Use `Path.resolve()` and reject paths without the `.photoslibrary` suffix. The launcher creates a helper-only venv on first use; it never imports the AI sidecar.
-- [ ] Run helper tests and a manual `GET /health`; commit.
+- [ ] Run helper tests and an authenticated `GET /health`; commit.
 
 ### Task 4: Catalogue sync and stable media rows
 
