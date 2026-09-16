@@ -5,6 +5,7 @@ import type Database from "better-sqlite3";
 import { computeFingerprint } from "../../scanner/fingerprint.js";
 import { classifyExtension } from "../../scanner/media-types.js";
 import { getOrCreateFolder } from "../../scanner/folder-repo.js";
+import { AnalysisRepo } from "../../analysis/analysis-repo.js";
 
 export interface AppleCatalogAsset {
   uuid: string;
@@ -96,7 +97,8 @@ export function upsertAppleAsset(
         preserveCapturedDate = existing?.catalog_date !== null && existing?.catalog_date !== undefined
           && !!prior && prior.captured_date !== existing.catalog_date;
         preservedCapturedDate = preserveCapturedDate ? prior!.captured_date : null;
-        changed = !prior || prior.absolute_path !== chosen || prior.fingerprint !== fingerprint || prior.thumbnail_status !== "done";
+        const inputChanged = !prior || prior.absolute_path !== chosen || prior.fingerprint !== fingerprint;
+        changed = inputChanged || prior?.thumbnail_status !== "done";
         db.prepare(`UPDATE media SET absolute_path = ?, filename = ?, extension = ?, media_type = ?,
           file_size = ?, fs_modified_at = ?, fingerprint = ?, source_kind = 'apple-photos',
           original_available = ?, captured_date = CASE WHEN ? THEN captured_date ELSE COALESCE(?, captured_date) END,
@@ -105,6 +107,7 @@ export function upsertAppleAsset(
           status = 'active', last_seen_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`)
           .run(chosen, filename, extension, mediaType, stat.size, stat.mtime.toISOString(), fingerprint,
             original ? 1 : 0, preserveCapturedDate ? 1 : 0, asset.date, asset.latitude, asset.longitude, changed ? 1 : 0, mediaId);
+        if (inputChanged) new AnalysisRepo(db).resetForMedia(mediaId);
       }
       if (asset.favorite) {
         db.prepare(`INSERT INTO media_engagement (media_id, favorite, favorited_at) VALUES (?, 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
