@@ -44,6 +44,16 @@ Settings gains a permanent **Plugins** tab listing shipped plugins and their sta
 
 The Viewer labels preview-only assets, serves their derivative instead of a missing original, and offers **Open in Photos** with an actionable permission error if macOS Automation access is denied. Full-resolution export is not offered for a preview-only asset until a later PhotoKit download capability exists. Apple-managed assets cannot enter MemoryLane's future trash/delete flow.
 
+## Virtual browse and catalog-only location follow-up
+
+The Home card reads **Apple Device Photos** with the actual `.photoslibrary` name as a subtitle. Opening it uses a read-only virtual hierarchy: Library → Year → Month → photos, plus **All Photos** and **Unknown Date**. This does not create physical folders, move files, change scan roots, or change how ordinary folders are indexed. Year/month grouping uses the adjusted capture date for indexed media and the Photos catalog date for catalog-only items. Listings are paginated and exclude Photos-hidden/trashed entries. Disabling the plugin also blocks these virtual routes.
+
+Every catalog entry retains the Photos-provided date and GPS coordinates even when no usable local image is found. A future location heatmap can include these catalog-only coordinates without implying that an image is viewable; it must deduplicate by Photos asset UUID and respect plugin/root visibility. Preview-only items have a usable local image and remain eligible for EXIF, visual fingerprints, embeddings, and face detection. Catalog-only items cannot undergo image-based analysis until a usable original or derivative becomes local.
+
+Catalog-only tiles show **Open in Photos** and **Check for local copy**. Opening Photos merely locates the item; MemoryLane does not promise that iCloud download has begun or finished. Checking re-reads the catalog and indexes a suitable local file if Photos has made one available, then queues normal analysis. The PhotoKit download-original feature remains deferred. Photos may later evict an optimized original, so later syncs continue to reconcile availability.
+
+A direct Apple **Sync Now** periodically wakes the existing analysis worker as usable images accumulate (once per 250 processed catalog entries), then wakes it again at completion. This lets fingerprints, embeddings, and enabled face detection begin catching up during a long Apple sync without a per-item queue scan. Ordinary folder scans retain their existing analysis-pause policy; changing that policy requires a separate throughput decision.
+
 ## Failure handling and verification
 
 The plugin reports helper-down, permission-denied, unsupported-schema, interrupted-sync, and per-asset mapping failures separately. A failed sync keeps the last successful index usable while the plugin remains enabled. Disabling during sync stops further writes and is safe to retry. No startup path probes the Photos package or starts Python when the plugin is off.

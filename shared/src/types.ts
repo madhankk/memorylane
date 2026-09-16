@@ -208,6 +208,33 @@ export interface FolderBreadcrumbDto {
   name: string;
 }
 
+export interface AppleBrowseGroupDto {
+  key: string;
+  count: number;
+  coverMediaId: number | null;
+  thumbnailVersion: number;
+}
+
+export interface AppleBrowseItemDto {
+  uuid: string;
+  filename: string;
+  date: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  mediaId: number | null;
+  thumbnailVersion: number;
+  available: boolean;
+  media?: MediaDto | null;
+}
+
+export interface AppleBrowseDto {
+  groups: AppleBrowseGroupDto[];
+  items: AppleBrowseItemDto[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
 export interface MediaDto {
   id: number;
   parentFolderId: number;

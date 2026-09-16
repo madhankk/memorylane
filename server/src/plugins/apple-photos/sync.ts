@@ -117,8 +117,9 @@ export function upsertAppleAsset(
 
     db.prepare(`INSERT INTO apple_photos_assets
       (scan_root_id, uuid, media_id, original_filename, original_path, derivative_path,
-       title, description, keywords_json, faces_json, favorite, hidden, in_trash, original_available, last_seen_sync_token, catalog_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       title, description, keywords_json, faces_json, favorite, hidden, in_trash, original_available, last_seen_sync_token, catalog_date,
+       catalog_gps_lat, catalog_gps_lon)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(scan_root_id, uuid) DO UPDATE SET
         media_id = excluded.media_id, original_filename = excluded.original_filename,
         original_path = excluded.original_path, derivative_path = excluded.derivative_path,
@@ -128,10 +129,13 @@ export function upsertAppleAsset(
         original_available = excluded.original_available,
         last_seen_sync_token = excluded.last_seen_sync_token,
         catalog_date = excluded.catalog_date,
+        catalog_gps_lat = excluded.catalog_gps_lat,
+        catalog_gps_lon = excluded.catalog_gps_lon,
         synced_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`)
       .run(scanRootId, asset.uuid, mediaId, asset.original_filename, original, derivative,
         asset.title, asset.description, JSON.stringify(asset.keywords), JSON.stringify(asset.faces),
-        asset.favorite ? 1 : 0, asset.hidden ? 1 : 0, asset.in_trash ? 1 : 0, original ? 1 : 0, syncToken, asset.date);
+        asset.favorite ? 1 : 0, asset.hidden ? 1 : 0, asset.in_trash ? 1 : 0, original ? 1 : 0, syncToken, asset.date,
+        asset.latitude, asset.longitude);
 
     if (mediaId !== null && !asset.hidden && !asset.in_trash) applyAppleMetadata(db, mediaId, asset, preserveCapturedDate, preservedCapturedDate);
 
@@ -185,6 +189,26 @@ export interface CatalogPage {
   failures?: { uuid: string; error: string }[];
   next_cursor: number | null;
   total: number;
+}
+
+// Queue scans of the accumulated Apple rows occasionally during large Sync Now
+// runs; a per-item kick would rescan the analysis queue thousands of times.
+export function shouldKickAppleAnalysis(processed: number): boolean {
+  return processed > 0 && processed % 250 === 0;
+}
+
+export async function findAppleCatalogAsset(
+  fetchPage: (cursor: number) => Promise<CatalogPage>, uuid: string,
+): Promise<AppleCatalogAsset | null> {
+  let cursor = 0;
+  while (true) {
+    const page = await fetchPage(cursor);
+    const found = page.assets.find((asset) => asset.uuid === uuid);
+    if (found) return found;
+    if (page.next_cursor === null) return null;
+    if (page.next_cursor <= cursor) throw new Error("Apple Photos helper returned a non-advancing cursor");
+    cursor = page.next_cursor;
+  }
 }
 
 export async function syncAppleRoot(

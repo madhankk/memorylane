@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createTestDb } from "../helpers/db.js";
-import { upsertAppleAsset, applyAppleMetadata, syncAppleRoot, type AppleCatalogAsset } from "../../src/plugins/apple-photos/sync.js";
+import { upsertAppleAsset, applyAppleMetadata, syncAppleRoot, findAppleCatalogAsset, shouldKickAppleAnalysis, type AppleCatalogAsset } from "../../src/plugins/apple-photos/sync.js";
 
 const baseAsset: AppleCatalogAsset = {
   uuid: "asset-1", original_filename: "Beach.JPG", original_path: null, derivative_path: null,
@@ -13,6 +13,23 @@ const baseAsset: AppleCatalogAsset = {
 };
 
 describe("Apple catalogue media mapping", () => {
+  it("schedules bounded analysis catch-up during a long sync", () => {
+    expect(shouldKickAppleAnalysis(1)).toBe(false);
+    expect(shouldKickAppleAnalysis(249)).toBe(false);
+    expect(shouldKickAppleAnalysis(250)).toBe(true);
+    expect(shouldKickAppleAnalysis(251)).toBe(false);
+  });
+  it("finds one catalog asset across helper pages without mutating the library", async () => {
+    const cursors: number[] = [];
+    const found = await findAppleCatalogAsset(async (cursor) => {
+      cursors.push(cursor);
+      return cursor === 0
+        ? { assets: [baseAsset], next_cursor: 1, total: 2 }
+        : { assets: [{ ...baseAsset, uuid: "target" }], next_cursor: null, total: 2 };
+    }, "target");
+    expect(found?.uuid).toBe("target");
+    expect(cursors).toEqual([0, 1]);
+  });
   it("keeps one stable row as a preview-only asset gains a local original", async () => {
     const db = await createTestDb();
     const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "memorylane-apple-sync-"));
@@ -55,7 +72,13 @@ describe("Apple catalogue media mapping", () => {
     try {
       expect(upsertAppleAsset(db, rootId, baseAsset)).toMatchObject({ mediaId: null, changed: false });
       expect((db.prepare("SELECT COUNT(*) AS c FROM media").get() as { c: number }).c).toBe(0);
-      expect(db.prepare("SELECT uuid FROM apple_photos_assets WHERE scan_root_id = ?").get(rootId)).toEqual({ uuid: "asset-1" });
+      expect(db.prepare("SELECT uuid, catalog_date, catalog_gps_lat, catalog_gps_lon FROM apple_photos_assets WHERE scan_root_id = ?").get(rootId)).toEqual({
+        uuid: "asset-1", catalog_date: "2020-06-01T12:00:00", catalog_gps_lat: 10, catalog_gps_lon: 20,
+      });
+      upsertAppleAsset(db, rootId, { ...baseAsset, latitude: 11, longitude: 21 });
+      expect(db.prepare("SELECT catalog_gps_lat, catalog_gps_lon FROM apple_photos_assets WHERE scan_root_id = ?").get(rootId)).toEqual({
+        catalog_gps_lat: 11, catalog_gps_lon: 21,
+      });
     } finally {
       db.close();
       fs.rmSync(scratch, { recursive: true, force: true });

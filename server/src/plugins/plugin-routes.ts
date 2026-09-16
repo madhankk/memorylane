@@ -6,6 +6,8 @@ import path from "node:path";
 import type { AppContext } from "../context.js";
 import { APPLE_PHOTOS_PLUGIN_ID, applePhotosPluginStatus } from "./registry.js";
 import { isApplePhotosEnabled } from "./registry.js";
+import { toMediaDto, type MediaRow } from "../api/mappers.js";
+import { decorateMedia } from "../api/decorate-media.js";
 
 const updateSchema = z.object({ enabled: z.boolean() }).strict();
 
@@ -57,6 +59,87 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
   const resolveRoot = (id: number) => ctx.db.prepare("SELECT id, path, enabled FROM scan_roots WHERE id = ? AND kind = 'apple-photos'")
     .get(id) as { id: number; path: string; enabled: number } | undefined;
 
+  app.get("/api/plugins/apple-photos/roots/:id/browse", { preHandler: app.requireAuth }, async (request, reply) => {
+    if (!isApplePhotosEnabled(ctx.db)) return reply.code(404).send({ error: "Apple Photos is disabled" });
+    const id = Number((request.params as { id: string }).id);
+    const root = Number.isSafeInteger(id) ? resolveRoot(id) : undefined;
+    if (!root || !root.enabled) return reply.code(404).send({ error: "Apple Photos root not found" });
+    const parsed = z.object({
+      year: z.union([z.literal("all"), z.literal("unknown"), z.string().regex(/^\d{4}$/)]).optional(),
+      month: z.string().regex(/^(0[1-9]|1[0-2])$/).optional(),
+      offset: z.coerce.number().int().min(0).default(0),
+      limit: z.coerce.number().int().min(1).max(200).default(100),
+    }).strict().safeParse(request.query);
+    if (!parsed.success || (parsed.data.month && (!parsed.data.year || parsed.data.year === "all" || parsed.data.year === "unknown"))) {
+      return reply.code(400).send({ error: "Invalid browse query" });
+    }
+    const { browseApplePhotos } = await import("./apple-photos/browse.js");
+    const result = browseApplePhotos(ctx.db, id, parsed.data.year ?? null, parsed.data.month ?? null, parsed.data.offset, parsed.data.limit);
+    const ids = result.items.flatMap((item) => item.mediaId === null ? [] : [item.mediaId]);
+    if (ids.length === 0) return reply.send(result);
+    const placeholders = ids.map(() => "?").join(",");
+    const rows = ctx.db.prepare(`SELECT * FROM media WHERE id IN (${placeholders})`).all(...ids) as MediaRow[];
+    const byId = new Map(decorateMedia(ctx, rows.map(toMediaDto)).map((media) => [media.id, media]));
+    return reply.send({ ...result, items: result.items.map((item) => ({ ...item, media: item.mediaId === null ? null : byId.get(item.mediaId) ?? null })) });
+  });
+
+  const catalogItem = (id: number, uuid: string) => ctx.db.prepare(`SELECT uuid FROM apple_photos_assets
+    WHERE scan_root_id = ? AND uuid = ? AND hidden = 0 AND in_trash = 0`).get(id, uuid) as { uuid: string } | undefined;
+  const catalogActionInput = z.object({ uuid: z.string().min(1).max(200) }).strict();
+
+  app.post("/api/plugins/apple-photos/roots/:id/items/open-in-photos", { preHandler: app.requireAuth }, async (request, reply) => {
+    if (!isApplePhotosEnabled(ctx.db)) return reply.code(404).send({ error: "Apple Photos is disabled" });
+    const id = Number((request.params as { id: string }).id);
+    const input = catalogActionInput.safeParse(request.body);
+    const root = Number.isSafeInteger(id) ? resolveRoot(id) : undefined;
+    if (!root || !root.enabled || !input.success || !catalogItem(id, input.data.uuid)) {
+      return reply.code(404).send({ error: "Apple Photos item not found" });
+    }
+    try {
+      const { openInPhotos } = await import("./apple-photos/open-in-photos.js");
+      await openInPhotos(input.data.uuid);
+      return reply.send({ ok: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not open Photos";
+      if (message.includes("-1743") || message.toLowerCase().includes("not authorized")) {
+        return reply.code(403).send({ error: "macOS denied Photos Automation access. Allow it in System Settings → Privacy & Security → Automation." });
+      }
+      return reply.code(503).send({ error: "Photos could not open this item. Check that this library is open in Photos." });
+    }
+  });
+
+  app.post("/api/plugins/apple-photos/roots/:id/items/check-local", { preHandler: app.requireAuth }, async (request, reply) => {
+    if (!isApplePhotosEnabled(ctx.db)) return reply.code(404).send({ error: "Apple Photos is disabled" });
+    const id = Number((request.params as { id: string }).id);
+    const input = catalogActionInput.safeParse(request.body);
+    const root = Number.isSafeInteger(id) ? resolveRoot(id) : undefined;
+    if (!root || !root.enabled || !input.success || !catalogItem(id, input.data.uuid)) {
+      return reply.code(404).send({ error: "Apple Photos item not found" });
+    }
+    if (activeSyncs.has(id)) return reply.code(409).send({ error: "Sync is already running. Check again when it finishes." });
+    try {
+      const { fetchCatalogPage } = await import("./apple-photos/helper-client.js");
+      const { findAppleCatalogAsset, upsertAppleAsset, applyAppleMetadata } = await import("./apple-photos/sync.js");
+      const asset = await findAppleCatalogAsset((cursor) => fetchCatalogPage(ctx.paths.dataDir, root.path, cursor), input.data.uuid);
+      if (!asset) return reply.code(404).send({ error: "Item is no longer in the Photos catalog" });
+      if (!isApplePhotosEnabled(ctx.db) || !resolveRoot(id)?.enabled) return reply.code(409).send({ error: "Apple Photos is disabled" });
+      const result = upsertAppleAsset(ctx.db, id, asset);
+      if (result.mediaId !== null && result.changed) {
+        const media = ctx.db.prepare("SELECT id, parent_folder_id, absolute_path, media_type FROM media WHERE id = ?")
+          .get(result.mediaId) as { id: number; parent_folder_id: number; absolute_path: string; media_type: "image" | "raw" | "video" };
+        const { processMediaItem } = await import("../media/media-processor.js");
+        await processMediaItem(ctx.db, ctx.paths, app.log as unknown as Logger, media);
+        applyAppleMetadata(ctx.db, result.mediaId, asset, result.preserveCapturedDate, result.preservedCapturedDate);
+        ctx.analysisWorker.kick();
+      }
+      const indexed = result.mediaId === null ? null : ctx.db.prepare("SELECT status FROM media WHERE id = ?")
+        .get(result.mediaId) as { status: string } | undefined;
+      return reply.send({ available: indexed?.status === "active" });
+    } catch (error) {
+      return reply.code(503).send({ error: error instanceof Error ? error.message : "Could not check Photos catalog" });
+    }
+  });
+
   app.get("/api/plugins/apple-photos/roots/:id/sync", { preHandler: app.requireAuth }, async (request, reply) => {
     if (!isApplePhotosEnabled(ctx.db)) return reply.code(409).send({ error: "Apple Photos is disabled" });
     const id = Number((request.params as { id: string }).id);
@@ -73,7 +156,7 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
     try {
       const { photosHelperHealth, fetchCatalogPage } = await import("./apple-photos/helper-client.js");
       await photosHelperHealth(ctx.paths.dataDir);
-      const { syncAppleRoot } = await import("./apple-photos/sync.js");
+      const { syncAppleRoot, shouldKickAppleAnalysis } = await import("./apple-photos/sync.js");
       ctx.db.prepare(`INSERT INTO apple_photos_sync_state (scan_root_id, status, processed, total, failed, last_error, started_at, finished_at)
         VALUES (?, 'running', 0, 0, 0, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL)
         ON CONFLICT(scan_root_id) DO UPDATE SET status = 'running', processed = 0, total = 0, failed = 0,
@@ -91,6 +174,7 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
           applyAppleMetadata(ctx.db, mediaId, asset, preserveCapturedDate, preservedCapturedDate);
         },
         (processed, total) => {
+          if (shouldKickAppleAnalysis(processed)) ctx.analysisWorker.kick();
           if (processed === 1 || processed % 25 === 0 || processed === total) {
             ctx.db.prepare("UPDATE apple_photos_sync_state SET processed = ?, total = ? WHERE scan_root_id = ?").run(processed, total, id);
           }
