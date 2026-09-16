@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { Analyzer, AnalyzerOutcome, AnalysisMediaRow, AnalysisStatus } from "./types.js";
+import { ACTIVE_SOURCE_SQL } from "../query/media-query.js";
 
 // A row that fails this many times stays 'failed' until an explicit retry
 // (Settings > Analysis > Retry failed) - a poison file must not loop forever.
@@ -17,7 +18,7 @@ export class AnalysisRepo {
       .prepare(
         `INSERT OR IGNORE INTO media_analysis (media_id, analyzer, status, updated_at)
          SELECT id, ?, 'pending', ${NOW} FROM media
-         WHERE status = 'active' AND (${a.appliesTo})`,
+         WHERE media.status = 'active' AND ${ACTIVE_SOURCE_SQL} AND (${a.appliesTo})`,
       )
       .run(a.key);
     return info.changes;
@@ -70,7 +71,7 @@ export class AnalysisRepo {
         .prepare(
           `SELECT media.id, media.parent_folder_id, media.absolute_path, media.media_type, media.file_size
            FROM media_analysis ma JOIN media ON media.id = ma.media_id
-           WHERE ma.analyzer = ? AND ma.status = 'pending' AND media.status = 'active'
+           WHERE ma.analyzer = ? AND ma.status = 'pending' AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL}
            ORDER BY ma.media_id LIMIT ?`,
         )
         .all(analyzerKey, limit) as AnalysisMediaRow[];

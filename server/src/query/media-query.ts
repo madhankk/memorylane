@@ -14,6 +14,15 @@ export const EXCLUDE_PAIRED_RAW = "media.id NOT IN (SELECT raw_pair_id FROM medi
 export const COLLAPSE_STACKS =
   "(media.id NOT IN (SELECT media_id FROM stack_members) OR media.id IN (SELECT cover_media_id FROM stacks))";
 
+// Source visibility is a runtime plugin decision, not a property of the cached
+// media row. Keep the clause reusable by listings and non-listing queries.
+export const APPLE_PLUGIN_ENABLED_SQL = process.platform === "darwin"
+  ? "EXISTS (SELECT 1 FROM plugin_settings ps WHERE ps.id = 'apple-photos' AND ps.enabled = 1)"
+  : "0=1";
+export const ACTIVE_SOURCE_SQL = process.platform === "darwin"
+  ? `(media.source_kind IS NULL OR media.source_kind != 'apple-photos' OR ${APPLE_PLUGIN_ENABLED_SQL})`
+  : "(media.source_kind IS NULL OR media.source_kind != 'apple-photos')";
+
 // "photo" groups RAW with regular images - both are non-video stills from
 // the user's point of view.
 export function mediaTypeFilterClause(type: MediaTypeFilter): string {
@@ -72,7 +81,7 @@ export function hasExifFilter(exif: ExifFilterQuery | undefined): boolean {
 export function buildMediaQuery(p: MediaQueryParams): BuiltMediaQuery {
   const cteBindings: unknown[] = [];
   const bindings: unknown[] = [];
-  const where: string[] = ["media.status = 'active'"];
+  const where: string[] = ["media.status = 'active'", ACTIVE_SOURCE_SQL];
   const joins: string[] = [];
   let cte = "";
 

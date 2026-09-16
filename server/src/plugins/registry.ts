@@ -18,3 +18,10 @@ export function applePhotosPluginStatus(db: Database.Database) {
     enabled: isApplePhotosEnabled(db),
   };
 }
+
+export function isMediaSourceVisible(db: Database.Database, mediaId: number): boolean {
+  const row = db.prepare("SELECT source_kind FROM media WHERE id = ? AND status = 'active'").get(mediaId) as
+    | { source_kind: string | null }
+    | undefined;
+  return !!row && (row.source_kind !== "apple-photos" || isApplePhotosEnabled(db));
+}

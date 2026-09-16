@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { HomeSummaryDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { toMediaDto, type MediaRow } from "./mappers.js";
-import { buildMediaQuery } from "../query/media-query.js";
+import { buildMediaQuery, ACTIVE_SOURCE_SQL } from "../query/media-query.js";
 import { decorateMedia } from "./decorate-media.js";
 import { SettingsRepo } from "../db/settings-repo.js";
 
@@ -13,13 +13,13 @@ export async function registerHomeRoutes(app: FastifyInstance, ctx: AppContext):
 
   app.get("/api/home/summary", { preHandler: app.requireAuth }, async (_request, reply) => {
     const mediaCount = (
-      db.prepare("SELECT COUNT(*) as c FROM media WHERE status = 'active'").get() as { c: number }
+      db.prepare(`SELECT COUNT(*) as c FROM media WHERE status = 'active' AND ${ACTIVE_SOURCE_SQL}`).get() as { c: number }
     ).c;
     const folderCount = (
       db.prepare("SELECT COUNT(*) as c FROM folders WHERE status = 'active'").get() as { c: number }
     ).c;
     const totalSizeBytes = (
-      db.prepare("SELECT COALESCE(SUM(file_size), 0) as s FROM media WHERE status = 'active'").get() as {
+      db.prepare(`SELECT COALESCE(SUM(file_size), 0) as s FROM media WHERE status = 'active' AND ${ACTIVE_SOURCE_SQL}`).get() as {
         s: number;
       }
     ).s;
@@ -28,7 +28,7 @@ export async function registerHomeRoutes(app: FastifyInstance, ctx: AppContext):
       .prepare(
         `SELECT MIN(CAST(strftime('%Y', captured_date) AS INTEGER)) as minYear,
                 MAX(CAST(strftime('%Y', captured_date) AS INTEGER)) as maxYear
-         FROM media WHERE status = 'active' AND captured_date IS NOT NULL`,
+         FROM media WHERE status = 'active' AND ${ACTIVE_SOURCE_SQL} AND captured_date IS NOT NULL`,
       )
       .get() as { minYear: number | null; maxYear: number | null };
     const yearSpan =

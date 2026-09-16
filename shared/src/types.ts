@@ -213,6 +213,8 @@ export interface MediaDto {
   // bust the browser's long-lived immutable cache when they change.
   thumbnailVersion: number;
   status: MediaStatus;
+  sourceKind: "apple-photos" | null;
+  originalAvailable: boolean;
 
   cameraMake: string | null;
   cameraModel: string | null;
