@@ -20,6 +20,22 @@ const get = (t: Awaited<ReturnType<typeof createTestApp>>, url: string) =>
   t.app.inject({ method: "GET", url, headers: { cookie: t.cookie } });
 
 describe("listing routes on the query builder", () => {
+  it("returns only ready direct photos for a folder hover preview", async () => {
+    const t = await createTestApp();
+    try {
+      const root = seedScanRoot(t.db);
+      const top = seedFolder(t.db, root, "/library");
+      const sub = seedFolder(t.db, root, "/library/sub", top);
+      const direct = seedMedia(t.db, top, root, { filename: "direct.jpg" });
+      seedMedia(t.db, top, root, { filename: "pending.jpg", thumbnail_status: "pending" });
+      seedMedia(t.db, top, root, { filename: "clip.mp4", media_type: "video" });
+      seedMedia(t.db, sub, root, { filename: "nested.jpg" });
+      const response = await get(t, `/api/folders/${top}/preview`);
+      expect(response.statusCode).toBe(200);
+      expect(response.json().items.map((item: { id: number }) => item.id)).toEqual([direct]);
+    } finally { await t.close(); }
+  });
+
   it("folder cards retain subtree totals and exclude companions from fallback covers", async () => {
     const t = await createTestApp();
     try {

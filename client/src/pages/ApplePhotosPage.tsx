@@ -81,6 +81,7 @@ export default function ApplePhotosPage() {
       {result.groups.map((group) => <AppleBrowseCard key={group.key}
         to={year ? `${rootUrl}?year=${year}&month=${group.key}` : `${rootUrl}?year=${group.key}`}
         title={group.key === "unknown" ? "Unknown Date" : year ? monthName(group.key) : group.key}
+        previewRootId={rootId} previewYear={year ?? group.key} previewMonth={year ? group.key : undefined}
         count={group.count} coverMediaId={group.coverMediaId} thumbnailVersion={group.thumbnailVersion} />)}
     </div>}
     {items.length > 0 && <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-2">

@@ -249,7 +249,7 @@ export default function HomePage() {
             {folders.filter((f) => !appleRootIds.includes(f.scanRootId)).map((f) => <FolderCard key={f.id} folder={f} />)}
             {appleLibraries.map(({ root, count, coverMediaId, thumbnailVersion }) =>
               <AppleBrowseCard key={`apple-${root.id}`} to={`/apple-photos/${root.id}`} title="Apple Device Photos"
-                subtitle={root.path.split(/[\\/]/).filter(Boolean).pop()} count={count}
+                previewRootId={root.id} subtitle={root.path.split(/[\\/]/).filter(Boolean).pop()} count={count}
                 coverMediaId={coverMediaId} thumbnailVersion={thumbnailVersion} />)}
           </div>
         )}

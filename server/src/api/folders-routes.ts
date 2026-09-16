@@ -181,6 +181,21 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
     });
   });
 
+  app.get("/api/folders/:id/preview", { preHandler: app.requireAuth }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id);
+    if (!Number.isSafeInteger(id)) return reply.code(404).send({ error: "Folder not found" });
+    const folder = db.prepare(`SELECT f.id, sr.kind FROM folders f JOIN scan_roots sr ON sr.id = f.scan_root_id
+      WHERE f.id = ? AND f.status = 'active'`).get(id) as { id: number; kind: string } | undefined;
+    if (!folder || (folder.kind === "apple-photos" && !isApplePhotosEnabled(db))) {
+      return reply.code(404).send({ error: "Folder not found" });
+    }
+    const query = buildMediaQuery({ scope: { kind: "folder", folderId: id, recursive: false }, type: "photo", thumbnailDone: true });
+    const items = db.prepare(`${query.cte} SELECT media.id, media.thumbnail_version AS thumbnailVersion
+      FROM media ${query.joins} WHERE ${query.where} ORDER BY media.id DESC LIMIT 6`)
+      .all(...query.bindings);
+    return reply.send({ items });
+  });
+
   app.get("/api/folders/:id/media", { preHandler: app.requireAuth }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
     const parsed = folderMediaQuerySchema.safeParse(request.query);

@@ -1,8 +1,32 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb, seedFolder, seedMedia } from "../helpers/db.js";
-import { browseApplePhotos } from "../../src/plugins/apple-photos/browse.js";
+import { browseApplePhotos, previewApplePhotos } from "../../src/plugins/apple-photos/browse.js";
 
 describe("Apple Photos virtual browse", () => {
+  it("previews only available thumbnails in the selected year or month", async () => {
+    const db = await createTestDb();
+    try {
+      const root = Number(db.prepare("INSERT INTO scan_roots (path, enabled, kind) VALUES ('/Preview.photoslibrary', 1, 'apple-photos')").run().lastInsertRowid);
+      const folder = seedFolder(db, root, "/Preview.photoslibrary");
+      const august = seedMedia(db, folder, root, { captured_date: "2021-08-11T09:00:00", thumbnail_status: "done" });
+      const september = seedMedia(db, folder, root, { captured_date: "2021-09-11T09:00:00", thumbnail_status: "done" });
+      const older = seedMedia(db, folder, root, { captured_date: "2020-08-11T09:00:00", thumbnail_status: "done" });
+      const pending = seedMedia(db, folder, root, { captured_date: "2021-08-12T09:00:00", thumbnail_status: "pending" });
+      const insert = db.prepare(`INSERT INTO apple_photos_assets
+        (scan_root_id, uuid, media_id, original_filename, catalog_date, hidden)
+        VALUES (?, ?, ?, ?, ?, ?)`);
+      insert.run(root, "august", august, "august.jpg", "2021-08-11", 0);
+      insert.run(root, "september", september, "september.jpg", "2021-09-11", 0);
+      insert.run(root, "older", older, "older.jpg", "2020-08-11", 0);
+      insert.run(root, "pending", pending, "pending.jpg", "2021-08-12", 0);
+      insert.run(root, "cloud", null, "cloud.jpg", "2021-08-13", 0);
+      const year = previewApplePhotos(db, root, "2021", null, 6);
+      expect(year.map((item) => item.id).sort()).toEqual([august, september].sort());
+      expect(previewApplePhotos(db, root, "2021", "08", 6).map((item) => item.id)).toEqual([august]);
+      expect(previewApplePhotos(db, root, null, null, 6).map((item) => item.id).sort()).toEqual([august, september, older].sort());
+    } finally { db.close(); }
+  });
+
   it("groups catalog-only and indexed assets by adjusted date without creating folders", async () => {
     const db = await createTestDb();
     try {

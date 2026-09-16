@@ -6,6 +6,19 @@ import { seedScanRoot, seedFolder, seedMedia } from "../helpers/db.js";
 import { thumbnailPathForMediaId } from "../../src/config/paths.js";
 
 describe("disabled Apple Photos media visibility", () => {
+  it("serves hover preview only while the plugin is enabled", async () => {
+    const t = await createTestApp();
+    try {
+      const root = seedScanRoot(t.db, "/preview.photoslibrary");
+      t.db.prepare("UPDATE scan_roots SET kind = 'apple-photos' WHERE id = ?").run(root);
+      const url = `/api/plugins/apple-photos/roots/${root}/preview?year=2021`;
+      const get = () => t.app.inject({ method: "GET", url, headers: { cookie: t.cookie } });
+      expect((await get()).statusCode).toBe(404);
+      await t.app.inject({ method: "PUT", url: "/api/plugins/apple-photos", headers: { cookie: t.cookie }, payload: { enabled: true } });
+      expect((await get()).statusCode).toBe(200);
+    } finally { await t.close(); }
+  });
+
   it("hides Apple media from listings and direct media endpoints, including cached thumbnails", async () => {
     const t = await createTestApp();
     const ordinaryRoot = seedScanRoot(t.db, "/ordinary");
