@@ -24,5 +24,8 @@ desktop/runtime/
 desktop/release/
 desktop/out/
 
+# isolated development worktrees
+.worktrees/
+
 # generated from server/package.json by scripts/generate-version.mjs
 server/src/version.ts
