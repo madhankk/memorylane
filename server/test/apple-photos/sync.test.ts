@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { createTestDb } from "../helpers/db.js";
 import { upsertAppleAsset, applyAppleMetadata, syncAppleRoot, findAppleCatalogAsset, shouldKickAppleAnalysis, type AppleCatalogAsset } from "../../src/plugins/apple-photos/sync.js";
+import { AnalysisRepo } from "../../src/analysis/analysis-repo.js";
 
 const baseAsset: AppleCatalogAsset = {
   uuid: "asset-1", original_filename: "Beach.JPG", original_path: null, derivative_path: null,
@@ -44,12 +45,16 @@ describe("Apple catalogue media mapping", () => {
       const first = upsertAppleAsset(db, rootId, { ...baseAsset, derivative_path: preview });
       expect(first.mediaId).toBeGreaterThan(0);
       expect(first.changed).toBe(true);
+      const analysis = new AnalysisRepo(db);
+      analysis.markDone(first.mediaId!, "faces", "v1");
       db.prepare("UPDATE media SET thumbnail_status = 'done' WHERE id = ?").run(first.mediaId);
       const again = upsertAppleAsset(db, rootId, { ...baseAsset, derivative_path: preview });
       expect(again).toMatchObject({ mediaId: first.mediaId, changed: false });
+      expect(db.prepare("SELECT status FROM media_analysis WHERE media_id = ? AND analyzer = 'faces'").get(first.mediaId)).toEqual({ status: "done" });
       fs.writeFileSync(original, "original-content");
       const upgraded = upsertAppleAsset(db, rootId, { ...baseAsset, original_path: original, original_available: true, derivative_path: preview });
       expect(upgraded).toMatchObject({ mediaId: first.mediaId, changed: true });
+      expect(db.prepare("SELECT status FROM media_analysis WHERE media_id = ? AND analyzer = 'faces'").get(first.mediaId)).toEqual({ status: "pending" });
       expect(db.prepare("SELECT absolute_path, filename, original_available, source_kind, captured_date, gps_lat FROM media WHERE id = ?").get(first.mediaId)).toMatchObject({
         absolute_path: fs.realpathSync(original), filename: "Beach.JPG", original_available: 1, source_kind: "apple-photos", captured_date: "2020-06-01T12:00:00", gps_lat: 10,
       });
