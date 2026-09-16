@@ -11,11 +11,13 @@ import { getOrCreateFolder } from "./folder-repo.js";
 import { processMediaItem } from "../media/media-processor.js";
 import { AnalysisRepo } from "../analysis/analysis-repo.js";
 import { markFoldersDirty } from "../stacks/dirty.js";
+import { isApplePhotosEnabled } from "../plugins/registry.js";
 
 interface ScanRootRow {
   id: number;
   path: string;
   enabled: number;
+  kind: "folder" | "apple-photos";
 }
 
 interface MediaLookupRow {
@@ -216,11 +218,20 @@ export class ScannerService {
     this.logger.info({ runId, trigger, scanRootId: scanRootId ?? "all" }, "Scan started");
 
     try {
+      const scannedRootIds: number[] = [];
       for (const root of roots) {
         stats.currentScanRootId = root.id;
         persistProgress();
+        if (root.kind === "apple-photos") {
+          if (isApplePhotosEnabled(this.db)) {
+            stats.errorCount++;
+            this.logger.warn({ root: root.path }, "Apple Photos catalogue sync is unavailable");
+          }
+          continue;
+        }
         try {
           await this.scanRoot(root, stats, ignoredPaths, enqueueProcessing, flushIfNeeded);
+          scannedRootIds.push(root.id);
         } catch (err) {
           stats.errorCount++;
           this.logger.error({ err, root: root.path }, "Failed to scan root - continuing with remaining roots");
@@ -233,7 +244,6 @@ export class ScannerService {
       // now missing - but only within the root(s) this run actually covered. A scan
       // scoped to one folder (or a run that skips disabled roots) must never mark media
       // in untouched roots as missing just because this run didn't visit them.
-      const scannedRootIds = roots.map((r) => r.id);
       const placeholders = scannedRootIds.map(() => "?").join(",");
 
       const missingMedia = scannedRootIds.length
@@ -351,7 +361,7 @@ export class ScannerService {
       if (entry.isDirectory()) {
         // Ignored folders are skipped entirely - never indexed, no folder row
         // created for them - rather than indexed then filtered out later.
-        if (ignoredPaths.has(entryPath)) continue;
+        if (ignoredPaths.has(entryPath) || entry.name.toLowerCase().endsWith(".photoslibrary")) continue;
         const folder = getOrCreateFolder(this.db, root.id, parentFolderId, entry.name, entryPath);
         await this.walkDirectory(root, folder.id, entryPath, stats, ignoredPaths, enqueueProcessing, flushIfNeeded);
         continue;
