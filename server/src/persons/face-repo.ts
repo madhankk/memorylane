@@ -18,6 +18,7 @@ export interface FaceRow {
   assigned_by: string | null;
   assign_score: number | null;
   discovered_at: string | null;
+  dismissed: number;
   created_at: string;
 }
 
@@ -89,6 +90,12 @@ export class FaceRepo {
           coverUpdate.run(target, f.id);
         }
       }
+      const oldDismissed = old.filter((f) => f.dismissed === 1);
+      const dismiss = this.db.prepare("UPDATE faces SET dismissed = 1, discovered_at = ? WHERE id = ?");
+      for (const f of oldDismissed) {
+        const target = carry(f);
+        if (target !== null) dismiss.run(f.discovered_at ?? new Date().toISOString(), target);
+      }
       // Covers pointing at faces that vanished without a replacement get re-picked by PersonService.fixCover later.
       if (old.length) this.db.prepare(`UPDATE persons SET cover_face_id = NULL WHERE cover_face_id IN (${old.map(() => "?").join(",")})`).run(...old.map((f) => f.id));
       const byOldId = new Map(old.map((f) => [f.id, f]));
@@ -127,13 +134,13 @@ export class FaceRepo {
 
   unassignedQuality(model: string): FaceRow[] {
     return this.db
-      .prepare("SELECT * FROM faces WHERE model = ? AND person_id IS NULL AND quality >= ? ORDER BY id")
+      .prepare("SELECT * FROM faces WHERE model = ? AND person_id IS NULL AND dismissed = 0 AND quality >= ? ORDER BY id")
       .all(model, QUALITY_FACE_MIN) as FaceRow[];
   }
 
   hasUndiscovered(model: string): boolean {
     return !!this.db
-      .prepare("SELECT 1 FROM faces WHERE model = ? AND person_id IS NULL AND quality >= ? AND discovered_at IS NULL LIMIT 1")
+      .prepare("SELECT 1 FROM faces WHERE model = ? AND person_id IS NULL AND dismissed = 0 AND quality >= ? AND discovered_at IS NULL LIMIT 1")
       .get(model, QUALITY_FACE_MIN);
   }
 
@@ -150,6 +157,10 @@ export class FaceRepo {
 
   setAssignment(faceId: number, personId: number | null, by: "auto" | "user" | null, score: number | null): void {
     this.db.prepare("UPDATE faces SET person_id = ?, assigned_by = ?, assign_score = ? WHERE id = ?").run(personId, personId === null ? null : by, score, faceId);
+  }
+
+  restoreDismissed(faceId: number): void {
+    this.db.prepare("UPDATE faces SET dismissed = 0 WHERE id = ?").run(faceId);
   }
 
   addRejection(faceId: number, personId: number): void {

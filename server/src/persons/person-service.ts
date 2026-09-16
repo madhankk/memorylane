@@ -107,7 +107,7 @@ export class PersonService {
     };
     let count = 0;
     for (const row of this.faces.listByIds(faceIds)) {
-      if (row.person_id !== null) continue;
+      if (row.person_id !== null || row.dismissed === 1) continue;
       const rejected = this.faces.rejectionsFor(row.id);
       const vector = this.faces.vector(row);
       const hits = await this.index.search(space, vector, KNN, { excludeIds: [row.id] });
@@ -195,7 +195,7 @@ export class PersonService {
   async regroup(): Promise<{ persons: number; assigned: number }> {
     const tx = this.db.transaction(() => {
       this.db.prepare("UPDATE faces SET person_id = NULL, assigned_by = NULL, assign_score = NULL, discovered_at = NULL WHERE assigned_by = 'auto'").run();
-      this.db.prepare("UPDATE faces SET discovered_at = NULL WHERE person_id IS NULL").run();
+      this.db.prepare("UPDATE faces SET discovered_at = NULL WHERE person_id IS NULL AND dismissed = 0").run();
       this.db
         .prepare(
           `DELETE FROM persons WHERE merged_into IS NULL
@@ -273,7 +273,7 @@ export class PersonService {
 
   listPersons(includeHidden: boolean): PersonDto[] {
     const rows = this.db
-      .prepare(`${PERSON_SELECT} WHERE p.merged_into IS NULL ${includeHidden ? "" : "AND p.hidden = 0"} ORDER BY (p.name IS NOT NULL), face_count DESC, p.id`)
+      .prepare(`${PERSON_SELECT} WHERE p.merged_into IS NULL ${includeHidden ? "" : "AND p.hidden = 0"} ORDER BY media_count DESC, face_count DESC, p.id`)
       .all() as PersonRow[];
     // An unnamed person with no faces left (all rejected, or lost in a
     // re-detection) is noise; named ones stay visible so the name isn't lost.
@@ -319,6 +319,30 @@ export class PersonService {
     return this.requirePerson(id);
   }
 
+  dismiss(id: number): void {
+    const canonicalId = this.requirePerson(id).id;
+    const identityIds = (
+      this.db
+        .prepare(
+          `WITH RECURSIVE identity(id) AS (
+             SELECT id FROM persons WHERE id = ?
+             UNION ALL
+             SELECT p.id FROM persons p JOIN identity i ON p.merged_into = i.id
+           ) SELECT id FROM identity`,
+        )
+        .all(canonicalId) as { id: number }[]
+    ).map((row) => row.id);
+    const placeholders = identityIds.map(() => "?").join(",");
+    const tx = this.db.transaction(() => {
+      this.db
+        .prepare(`UPDATE faces SET person_id = NULL, assigned_by = NULL, assign_score = NULL, dismissed = 1, discovered_at = ${NOW} WHERE person_id IN (${placeholders})`)
+        .run(...identityIds);
+      this.db.prepare(`UPDATE persons SET merged_into = NULL WHERE id IN (${placeholders})`).run(...identityIds);
+      this.db.prepare(`DELETE FROM persons WHERE id IN (${placeholders})`).run(...identityIds);
+    });
+    tx();
+  }
+
   merge(intoId: number, fromId: number): PersonDto {
     if (intoId === fromId) throw new PersonError(400, "Cannot merge a person into themselves");
     this.requirePerson(intoId);
@@ -342,6 +366,7 @@ export class PersonService {
     const tx = this.db.transaction(() => {
       if (personId === null && face.person_id !== null) this.faces.addRejection(faceId, face.person_id);
       if (personId !== null) this.db.prepare("DELETE FROM face_person_rejections WHERE face_id = ? AND person_id = ?").run(faceId, personId);
+      if (personId !== null) this.faces.restoreDismissed(faceId);
       this.faces.setAssignment(faceId, personId, personId === null ? null : "user", personId === null ? null : 1);
       if (face.person_id !== null) this.fixCover(face.person_id);
       if (personId !== null) this.fixCover(personId);

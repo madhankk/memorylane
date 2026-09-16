@@ -85,6 +85,13 @@ export async function registerPersonRoutes(app: FastifyInstance, ctx: AppContext
     return withPersonErrors(reply, () => reply.send(persons.merge(idParam(request), parsed.data.personId)));
   });
 
+  app.delete("/api/persons/:id", guards, async (request, reply) => {
+    return withPersonErrors(reply, () => {
+      persons.dismiss(idParam(request));
+      return reply.code(204).send();
+    });
+  });
+
   app.post("/api/persons/discover", guards, async (_request, reply) => {
     return reply.send(await persons.discover());
   });
