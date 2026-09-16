@@ -4,8 +4,8 @@ export interface PreviewFrame { id: number; thumbnailVersion: number }
 
 export function previewSequence(_cover: PreviewFrame | null, items: PreviewFrame[]): PreviewFrame[] {
   const seen = new Set<number>();
-  // The idle cover may come from a nested folder (or be a video); only the
-  // endpoint's direct, ready photos are eligible for the hover cycle.
+  // The idle cover may come from a nested folder (or be a video); the endpoint
+  // decides which ready photos to cycle, including descendant fallback.
   return items.filter((item) => {
     if (seen.size >= 6 || seen.has(item.id)) return false;
     seen.add(item.id);

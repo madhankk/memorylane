@@ -189,10 +189,14 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
     if (!folder || (folder.kind === "apple-photos" && !isApplePhotosEnabled(db))) {
       return reply.code(404).send({ error: "Folder not found" });
     }
-    const query = buildMediaQuery({ scope: { kind: "folder", folderId: id, recursive: false }, type: "photo", thumbnailDone: true });
-    const items = db.prepare(`${query.cte} SELECT media.id, media.thumbnail_version AS thumbnailVersion
-      FROM media ${query.joins} WHERE ${query.where} ORDER BY media.id DESC LIMIT 6`)
-      .all(...query.bindings);
+    const previewItems = (recursive: boolean) => {
+      const query = buildMediaQuery({ scope: { kind: "folder", folderId: id, recursive }, type: "photo", thumbnailDone: true });
+      return db.prepare(`${query.cte} SELECT media.id, media.thumbnail_version AS thumbnailVersion
+        FROM media ${query.joins} WHERE ${query.where} ORDER BY media.id DESC LIMIT 6`)
+        .all(...query.bindings);
+    };
+    const direct = previewItems(false);
+    const items = direct.length > 0 ? direct : previewItems(true);
     return reply.send({ items });
   });
 
