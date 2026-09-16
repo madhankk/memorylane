@@ -26,4 +26,31 @@ describe("Apple Photos plugin controls", () => {
     expect(html).toContain("1 preview-only");
     expect(html).toContain("Sync now");
   });
+
+  it("shows catalog preparation before the first page arrives", () => {
+    const html = renderToStaticMarkup(<ApplePhotosPluginPanel plugin={{ id: "apple-photos", name: "Apple Photos", enabled: true, available: true }}
+      roots={[{ id: 8, path: "/Pictures/Test.photoslibrary", kind: "apple-photos", enabled: true, sortOrder: 1,
+        createdAt: "", updatedAt: "", stats: { mediaCount: 0, photoCount: 0, rawCount: 0, videoCount: 0,
+          folderCount: 0, totalSizeBytes: 0, pendingThumbnails: 0, failedThumbnails: 0, transcodeCandidateCount: 0 } }]}
+      statuses={{ 8: { status: "running", processed: 0, total: 0, failed: 0, previewOnly: 0, unavailable: 0,
+        error: null, startedAt: new Date(Date.now() - 65_000).toISOString() } }}
+      helperStatus="ready" libraryPath="" busy={false} error={null}
+      onToggle={noop} onPathChange={noop} onAdd={noop} onSync={noop} />);
+    expect(html).toContain("Preparing Photos catalog");
+    expect(html).toContain("elapsed");
+    expect(html).toContain("Dedicated helper: ready");
+  });
+
+  it("labels a stored failure as previous when the helper is currently ready", () => {
+    const html = renderToStaticMarkup(<ApplePhotosPluginPanel plugin={{ id: "apple-photos", name: "Apple Photos", enabled: true, available: true }}
+      roots={[{ id: 8, path: "/Pictures/Test.photoslibrary", kind: "apple-photos", enabled: true, sortOrder: 1,
+        createdAt: "", updatedAt: "", stats: { mediaCount: 0, photoCount: 0, rawCount: 0, videoCount: 0,
+          folderCount: 0, totalSizeBytes: 0, pendingThumbnails: 0, failedThumbnails: 0, transcodeCandidateCount: 0 } }]}
+      statuses={{ 8: { status: "failed", processed: 0, total: 0, failed: 0, previewOnly: 0, unavailable: 0,
+        error: "Photos helper is not reachable; run npm run photos-helper" } }}
+      helperStatus="ready" libraryPath="" busy={false} error={null}
+      onToggle={noop} onPathChange={noop} onAdd={noop} onSync={noop} />);
+    expect(html).toContain("Dedicated helper: ready");
+    expect(html).toContain("Previous sync error:");
+  });
 });

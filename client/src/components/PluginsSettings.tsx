@@ -5,6 +5,16 @@ import { useConfirm } from "./ConfirmDialog";
 
 const buttonClass = "rounded-md border border-border px-3 py-1.5 text-sm text-ink hover:bg-hover disabled:opacity-40";
 
+function syncSummary(status: ApplePhotosSyncStatusDto | undefined): string {
+  if (!status) return "Not synced";
+  if (status.status === "running" && status.total === 0) {
+    const started = status.startedAt ? Date.parse(status.startedAt) : NaN;
+    const elapsed = Number.isFinite(started) ? ` · ${Math.max(0, Math.floor((Date.now() - started) / 1000))}s elapsed` : "";
+    return `Preparing Photos catalog${elapsed}`;
+  }
+  return `${status.processed.toLocaleString()} / ${status.total.toLocaleString()} · ${status.status}${status.failed ? ` · ${status.failed.toLocaleString()} skipped` : ""}`;
+}
+
 interface PanelProps {
   plugin: PluginDto;
   roots: ScanRootDto[];
@@ -64,9 +74,9 @@ export function ApplePhotosPluginPanel(props: PanelProps) {
               return <div key={root.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
                 <div className="min-w-0">
                   <p className="break-all text-sm text-ink">{root.path}</p>
-                  <p className="text-xs text-muted">{root.stats.mediaCount.toLocaleString()} indexed · {status ? `${status.processed.toLocaleString()} / ${status.total.toLocaleString()} · ${status.status}${status.failed ? ` · ${status.failed.toLocaleString()} skipped` : ""}` : "Not synced"}</p>
+                  <p className="text-xs text-muted">{root.stats.mediaCount.toLocaleString()} indexed · {syncSummary(status)}</p>
                   {status && <p className="text-xs text-muted">{status.previewOnly.toLocaleString()} preview-only · {status.unavailable.toLocaleString()} unavailable</p>}
-                  {status?.error && <p className="text-xs text-red-500">{status.error}</p>}
+                  {status?.error && <p className="text-xs text-red-500">Previous sync error: {status.error}</p>}
                 </div>
                 <button type="button" className={buttonClass} disabled={busy || !root.enabled || status?.status === "running"} onClick={() => onSync(root.id)}>Sync now</button>
               </div>;

@@ -43,7 +43,12 @@ async function helperRequest(dataDir: string, endpoint: string, body?: unknown):
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(120_000),
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new Error(endpoint === "/catalog"
+        ? "Photos catalog timed out while preparing or loading a page; the helper process may still be running"
+        : "Photos helper health check timed out");
+    }
     throw new Error("Photos helper is not reachable; run npm run photos-helper");
   }
   const payload: unknown = await response.json();

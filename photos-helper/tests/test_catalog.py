@@ -7,7 +7,7 @@ from http.client import HTTPConnection
 from pathlib import Path
 
 from memorylane_photos.catalog import map_photo, validate_library
-from memorylane_photos.server import make_server
+from memorylane_photos.server import main, make_server
 
 
 class FakePhoto:
@@ -28,6 +28,36 @@ class FakePhoto:
 
 
 class CatalogTests(unittest.TestCase):
+    def test_helper_imports_osxphotos_on_main_thread_before_accepting_requests(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            token_file = Path(tmp) / "token"
+            token_file.write_text("secret")
+            events = []
+
+            class FakeServer:
+                server_port = 4282
+
+                def serve_forever(self):
+                    events.append("serve")
+
+                def server_close(self):
+                    pass
+
+            def import_module(name):
+                self.assertEqual(name, "osxphotos")
+                self.assertIs(threading.current_thread(), threading.main_thread())
+                events.append("import")
+
+            def create_server(*_args):
+                events.append("create")
+                return FakeServer()
+
+            with patch("sys.argv", ["photos-helper", "--token-file", str(token_file)]), \
+                 patch("memorylane_photos.server.make_server", side_effect=create_server), \
+                 patch("memorylane_photos.server.importlib.import_module", side_effect=import_module):
+                main()
+            self.assertEqual(events, ["import", "create", "serve"])
+
     def test_catalog_camera_summary_is_available_when_original_is_missing(self):
         class Exif:
             camera_make = "Canon"
@@ -157,6 +187,33 @@ class CatalogTests(unittest.TestCase):
                 body = json.loads(response.read())
                 self.assertEqual([item["uuid"] for item in body["assets"]], ["A-UUID"])
                 self.assertEqual(body["failures"][0]["uuid"], "bad")
+                conn.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+    def test_catalog_failure_is_logged_without_exposing_details_to_http(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            library = Path(tmp) / "a.photoslibrary"
+            (library / "database").mkdir(parents=True)
+            (library / "database" / "Photos.sqlite").write_bytes(b"fixture")
+
+            def broken_loader(_library):
+                raise RuntimeError("specific catalog failure")
+
+            server = make_server("127.0.0.1", 0, "secret", broken_loader)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                conn = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+                with self.assertLogs("memorylane_photos.server", level="ERROR") as logs:
+                    conn.request("POST", "/catalog", json.dumps({"library_path": str(library), "cursor": 0, "limit": 2}),
+                                 {"Content-Type": "application/json", "X-MemoryLane-Token": "secret"})
+                    response = conn.getresponse()
+                    self.assertEqual(response.status, 503)
+                    self.assertNotIn("specific catalog failure", response.read().decode())
+                self.assertIn("specific catalog failure", "\n".join(logs.output))
                 conn.close()
             finally:
                 server.shutdown()

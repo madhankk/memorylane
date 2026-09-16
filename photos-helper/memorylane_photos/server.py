@@ -2,13 +2,17 @@
 
 import argparse
 import hmac
+import importlib
 import importlib.util
 import json
+import logging
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .catalog import load_catalog, map_photo, validate_library
+
+logger = logging.getLogger(__name__)
 
 
 def make_server(host: str, port: int, token: str, catalog_loader=load_catalog):
@@ -90,6 +94,7 @@ def make_server(host: str, port: int, token: str, catalog_loader=load_catalog):
             except ImportError:
                 self.send_json(503, {"error": "osxphotos is not installed; restart with npm run photos-helper"})
             except Exception:
+                logger.exception("Photos catalog request failed")
                 self.send_json(503, {"error": "Photos catalogue could not be read; check helper logs and library version"})
 
     return ThreadingHTTPServer((host, port), Handler)
@@ -101,6 +106,11 @@ def main():
     parser.add_argument("--port", type=int, default=4282)
     args = parser.parse_args()
     token = args.token_file.read_text(encoding="utf-8").strip()
+    # osxphotos imports PhotoScript, which compiles AppleScript. macOS can block
+    # that security check when it first runs in a request worker thread.
+    # Initialize it on the main thread before the threaded server starts.
+    print("Initializing Apple Photos catalog support…", flush=True)
+    importlib.import_module("osxphotos")
     server = make_server("127.0.0.1", args.port, token)
     print(f"Apple Photos helper listening on http://127.0.0.1:{server.server_port}", flush=True)
     try:
