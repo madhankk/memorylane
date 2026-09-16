@@ -106,7 +106,7 @@ describe("PersonService discovery + assignment", () => {
     await S.svc.discover();
     const [p1, p2] = S.svc.listPersons(false);
     expect(S.svc.rename(p1.id, "Maya").displayName).toBe("Maya");
-    expect(S.svc.listPersons(false)[0].id).toBe(p2.id); // unnamed first
+    expect(S.svc.listPersons(false)[0].id).toBe(p1.id); // naming does not change count-based order
     expect(S.svc.setHidden(p2.id, true).hidden).toBe(true);
     expect(S.svc.listPersons(false)).toHaveLength(1);
     expect(S.svc.listPersons(true)).toHaveLength(2);

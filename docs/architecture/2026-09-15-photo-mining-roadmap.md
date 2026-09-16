@@ -1,10 +1,40 @@
 # Mining a Lifetime of Photos: Roadmap for Phases 5–9
 
-**Status:** Draft for discussion — 2026-09-15
+**Status:** Roadmap draft — updated 2026-09-16
 **Builds on:** `2026-09-14-media-intelligence-design.md` (Phases 1–4, all merged to `main`: full EXIF, stacks, CLIP similarity/search, People).
 **Theme:** A library that spans decades is only valuable if you can *ask it things*, *keep it tidy*, and *make things from it*. This document lays out the features that turn the index we now have into that — conversational search, places, timelines and "best of" mining, housekeeping (delete/hide/export), virtual albums, sharing, light editing, collages and slideshows, and opt-in AI transformations — with the architecture each needs and what, if anything, has to leave the machine.
 
 **Structure:** the core stays small (index, analysis pipeline, query builder, UI shell); everything in §2 is delivered as a **plugin** against the extension points in §3, so capabilities can be added — including ones that need paid API keys or a GPU — without the core growing.
+
+## Status at a glance
+
+The status here describes implementation, not priority. **In PR** means implemented on a branch but not yet merged to `main`; **Plan ready** means an implementation plan exists, not that the feature is built.
+
+| Area — click to jump to details | Phase | Status |
+|---|---|---|
+| [EXIF and People foundation hardening](#recent-foundation-work) | Before 5 | In PR ([#7](https://github.com/madhankk/memorylane/pull/7)) |
+| [A. Ask your library](#feature-a) | 5 | Planned |
+| [B. Places](#feature-b) | 5 | Planned |
+| [C. People context](#feature-c) | 5 | Planned |
+| [D. Captions and keywords](#feature-d) | Optional after 5 | Planned |
+| [E. Filtered semantic ranking](#feature-e) | 5 | Planned |
+| [F. Mining](#feature-f) | 7 | Planned |
+| [G. Light editing](#feature-g) | 8 | Planned |
+| [H. Collages, cards and slideshows](#feature-h) | 8 | Planned |
+| [I. AI transformations](#feature-i) | 9 | Planned |
+| [J. Housekeeping](#feature-j) | 6 | Planned |
+| [K. Virtual albums](#feature-k) | 6 | Planned |
+| [L. Sharing](#feature-l) | 7–9 | Planned |
+| [M. Apple Photos library](#feature-m) | 6 | Plan ready |
+
+## Recent foundation work
+
+[PR #7](https://github.com/madhankk/memorylane/pull/7) implements the following improvements to Phases 1–4. They are **not yet merged to `main`**, and they do not mark any Phase 5–9 feature above as complete.
+
+- **EXIF recovery:** zero-byte files are recorded as unsupported rather than repeatedly failing full-EXIF analysis, so a bad file does not hold up the rest of the queue.
+- **People cleanup:** people are sorted by photo count; unwanted person groupings can be removed with confirmation without deleting photos or face detections. Their detected faces remain dismissed across re-detection and automatic discovery.
+- **People usability:** each People-grid card has quick Remove and inline Rename actions, so neither requires opening the person page.
+- **Person-page loading:** the person-photo query uses an indexed person-first path instead of the slow correlated query that stalled on large libraries.
 
 ---
 
@@ -20,6 +50,8 @@
 ---
 
 ## 2. Feature areas
+
+<a id="feature-a"></a>
 
 ### A. Ask your library — conversational search
 
@@ -50,6 +82,8 @@ question ──▶ LLM (tool calling) ──▶ find_photos({ persons, from, to,
 
 **Effort:** medium. **Data leaving the machine:** question text + metadata summary (cloud providers) or nothing (local).
 
+<a id="feature-b"></a>
+
 ### B. Places — offline reverse geocoding
 
 **What:** Turn the GPS we already store into names: "Reykjavík, Iceland", "Austin, Texas". A **Place** facet on Reports, a place filter for Ask, and "same place, different years" rediscovery.
@@ -60,6 +94,8 @@ question ──▶ LLM (tool calling) ──▶ find_photos({ persons, from, to,
 
 **Effort:** small–medium. **Data leaving the machine:** none.
 
+<a id="feature-c"></a>
+
 ### C. People context — relationships, birthdays, "age in photo"
 
 **What:** Optional fields on a person: relationship ("son", "partner", "friend"), birthday. Enables "my kids" in Ask, and the surprisingly delightful **age caption** — "Arjun, 4 years old" — on every photo, plus a **growing-up timeline** per person (one photo per month/season, chronological).
@@ -67,6 +103,8 @@ question ──▶ LLM (tool calling) ──▶ find_photos({ persons, from, to,
 **How:** two nullable columns on `persons`; the library summary includes relationships; the Viewer caption and person page compute age from `captured_at_precise − birthday`.
 
 **Effort:** small. **Data leaving the machine:** relationship words go to the LLM only as part of the summary; birthdays never leave.
+
+<a id="feature-d"></a>
 
 ### D. Captions and keywords (optional analyzer)
 
@@ -78,6 +116,8 @@ question ──▶ LLM (tool calling) ──▶ find_photos({ persons, from, to,
 
 **Effort:** medium. **Data leaving the machine:** pixels, if the cloud option is chosen — labelled as such.
 
+<a id="feature-e"></a>
+
 ### E. Filtered semantic ranking (infrastructure)
 
 **What:** "Rank *these* ids by similarity to a text or image vector." Today semantic search ranks the whole index.
@@ -85,6 +125,8 @@ question ──▶ LLM (tool calling) ──▶ find_photos({ persons, from, to,
 **How:** for candidate sets up to ~20k, brute-force cosine over vectors read from `media_embeddings` (SQLite) — milliseconds. Above that, LanceDB's `where id IN (…)` pre-filter. One function on `VectorIndex`/`EmbeddingRepo`; used by A and by "Find similar within this folder/person".
 
 **Effort:** small.
+
+<a id="feature-f"></a>
 
 ### F. Mining — rediscovery features that use the new data
 
@@ -102,6 +144,8 @@ All of these are queries over data we already have (or B/C add), surfaced as pag
 
 **Effort:** small–medium each; the quality analyzer is the only new computation.
 
+<a id="feature-g"></a>
+
 ### G. Light editing — non-destructive
 
 **What:** Rotate, flip, straighten, crop (free/fixed ratios), exposure/contrast/white-balance sliders, and one-click "auto". Enough to fix a tilted horizon or crop a scan; not a Lightroom.
@@ -114,6 +158,8 @@ All of these are queries over data we already have (or B/C add), surfaced as pag
 
 **Effort:** medium. **Data leaving the machine:** none.
 
+<a id="feature-h"></a>
+
 ### H. Collages, cards and slideshows
 
 **What:** Make something from a selection or an Ask result: a grid/mosaic collage, a "Year 2016" poster, a birthday/holiday card with a caption, and an **MP4 slideshow** with Ken Burns motion and captions (people, place, date).
@@ -125,6 +171,8 @@ All of these are queries over data we already have (or B/C add), surfaced as pag
 
 **Effort:** medium. **Data leaving the machine:** none.
 
+<a id="feature-i"></a>
+
 ### I. Fun AI transformations (holidays, styles) — opt-in
 
 **What:** "Turn this into a watercolour", "add falling snow", "make a Diwali card from this photo", "swap the background for the Northern Lights". Generated images are always **new files labelled as AI-modified**, never replacing anything.
@@ -135,6 +183,8 @@ All of these are queries over data we already have (or B/C add), surfaced as pag
 - Output goes to `_MemoryLane-Creations/` with an `ai_generated` flag and provenance (source photo, prompt, model) stored in a `creations` table; the grid badge says **AI**.
 
 **Effort:** medium (cloud) / large (local). **Data leaving the machine:** pixels, for the cloud option — explicitly consented per use.
+
+<a id="feature-j"></a>
 
 ### J. Housekeeping — delete, hide, export
 
@@ -153,6 +203,8 @@ All of these are queries over data we already have (or B/C add), surfaced as pag
 
 **Effort:** medium. **Data leaving the machine:** none.
 
+<a id="feature-k"></a>
+
 ### K. Virtual albums — saved queries
 
 **What:** any filter combination the app can express becomes an album: "Arjun, 2008–2010", "Iceland trips", "R5 + 100-500 wildlife", an Ask result, or a hand-picked set. People and Places are already albums of this kind; this makes the concept explicit and user-owned.
@@ -160,6 +212,8 @@ All of these are queries over data we already have (or B/C add), surfaced as pag
 **How:** `albums(id, name, kind, query_json | null, cover_media_id, sort, created_at)` + `album_items(album_id, media_id, position)` for manual/mixed albums. `kind = "query"` albums re-run `buildMediaQuery(query_json)` on open (always current: new photos of Arjun join automatically); `kind = "manual"` is a pinned list; a query album can be **frozen** into a manual one. Albums appear in the nav, on Home, and as a share/export/create target. **Smart suggestions**: trips (B), "best of {year}" (F) and person timelines offer *Save as album*.
 
 **Effort:** small–medium. **Data leaving the machine:** none.
+
+<a id="feature-l"></a>
 
 ### L. Sharing
 
@@ -170,6 +224,8 @@ All of these are queries over data we already have (or B/C add), surfaced as pag
 3. **Hosted sharing** (plugin, optional, paid infra): a plugin that uploads the sized derivatives of a share to a hosting bucket (the user's own S3/R2/B2 with their keys, or a MemoryLane-provided service later) and returns a public URL — for people without a reachable server. Clearly labelled: *these derivatives leave your machine*.
 
 **Effort:** small (1), medium (2), medium (3). **Data leaving the machine:** none (1–2, other than to the people you share with), sized derivatives to the chosen host (3).
+
+<a id="feature-m"></a>
 
 ### M. Apple Photos library (macOS)
 

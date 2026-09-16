@@ -68,7 +68,7 @@ export class AnalysisRepo {
     const claim = this.db.transaction((): AnalysisMediaRow[] => {
       const rows = this.db
         .prepare(
-          `SELECT media.id, media.parent_folder_id, media.absolute_path, media.media_type
+          `SELECT media.id, media.parent_folder_id, media.absolute_path, media.media_type, media.file_size
            FROM media_analysis ma JOIN media ON media.id = ma.media_id
            WHERE ma.analyzer = ? AND ma.status = 'pending' AND media.status = 'active'
            ORDER BY ma.media_id LIMIT ?`,

@@ -102,7 +102,7 @@ export function buildMediaQuery(p: MediaQueryParams): BuiltMediaQuery {
   if (p.thumbnailDone) where.push("media.thumbnail_status = 'done'");
   if (p.collapseStacks) where.push(COLLAPSE_STACKS);
   if (p.personIds && p.personIds.length > 0) {
-    where.push(`EXISTS (SELECT 1 FROM faces f WHERE f.media_id = media.id AND f.person_id IN (${p.personIds.map(() => "?").join(",")}))`);
+    where.push(`media.id IN (SELECT f.media_id FROM faces f WHERE f.person_id IN (${p.personIds.map(() => "?").join(",")}))`);
     bindings.push(...p.personIds);
   }
 

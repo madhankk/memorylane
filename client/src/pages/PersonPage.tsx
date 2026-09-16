@@ -27,6 +27,8 @@ export default function PersonPage() {
   const [mediaTotal, setMediaTotal] = useState(0);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const loadingMoreRef = useRef(false);
   const { confirm } = useConfirm();
 
@@ -115,6 +117,31 @@ export default function PersonPage() {
           <button className={buttonClass} onClick={async () => { setPerson(await api.persons.setHidden(personId, !person.hidden)); }}>
             {person.hidden ? "Unhide" : "Hide"}
           </button>
+          <button
+            className={`${buttonClass} text-red-600`}
+            disabled={removing}
+            onClick={async () => {
+              const ok = await confirm({
+                title: `Remove ${person.displayName}?`,
+                message: "This removes the person grouping and permanently dismisses its detected faces from automatic discovery. Photos and face detections are not deleted.",
+                confirmLabel: "Remove person",
+                danger: true,
+              });
+              if (!ok) return;
+              setRemoving(true);
+              setRemoveError(null);
+              try {
+                await api.persons.remove(personId);
+                navigate("/people", { replace: true });
+              } catch (err) {
+                setRemoveError(err instanceof Error ? err.message : "Could not remove this person");
+              } finally {
+                setRemoving(false);
+              }
+            }}
+          >
+            {removing ? "Removing…" : "Remove person"}
+          </button>
           {others.length > 0 && (
             <select
               className={inputClass}
@@ -139,6 +166,7 @@ export default function PersonPage() {
             </select>
           )}
         </div>
+        {removeError && <p role="alert" className="w-full text-sm text-red-600">{removeError}</p>}
       </div>
 
       <section>

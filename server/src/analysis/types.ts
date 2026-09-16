@@ -7,6 +7,7 @@ export interface AnalysisMediaRow {
   parent_folder_id: number;
   absolute_path: string;
   media_type: MediaType;
+  file_size?: number;
 }
 
 export interface AnalyzerOutcome {

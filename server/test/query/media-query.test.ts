@@ -60,6 +60,26 @@ describe("buildMediaQuery", () => {
     expect(run(L.db, { thumbnailDone: true })).toEqual([L.jpg, L.video, L.otherRoot]);
   });
 
+  it("filters people through the person index without duplicating photos with multiple faces", async () => {
+    const L = await library();
+    const personId = Number(L.db.prepare("INSERT INTO persons (auto_label) VALUES ('Person 1')").run().lastInsertRowid);
+    const insertFace = L.db.prepare(
+      `INSERT INTO faces (media_id, model, bbox_x, bbox_y, bbox_w, bbox_h, det_score, quality, embedding, person_id)
+       VALUES (?, 'test', 0, 0, 0.2, 0.2, 0.9, 0.9, zeroblob(32), ?)`,
+    );
+    insertFace.run(L.jpg, personId);
+    insertFace.run(L.jpg, personId);
+    insertFace.run(L.otherRoot, personId);
+    insertFace.run(L.raw, personId); // companion stays hidden by default
+
+    const params = { personIds: [personId] };
+    expect(run(L.db, params)).toEqual([L.jpg, L.otherRoot]);
+    expect(count(L.db, params)).toBe(2);
+    const q = buildMediaQuery(params);
+    const plan = L.db.prepare(`EXPLAIN QUERY PLAN ${mediaCountSql(q)}`).all(...q.bindings) as { detail: string }[];
+    expect(plan.some((step) => step.detail.includes("CORRELATED"))).toBe(false);
+  });
+
   it("favoritesOnly joins media_engagement", async () => {
     const L = await library();
     L.db.prepare("INSERT INTO media_engagement (media_id, favorite, favorited_at) VALUES (?, 1, '2024-01-01')").run(L.video);
