@@ -5,6 +5,7 @@ import SetupPage from "./pages/SetupPage";
 import LoginPage from "./pages/LoginPage";
 import HomePage from "./pages/HomePage";
 import FolderPage from "./pages/FolderPage";
+import ApplePhotosPage from "./pages/ApplePhotosPage";
 import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
 import SurprisePage from "./pages/SurprisePage";
@@ -40,6 +41,7 @@ export default function App() {
       >
         <Route path="/" element={<HomePage />} />
         <Route path="/folder/:id" element={<FolderPage />} />
+        <Route path="/apple-photos/:id" element={<ApplePhotosPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/surprise" element={<SurprisePage />} />

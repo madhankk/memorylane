@@ -39,6 +39,9 @@ import type {
   PersonDto,
   PersonDetailDto,
   FaceDto,
+  PluginDto,
+  ApplePhotosSyncStatusDto,
+  AppleBrowseDto,
 } from "@memorylane/shared";
 import { trackPageRead } from "../utils/pageLoad";
 
@@ -96,6 +99,19 @@ export function toQueryString(params: Record<string, string | number | undefined
 }
 
 export const api = {
+  plugins: {
+    list: () => request<PluginDto[]>("/api/plugins"),
+    setApplePhotosEnabled: (enabled: boolean) => request<PluginDto>("/api/plugins/apple-photos", { method: "PUT", body: JSON.stringify({ enabled }) }),
+    applePhotosHealth: () => request<{ status: "ready" }>("/api/plugins/apple-photos/health"),
+    detectApplePhotosLibraries: () => request<{ path: string; readable: boolean; reason?: string }[]>("/api/plugins/apple-photos/libraries"),
+    applePhotosSync: (rootId: number) => request<void>(`/api/plugins/apple-photos/roots/${rootId}/sync`, { method: "POST" }),
+    applePhotosSyncStatus: (rootId: number) => request<ApplePhotosSyncStatusDto>(`/api/plugins/apple-photos/roots/${rootId}/sync`),
+    openInPhotos: (mediaId: number) => request<{ ok: true }>("/api/plugins/apple-photos/open-in-photos", { method: "POST", body: JSON.stringify({ mediaId }) }),
+    browseApplePhotos: (rootId: number, year?: string, month?: string, offset = 0, limit = 100) =>
+      request<AppleBrowseDto>(`/api/plugins/apple-photos/roots/${rootId}/browse${toQueryString({ year, month, offset, limit })}`),
+    openCatalogItemInPhotos: (rootId: number, uuid: string) => request<{ ok: true }>(`/api/plugins/apple-photos/roots/${rootId}/items/open-in-photos`, { method: "POST", body: JSON.stringify({ uuid }) }),
+    checkApplePhotoLocal: (rootId: number, uuid: string) => request<{ available: boolean }>(`/api/plugins/apple-photos/roots/${rootId}/items/check-local`, { method: "POST", body: JSON.stringify({ uuid }) }),
+  },
   auth: {
     me: () => request<{ user: UserDto | null; needsSetup: boolean }>("/api/auth/me"),
     setup: (body: SetupRequest) => request<{ ok: true }>("/api/auth/setup", { method: "POST", body: JSON.stringify(body) }),

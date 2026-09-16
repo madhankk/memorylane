@@ -41,10 +41,14 @@ export async function registerIgnoredPathsRoutes(app: FastifyInstance, ctx: AppC
 
   app.post("/api/folders/:id/ignore", { preHandler: app.requireAuth }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
-    const folder = db.prepare("SELECT id, parent_id, absolute_path FROM folders WHERE id = ?").get(id) as
-      | { id: number; parent_id: number | null; absolute_path: string }
+    const folder = db.prepare(`SELECT folders.id, folders.parent_id, folders.absolute_path, scan_roots.kind
+      FROM folders JOIN scan_roots ON scan_roots.id = folders.scan_root_id WHERE folders.id = ?`).get(id) as
+      | { id: number; parent_id: number | null; absolute_path: string; kind: string }
       | undefined;
     if (!folder) return reply.code(404).send({ error: "Folder not found" });
+    if (folder.kind === "apple-photos") {
+      return reply.code(409).send({ error: "Apple Photos libraries cannot be ignored as ordinary folders; disable the plugin or remove the library root instead" });
+    }
 
     // Collect every media id under this folder's subtree (itself included)
     // before deleting anything, so their cached thumbnail/preview files on

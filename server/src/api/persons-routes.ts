@@ -19,6 +19,7 @@ import { faceCropPath } from "../config/paths.js";
 import { renderAnalysisJpeg } from "../media/analysis-input.js";
 import { streamFile } from "./file-streaming.js";
 import type { MediaRow } from "./mappers.js";
+import { isMediaSourceVisible } from "../plugins/registry.js";
 
 const PEOPLE_OFF = "People is turned off - enable it under Settings › People";
 const CROP_SIZE = 160;
@@ -106,18 +107,21 @@ export async function registerPersonRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.get("/api/media/:id/faces", guards, async (request, reply) => {
+    if (!isMediaSourceVisible(ctx.db, idParam(request))) return reply.code(404).send({ error: "Media not found" });
     return reply.send(persons.facesForMedia(idParam(request)));
   });
 
   app.post("/api/faces/:id/assign", guards, async (request, reply) => {
     const parsed = assignFaceRequestSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "Invalid input" });
+    if (!persons.getFace(idParam(request))) return reply.code(404).send({ error: "Face not found" });
     return withPersonErrors(reply, () => reply.send(persons.assignFace(idParam(request), parsed.data.personId)));
   });
 
   app.post("/api/faces/:id/reject", guards, async (request, reply) => {
     const parsed = rejectFaceRequestSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "Invalid input" });
+    if (!persons.getFace(idParam(request))) return reply.code(404).send({ error: "Face not found" });
     return withPersonErrors(reply, () => reply.send(persons.rejectFace(idParam(request), parsed.data.personId)));
   });
 
@@ -143,7 +147,7 @@ export async function registerPersonRoutes(app: FastifyInstance, ctx: AppContext
       fs.mkdirSync(path.dirname(cropPath), { recursive: true });
       await sharp(source).extract({ left, top, width, height }).resize(CROP_SIZE, CROP_SIZE, { fit: "cover" }).jpeg({ quality: 85 }).toFile(cropPath);
     }
-    reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    reply.header("Cache-Control", "private, no-store");
     return streamFile(request, reply, cropPath, "image/jpeg");
   });
 }

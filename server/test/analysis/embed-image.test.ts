@@ -105,4 +105,21 @@ describe("embed_image analyzer", () => {
     enabled = true;
     expect(w.getStatus().analyzers[0].enabled).toBe(true);
   });
+
+  it("does not send an Apple thumbnail to AI if the plugin is disabled during health check", async () => {
+    const S = await setup();
+    S.db.prepare("UPDATE media SET source_kind = 'apple-photos' WHERE id = ?").run(S.ids[0]);
+    S.db.prepare("INSERT INTO plugin_settings (id, enabled) VALUES ('apple-photos', 1)").run();
+    const realHealth = S.provider.health.bind(S.provider);
+    S.provider.health = async (...args) => {
+      const status = await realHealth(...args);
+      S.db.prepare("UPDATE plugin_settings SET enabled = 0 WHERE id = 'apple-photos'").run();
+      return status;
+    };
+    let sent = false;
+    S.provider.embedImages = async () => { sent = true; throw new Error("Should not send disabled source"); };
+    const result = await S.analyzer.run([{ id: S.ids[0], parent_folder_id: S.folder, absolute_path: "/x", media_type: "image" }]);
+    expect(sent).toBe(false);
+    expect(result[0].status).toBe("unsupported");
+  });
 });

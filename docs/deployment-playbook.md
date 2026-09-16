@@ -1,7 +1,7 @@
 # MemoryLane — Local & Test Deployment Playbook
 
 **For:** anyone standing up MemoryLane on their own Mac or Windows machine to develop against or test — including the optional AI sidecar.
-**Covers:** the `feature/media-intelligence-phase4-persons` branch (Phases 1–4: EXIF reports, stacks, AI similarity/search, People). Everything here also applies to `main` once the phase PRs (#1 → #2 → #3 → #4) merge.
+**Covers:** the current media-intelligence features and the optional Apple Photos plugin on `feature/apple-photos`.
 **Last verified:** 2026-09-15 on macOS 26 / Apple Silicon (Node 20.19, Python 3.13). Windows steps use the same code paths and prebuilt binaries verified in the design doc §16; run through them once on a Windows box and tick the checklist at the end.
 
 ---
@@ -16,6 +16,18 @@
 | **Testing the Windows/macOS installer** | Desktop tray app (`desktop/`), see §8 | Only when the packaged experience itself is under test. |
 
 Two processes in every AI-enabled setup: the **MemoryLane server** (Node) and the **`memorylane-ai` sidecar** (Python). The sidecar is optional — without it the app works fully; Find similar, Describe-it search, stacks-v2 refinement and People just report "AI not available".
+
+Apple Photos is a separate, optional third process on macOS. It is not part of the AI sidecar and is never started merely because MemoryLane starts.
+
+### Apple Photos plugin (macOS only)
+
+In **Settings → Plugins**, enable Apple Photos. In a separate terminal run `npm run photos-helper`; the first launch creates an isolated Python environment and installs `osxphotos` into the MemoryLane data directory. Leave that command running while you sync. Use **Add library** to select a local `.photoslibrary` package, then **Sync now**. The helper listens only on `127.0.0.1:4282` and shares a private token with the server through the data directory. Use the same `MEMORYLANE_DATA_DIR` for both commands if you override the default. The AI sidecar remains independent and is needed only for embeddings and faces.
+
+Both the server and the helper need read permission for the Photos package. If sync reports an access error, grant the launching terminal/app Full Disk Access in **System Settings → Privacy & Security**, then restart it. Neither process modifies the Photos library. Local originals are used when available; otherwise an available preview is imported and labeled preview-only. An asset with neither local file is skipped until a later sync. Imported local files receive the normal thumbnail, EXIF, visual fingerprint, embedding and face analysis (the latter two need the AI sidecar; faces also need People enabled). Photos catalogue dates and other available metadata are retained alongside extracted file metadata.
+
+Disabling the plugin hides its imported media and stops new sync/analysis work without deleting the MemoryLane index or Photos files. Press Ctrl+C in the helper terminal to release its process memory. Restart the MemoryLane server if you also want to unload previously imported plugin JavaScript modules. Re-enable and sync to refresh the index. Apple albums and downloading iCloud originals are not supported in this release; **Open in Photos** is offered for a preview-only item instead.
+
+Manual macOS smoke check: enable the plugin; start the helper; add a small readable library; sync and compare indexed/preview/skipped counts with the catalogue; open a local original and a preview-only item; verify EXIF and face analysis progress; use **Open in Photos** (grant Automation permission if prompted); then disable and verify direct media and face-crop URLs return 404. Re-enable, resync, and verify media IDs are stable. A real-library run remains necessary before declaring the feature production-ready.
 
 ---
 

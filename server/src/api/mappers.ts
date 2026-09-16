@@ -83,6 +83,8 @@ export interface MediaRow {
   audio_codec: string | null;
   live_photo_video_id: number | null;
   raw_pair_id: number | null;
+  source_kind: "apple-photos" | null;
+  original_available: number;
 }
 
 export function toMediaDto(row: MediaRow): MediaDto {
@@ -119,6 +121,8 @@ export function toMediaDto(row: MediaRow): MediaDto {
     audioCodec: row.audio_codec,
     livePhotoVideoId: row.live_photo_video_id,
     rawPairId: row.raw_pair_id,
+    sourceKind: row.source_kind,
+    originalAvailable: row.original_available === 1,
     // Populated by EngagementRepo.attachFavorites() at the route level - see
     // db/engagement-repo.ts. Defaults false here since not every call site
     // needs it (or has fetched it yet).

@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { searchQuerySchema, type SearchResultDto } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { toFolderDto, toMediaDto, type FolderRow, type MediaRow } from "./mappers.js";
-import { buildMediaQuery } from "../query/media-query.js";
+import { buildMediaQuery, APPLE_PLUGIN_ENABLED_SQL } from "../query/media-query.js";
 import { ProviderUnavailableError } from "../providers/types.js";
 import { spaceFor } from "../vectors/vector-index.js";
 import { AI_UNAVAILABLE, loadRanked } from "./similar-routes.js";
@@ -50,7 +50,9 @@ export async function registerSearchRoutes(app: FastifyInstance, ctx: AppContext
       .prepare(
         `SELECT folders.* FROM folders_fts
          JOIN folders ON folders.id = folders_fts.rowid
+         JOIN scan_roots ON scan_roots.id = folders.scan_root_id
          WHERE folders_fts MATCH ? AND folders.status = 'active'
+           AND (scan_roots.kind != 'apple-photos' OR ${APPLE_PLUGIN_ENABLED_SQL})
          ORDER BY rank LIMIT ?`,
       )
       .all(ftsQuery, folderLimit) as FolderRow[];

@@ -10,7 +10,8 @@ import {
   type FolderCounts,
   type MediaRow,
 } from "./mappers.js";
-import { buildMediaQuery, mediaCountSql, mediaSelectSql } from "../query/media-query.js";
+import { buildMediaQuery, mediaCountSql, mediaSelectSql, ACTIVE_SOURCE_SQL, APPLE_PLUGIN_ENABLED_SQL } from "../query/media-query.js";
+import { isApplePhotosEnabled } from "../plugins/registry.js";
 import { decorateMedia } from "./decorate-media.js";
 
 // Recursive CTE selecting a folder and every active descendant - reused by the
@@ -32,7 +33,7 @@ export function getFolderCounts(
   const mediaCount = (
     ctx.db
       .prepare(
-        `SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW}`,
+        `SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${ACTIVE_SOURCE_SQL} AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW}`,
       )
       .get(folderId) as { c: number }
   ).c;
@@ -46,7 +47,7 @@ export function getFolderCounts(
   // "re-rolled on every load" feel.
   let thumbRow = ctx.db
     .prepare(
-      `SELECT id, thumbnail_version FROM media WHERE parent_folder_id = ? AND status = 'active' AND thumbnail_status = 'done' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW}
+      `SELECT id, thumbnail_version FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${ACTIVE_SOURCE_SQL} AND thumbnail_status = 'done' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW}
        ORDER BY RANDOM() LIMIT 1`,
     )
     .get(folderId) as { id: number; thumbnail_version: number } | undefined;
@@ -59,7 +60,7 @@ export function getFolderCounts(
       .prepare(
         `${DESCENDANT_FOLDERS_CTE}
          SELECT media.id, media.thumbnail_version FROM media
-         WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND thumbnail_status = 'done' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW}
+         WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND ${ACTIVE_SOURCE_SQL} AND thumbnail_status = 'done' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW}
          ORDER BY RANDOM() LIMIT 1`,
       )
       .get(folderId) as { id: number; thumbnail_version: number } | undefined;
@@ -82,7 +83,7 @@ export function getRecursiveFolderStats(ctx: AppContext, folderId: number): { co
     .prepare(
       `${DESCENDANT_FOLDERS_CTE}
        SELECT COUNT(*) as c, COALESCE(SUM(file_size), 0) as s FROM media
-       WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active'`,
+       WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND ${ACTIVE_SOURCE_SQL}`,
     )
     .get(folderId) as { c: number; s: number };
   return { count: row.c, sizeBytes: row.s };
@@ -99,6 +100,7 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
         `SELECT folders.* FROM folders
          JOIN scan_roots ON scan_roots.id = folders.scan_root_id
          WHERE folders.parent_id IS NULL AND folders.status = 'active'
+           AND (scan_roots.kind != 'apple-photos' OR ${APPLE_PLUGIN_ENABLED_SQL})
          ORDER BY scan_roots.sort_order, scan_roots.id`,
       )
       .all() as FolderRow[];
@@ -118,6 +120,8 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
     const id = Number((request.params as { id: string }).id);
     const row = db.prepare("SELECT * FROM folders WHERE id = ?").get(id) as FolderRow | undefined;
     if (!row) return reply.code(404).send({ error: "Folder not found" });
+    const source = db.prepare("SELECT kind FROM scan_roots WHERE id = ?").get(row.scan_root_id) as { kind: string } | undefined;
+    if (source?.kind === "apple-photos" && !isApplePhotosEnabled(db)) return reply.code(404).send({ error: "Folder not found" });
 
     const breadcrumbs: FolderBreadcrumbDto[] = [];
     let cursor: FolderRow | undefined = row;
@@ -142,6 +146,12 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
     const parsed = paginationQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.code(400).send({ error: "Invalid query" });
     const { offset, limit } = parsed.data;
+
+    const parent = db.prepare("SELECT scan_root_id FROM folders WHERE id = ?").get(id) as { scan_root_id: number } | undefined;
+    if (parent) {
+      const source = db.prepare("SELECT kind FROM scan_roots WHERE id = ?").get(parent.scan_root_id) as { kind: string } | undefined;
+      if (source?.kind === "apple-photos" && !isApplePhotosEnabled(db)) return reply.code(404).send({ error: "Folder not found" });
+    }
 
     const total = (
       db.prepare("SELECT COUNT(*) as c FROM folders WHERE parent_id = ? AND status = 'active'").get(id) as {

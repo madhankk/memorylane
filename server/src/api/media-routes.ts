@@ -10,6 +10,7 @@ import { EngagementRepo } from "../db/engagement-repo.js";
 import { decorateMedia } from "./decorate-media.js";
 import { buildMediaQuery, mediaCountSql, mediaSelectSql } from "../query/media-query.js";
 import { toMediaQueryParams } from "./reports-routes.js";
+import { isApplePhotosEnabled } from "../plugins/registry.js";
 
 interface MediaWithRootRow extends MediaRow {
   scan_root_path: string;
@@ -29,10 +30,12 @@ function resolveVerifiedMedia(ctx: AppContext, id: number): MediaWithRootRow | n
     .get(id) as MediaWithRootRow | undefined;
   if (!row) return null;
   if (!row.scan_root_enabled || row.status !== "active") return null;
+  if (row.source_kind === "apple-photos" && !isApplePhotosEnabled(ctx.db)) return null;
 
   const resolvedPath = path.resolve(row.absolute_path);
   const resolvedRoot = path.resolve(row.scan_root_path);
-  if (!resolvedPath.startsWith(resolvedRoot)) return null; // defense in depth
+  const relative = path.relative(resolvedRoot, resolvedPath);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) return null; // defense in depth
 
   return row;
 }
@@ -40,6 +43,11 @@ function resolveVerifiedMedia(ctx: AppContext, id: number): MediaWithRootRow | n
 export async function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { db, paths } = ctx;
   const engagement = new EngagementRepo(db);
+  const visibleById = (id: number): MediaRow | undefined => {
+    const row = db.prepare("SELECT * FROM media WHERE id = ? AND status = 'active'").get(id) as MediaRow | undefined;
+    if (row?.source_kind === "apple-photos" && !isApplePhotosEnabled(db)) return undefined;
+    return row;
+  };
 
   // Library-wide filtered listing - backs the Reports grid. Same filter
   // vocabulary as /api/reports/facets and export.csv (see reports-routes.ts).
@@ -55,7 +63,7 @@ export async function registerMediaRoutes(app: FastifyInstance, ctx: AppContext)
 
   app.get("/api/media/:id", { preHandler: app.requireAuth }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
-    const row = db.prepare("SELECT * FROM media WHERE id = ?").get(id) as MediaRow | undefined;
+    const row = visibleById(id);
     if (!row) return reply.code(404).send({ error: "Media not found" });
     const [dto] = decorateMedia(ctx, [toMediaDto(row)]);
     return reply.send(dto);
@@ -67,7 +75,7 @@ export async function registerMediaRoutes(app: FastifyInstance, ctx: AppContext)
     if (!parsed.success || Number.isNaN(id)) {
       return reply.code(400).send({ error: "Invalid input" });
     }
-    const exists = db.prepare("SELECT id FROM media WHERE id = ?").get(id);
+    const exists = visibleById(id);
     if (!exists) return reply.code(404).send({ error: "Media not found" });
 
     return reply.send(engagement.setFavorite(id, parsed.data.favorite));
@@ -81,7 +89,7 @@ export async function registerMediaRoutes(app: FastifyInstance, ctx: AppContext)
   app.post("/api/media/:id/shown", { preHandler: app.requireAuth }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
     if (Number.isNaN(id)) return reply.code(400).send({ error: "Invalid id" });
-    const exists = db.prepare("SELECT id FROM media WHERE id = ?").get(id);
+    const exists = visibleById(id);
     if (!exists) return reply.code(404).send({ error: "Media not found" });
     engagement.recordShown(id);
     return reply.send({ ok: true });
@@ -90,7 +98,7 @@ export async function registerMediaRoutes(app: FastifyInstance, ctx: AppContext)
   app.post("/api/media/:id/viewed", { preHandler: app.requireAuth }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
     if (Number.isNaN(id)) return reply.code(400).send({ error: "Invalid id" });
-    const exists = db.prepare("SELECT id FROM media WHERE id = ?").get(id);
+    const exists = visibleById(id);
     if (!exists) return reply.code(404).send({ error: "Media not found" });
     engagement.recordViewed(id);
     return reply.send({ ok: true });
@@ -101,6 +109,11 @@ export async function registerMediaRoutes(app: FastifyInstance, ctx: AppContext)
     const media = resolveVerifiedMedia(ctx, id);
     if (!media) return reply.code(404).send({ error: "Media not found" });
     if (!fs.existsSync(media.absolute_path)) return reply.code(404).send({ error: "File missing on disk" });
+
+    if (media.source_kind === "apple-photos") {
+      reply.header("Cache-Control", "no-store");
+      if (media.original_available === 0) reply.header("X-MemoryLane-Source", "derivative");
+    }
 
     return streamFile(request, reply, media.absolute_path, mimeTypeForExtension(media.extension));
   });
@@ -114,7 +127,7 @@ export async function registerMediaRoutes(app: FastifyInstance, ctx: AppContext)
     if (media.thumbnail_status !== "done" || !fs.existsSync(thumbPath)) {
       return reply.code(404).send({ error: "Thumbnail not available" });
     }
-    reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    reply.header("Cache-Control", media.source_kind === "apple-photos" ? "no-store" : "private, max-age=31536000, immutable");
     return streamFile(request, reply, thumbPath, "image/jpeg");
   });
 
@@ -130,7 +143,7 @@ export async function registerMediaRoutes(app: FastifyInstance, ctx: AppContext)
     if (media.thumbnail_status !== "done" || !fs.existsSync(previewPath)) {
       return reply.code(404).send({ error: "Preview not available" });
     }
-    reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    reply.header("Cache-Control", media.source_kind === "apple-photos" ? "no-store" : "private, max-age=31536000, immutable");
     return streamFile(request, reply, previewPath, "image/jpeg");
   });
 }

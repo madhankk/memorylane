@@ -51,11 +51,32 @@ export interface ScanRootStatsDto {
 export interface ScanRootDto {
   id: number;
   path: string;
+  kind: "folder" | "apple-photos";
   enabled: boolean;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
   stats: ScanRootStatsDto;
+}
+
+export interface PluginDto {
+  id: "apple-photos";
+  name: string;
+  available: boolean;
+  enabled: boolean;
+}
+
+export interface ApplePhotosSyncStatusDto {
+  status: "idle" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
+  processed: number;
+  total: number;
+  failed: number;
+  previewOnly: number;
+  unavailable: number;
+  error: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  lastSuccessAt?: string | null;
 }
 
 export type MoveDirection = "up" | "down";
@@ -66,6 +87,7 @@ export interface MoveScanRootRequest {
 
 export interface CreateScanRootRequest {
   path: string;
+  kind?: "folder" | "apple-photos";
 }
 
 export interface UpdateScanRootRequest {
@@ -186,6 +208,33 @@ export interface FolderBreadcrumbDto {
   name: string;
 }
 
+export interface AppleBrowseGroupDto {
+  key: string;
+  count: number;
+  coverMediaId: number | null;
+  thumbnailVersion: number;
+}
+
+export interface AppleBrowseItemDto {
+  uuid: string;
+  filename: string;
+  date: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  mediaId: number | null;
+  thumbnailVersion: number;
+  available: boolean;
+  media?: MediaDto | null;
+}
+
+export interface AppleBrowseDto {
+  groups: AppleBrowseGroupDto[];
+  items: AppleBrowseItemDto[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
 export interface MediaDto {
   id: number;
   parentFolderId: number;
@@ -211,6 +260,8 @@ export interface MediaDto {
   // bust the browser's long-lived immutable cache when they change.
   thumbnailVersion: number;
   status: MediaStatus;
+  sourceKind: "apple-photos" | null;
+  originalAvailable: boolean;
 
   cameraMake: string | null;
   cameraModel: string | null;
@@ -540,7 +591,7 @@ export interface FaceDto {
   detScore: number;
   quality: number;
   personId: number | null;
-  assignedBy: "auto" | "user" | null;
+  assignedBy: "auto" | "user" | "apple" | null;
 }
 
 export interface PersonDetailDto {

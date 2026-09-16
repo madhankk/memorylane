@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Pencil } from "lucide-react";
-import type { FolderDto, HomeSummaryDto, MediaDto, OnThisDayTier } from "@memorylane/shared";
+import type { FolderDto, HomeSummaryDto, MediaDto, OnThisDayTier, ScanRootDto } from "@memorylane/shared";
 import { api } from "../api/client";
 import FolderCard from "../components/FolderCard";
+import { AppleBrowseCard } from "../components/AppleBrowseCard";
 import InlineSlideshow from "../components/InlineSlideshow";
 import { formatBytes } from "../utils/format";
 import { formatMemoryBlurb } from "../utils/blurb";
@@ -20,6 +21,8 @@ const TIER_CAPTION: Record<OnThisDayTier, string> = {
 
 export default function HomePage() {
   const [folders, setFolders] = useState<FolderDto[] | null>(null);
+  const [appleLibraries, setAppleLibraries] = useState<{ root: ScanRootDto; count: number; coverMediaId: number | null; thumbnailVersion: number }[]>([]);
+  const [appleRootIds, setAppleRootIds] = useState<number[]>([]);
   const [summary, setSummary] = useState<HomeSummaryDto | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -69,7 +72,24 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    void api.folders.listTop().then(setFolders);
+    void Promise.all([api.folders.listTop(), api.scanRoots.list(), api.plugins.list()]).then(async ([listedFolders, roots, plugins]) => {
+      setAppleRootIds(roots.filter((root) => root.kind === "apple-photos").map((root) => root.id));
+      setFolders(listedFolders);
+      if (!plugins.some((plugin) => plugin.id === "apple-photos" && plugin.enabled)) return;
+      const libraries = await Promise.all(roots.filter((root) => root.kind === "apple-photos" && root.enabled).map(async (root) => {
+        const folder = listedFolders.find((candidate) => candidate.scanRootId === root.id);
+        try {
+          const browse = await api.plugins.browseApplePhotos(root.id);
+          const cover = browse.groups.find((group) => group.coverMediaId !== null);
+          return { root, count: browse.groups.reduce((sum, group) => sum + group.count, 0),
+            coverMediaId: cover?.coverMediaId ?? null, thumbnailVersion: cover?.thumbnailVersion ?? 0 };
+        } catch {
+          return { root, count: folder?.recursiveMediaCount ?? 0,
+            coverMediaId: folder?.thumbnailMediaId ?? null, thumbnailVersion: folder?.thumbnailVersion ?? 0 };
+        }
+      }));
+      setAppleLibraries(libraries);
+    }).catch(() => {});
     // Re-fetched (and re-randomized server-side) on every Home page load.
     void api.home.summary().then(setSummary);
     // Random Memory plays by default the moment the page opens - no click needed.
@@ -221,14 +241,16 @@ export default function HomePage() {
       <section>
         <h2 className="mb-4 font-serif text-2xl font-semibold text-ink">Your Library</h2>
         {folders === null && <p className="text-sm text-muted">Loading...</p>}
-        {folders && folders.length === 0 && (
+        {folders && folders.length === 0 && appleLibraries.length === 0 && (
           <p className="text-sm text-muted">No photo folders configured yet. Head to Settings to add a folder to scan.</p>
         )}
-        {folders && folders.length > 0 && (
+        {folders && (folders.length > 0 || appleLibraries.length > 0) && (
           <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-4">
-            {folders.map((f) => (
-              <FolderCard key={f.id} folder={f} />
-            ))}
+            {folders.filter((f) => !appleRootIds.includes(f.scanRootId)).map((f) => <FolderCard key={f.id} folder={f} />)}
+            {appleLibraries.map(({ root, count, coverMediaId, thumbnailVersion }) =>
+              <AppleBrowseCard key={`apple-${root.id}`} to={`/apple-photos/${root.id}`} title="Apple Device Photos"
+                subtitle={root.path.split(/[\\/]/).filter(Boolean).pop()} count={count}
+                coverMediaId={coverMediaId} thumbnailVersion={thumbnailVersion} />)}
           </div>
         )}
       </section>

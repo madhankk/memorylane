@@ -5,6 +5,7 @@ import { toMediaDto, type MediaRow } from "./mappers.js";
 import { decorateMedia } from "./decorate-media.js";
 import { buildMediaQuery, mediaSelectSql } from "../query/media-query.js";
 import { spaceFor } from "../vectors/vector-index.js";
+import { isMediaSourceVisible } from "../plugins/registry.js";
 
 export const AI_UNAVAILABLE = "AI features are not available - the memorylane-ai sidecar isn't configured or running";
 
@@ -28,7 +29,7 @@ export async function registerSimilarRoutes(app: FastifyInstance, ctx: AppContex
     const parsed = similarQuerySchema.safeParse(request.query);
     if (!parsed.success || Number.isNaN(id)) return reply.code(400).send({ error: "Invalid query" });
     const row = ctx.db.prepare("SELECT * FROM media WHERE id = ?").get(id) as MediaRow | undefined;
-    if (!row) return reply.code(404).send({ error: "Media not found" });
+    if (!row || !isMediaSourceVisible(ctx.db, id)) return reply.code(404).send({ error: "Media not found" });
     if (!ctx.provider) return reply.code(503).send({ error: AI_UNAVAILABLE });
 
     const model = ctx.provider.expectedModel;

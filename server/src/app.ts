@@ -20,6 +20,7 @@ import { registerReportsRoutes } from "./api/reports-routes.js";
 import { registerStackRoutes } from "./api/stacks-routes.js";
 import { registerSimilarRoutes } from "./api/similar-routes.js";
 import { registerPersonRoutes } from "./api/persons-routes.js";
+import { registerPluginRoutes } from "./plugins/plugin-routes.js";
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const isProd = process.env.NODE_ENV === "production";
@@ -43,6 +44,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
 
   await registerAuthRoutes(app, ctx);
   await registerSettingsRoutes(app, ctx);
+  await registerPluginRoutes(app, ctx);
   await registerScanRootRoutes(app, ctx);
   await registerScanRoutes(app, ctx);
   await registerFolderRoutes(app, ctx);

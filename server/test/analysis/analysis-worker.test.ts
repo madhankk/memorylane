@@ -106,4 +106,18 @@ describe("AnalysisWorker", () => {
     expect(calls.length).toBeGreaterThanOrEqual(3);
     expect(calls.every((seenBatches) => seenBatches === 1)).toBe(true); // analyzer drained first
   });
+
+  it("returns an in-flight Apple result to pending when the plugin is disabled", async () => {
+    const { db, ids } = await setup(1);
+    db.prepare("UPDATE media SET source_kind = 'apple-photos' WHERE id = ?").run(ids[0]);
+    db.prepare("INSERT INTO plugin_settings (id, enabled) VALUES ('apple-photos', 1)").run();
+    const a = fakeAnalyzer({ run: async (rows) => {
+      db.prepare("UPDATE plugin_settings SET enabled = 0 WHERE id = 'apple-photos'").run();
+      return rows.map((r) => ({ mediaId: r.id, status: "done" as const }));
+    } });
+    const w = new AnalysisWorker(db, logger, [a], () => false);
+    w.enqueueAll();
+    await w.runOnce();
+    expect(db.prepare("SELECT status FROM media_analysis WHERE media_id = ?").get(ids[0])).toEqual({ status: "pending" });
+  });
 });

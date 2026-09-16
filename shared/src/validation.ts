@@ -21,6 +21,7 @@ export const changePasswordRequestSchema = z.object({
 
 export const createScanRootRequestSchema = z.object({
   path: z.string().min(1).max(4096),
+  kind: z.enum(["folder", "apple-photos"]).optional().default("folder"),
 });
 
 export const updateScanRootRequestSchema = z.object({
