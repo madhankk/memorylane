@@ -11,10 +11,12 @@ import {
 } from "@memorylane/shared";
 import type { AppContext } from "../context.js";
 import { NEEDS_TRANSCODE_SQL_CLAUSE } from "../media/video-compatibility.js";
+import { isApplePhotosEnabled } from "../plugins/registry.js";
 
 interface ScanRootRow {
   id: number;
   path: string;
+  kind: "folder" | "apple-photos";
   enabled: number;
   sort_order: number;
   created_at: string;
@@ -83,6 +85,7 @@ function toDto(db: Database.Database, row: ScanRootRow): ScanRootDto {
   return {
     id: row.id,
     path: row.path,
+    kind: row.kind,
     enabled: row.enabled === 1,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
@@ -106,6 +109,14 @@ export async function registerScanRootRoutes(app: FastifyInstance, ctx: AppConte
     }
 
     const resolvedPath = path.resolve(parsed.data.path);
+    if (parsed.data.kind === "apple-photos") {
+      if (!isApplePhotosEnabled(db)) return reply.code(409).send({ error: "Enable Apple Photos before adding a library" });
+      if (!resolvedPath.toLowerCase().endsWith(".photoslibrary")) {
+        return reply.code(400).send({ error: "Select a .photoslibrary package" });
+      }
+    } else if (resolvedPath.toLowerCase().endsWith(".photoslibrary")) {
+      return reply.code(400).send({ error: "Add this package through the Apple Photos plugin" });
+    }
     let stat: fs.Stats;
     try {
       stat = fs.statSync(resolvedPath);
@@ -121,8 +132,8 @@ export async function registerScanRootRoutes(app: FastifyInstance, ctx: AppConte
         db.prepare("SELECT COALESCE(MAX(sort_order), 0) + 1 as next FROM scan_roots").get() as { next: number }
       ).next;
       const info = db
-        .prepare("INSERT INTO scan_roots (path, enabled, sort_order) VALUES (?, 1, ?)")
-        .run(resolvedPath, nextSortOrder);
+        .prepare("INSERT INTO scan_roots (path, enabled, sort_order, kind) VALUES (?, 1, ?, ?)")
+        .run(resolvedPath, nextSortOrder, parsed.data.kind);
       const row = db.prepare("SELECT * FROM scan_roots WHERE id = ?").get(info.lastInsertRowid) as ScanRootRow;
       return reply.code(201).send(toDto(db, row));
     } catch (err) {

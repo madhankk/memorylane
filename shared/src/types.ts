@@ -51,6 +51,7 @@ export interface ScanRootStatsDto {
 export interface ScanRootDto {
   id: number;
   path: string;
+  kind: "folder" | "apple-photos";
   enabled: boolean;
   sortOrder: number;
   createdAt: string;
@@ -66,6 +67,7 @@ export interface MoveScanRootRequest {
 
 export interface CreateScanRootRequest {
   path: string;
+  kind?: "folder" | "apple-photos";
 }
 
 export interface UpdateScanRootRequest {
