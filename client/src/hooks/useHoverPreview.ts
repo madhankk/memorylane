@@ -13,6 +13,16 @@ export function previewSequence(_cover: PreviewFrame | null, items: PreviewFrame
   });
 }
 
+export function startPreviewRotation(sequence: PreviewFrame[], show: (frame: PreviewFrame) => void): () => void {
+  let index = 1;
+  show(sequence[index]);
+  const interval = setInterval(() => {
+    index = (index + 1) % sequence.length;
+    show(sequence[index]);
+  }, 350);
+  return () => clearInterval(interval);
+}
+
 export function useHoverPreview(cover: PreviewFrame | null, load: () => Promise<PreviewFrame[]>) {
   const [hovering, setHovering] = useState(false);
   const [frame, setFrame] = useState<PreviewFrame | null>(null);
@@ -23,24 +33,19 @@ export function useHoverPreview(cover: PreviewFrame | null, load: () => Promise<
       return;
     }
     let cancelled = false;
-    let interval: ReturnType<typeof setInterval> | undefined;
+    let stopRotation: (() => void) | undefined;
     const delay = setTimeout(() => {
       void load().then((items) => {
         if (cancelled) return;
         const sequence = previewSequence(cover, items);
         if (sequence.length < 2) return;
-        let index = 1;
-        setFrame(sequence[index]);
-        interval = setInterval(() => {
-          index = (index + 1) % sequence.length;
-          setFrame(sequence[index]);
-        }, 850);
+        stopRotation = startPreviewRotation(sequence, setFrame);
       }).catch(() => {});
     }, 300);
     return () => {
       cancelled = true;
       clearTimeout(delay);
-      if (interval) clearInterval(interval);
+      stopRotation?.();
     };
   }, [hovering, cover?.id, cover?.thumbnailVersion, load]);
 
