@@ -28,6 +28,13 @@ class FakePhoto:
 
 
 class CatalogTests(unittest.TestCase):
+    def test_catalog_exposes_photos_screenshot_classification(self):
+        class ScreenCapture(FakePhoto):
+            screenshot = True
+
+        self.assertTrue(map_photo(ScreenCapture())["screenshot"])
+        self.assertFalse(map_photo(FakePhoto())["screenshot"])
+
     def test_helper_imports_osxphotos_on_main_thread_before_accepting_requests(self):
         with tempfile.TemporaryDirectory() as tmp:
             token_file = Path(tmp) / "token"

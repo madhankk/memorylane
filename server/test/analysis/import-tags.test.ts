@@ -26,6 +26,32 @@ it("imports indexed EXIF keywords and updates them without losing a user tag", a
   } finally { db.close(); }
 });
 
+it("tags a folder image only for an explicit capture filename without camera metadata", async () => {
+  const db = await createTestDb();
+  try {
+    const root = seedScanRoot(db), folder = seedFolder(db, root, "/library");
+    const confirmed = seedMedia(db, folder, root, { filename: "Screenshot_20260917-103005.png" });
+    const photographed = seedMedia(db, folder, root, { filename: "Screenshot_20260917-103006.jpg" });
+    const ordinary = seedMedia(db, folder, root, { filename: "IMG_1234.png" });
+    const oldScan = seedMedia(db, folder, root, { filename: "Screenshot_old_photo.jpg" });
+    const misleadingPrefix = seedMedia(db, folder, root, { filename: "Screenshot_20260917old_photo.jpg" });
+    for (const id of [confirmed, photographed, ordinary, oldScan, misleadingPrefix]) {
+      db.prepare("INSERT INTO media_exif (media_id, tags_json, exiftool_version) VALUES (?, '{}', 'test')").run(id);
+    }
+    db.prepare("UPDATE media_exif SET camera_make = 'Canon' WHERE media_id = ?").run(photographed);
+    const analyzer = createImportedTagAnalyzer(db);
+    for (const id of [confirmed, photographed, ordinary, oldScan, misleadingPrefix]) {
+      await analyzer.run([{ id, parent_folder_id: folder, absolute_path: "/unused", media_type: "image" }]);
+    }
+    const repo = new TagRepo(db);
+    expect(repo.listForMedia(confirmed).map(({ name }) => name)).toEqual(["screenshot"]);
+    expect(repo.listForMedia(photographed)).toEqual([]);
+    expect(repo.listForMedia(ordinary)).toEqual([]);
+    expect(repo.listForMedia(oldScan)).toEqual([]);
+    expect(repo.listForMedia(misleadingPrefix)).toEqual([]);
+  } finally { db.close(); }
+});
+
 it("waits for current EXIF before claiming an imported-keyword job", async () => {
   const db = await createTestDb();
   try {

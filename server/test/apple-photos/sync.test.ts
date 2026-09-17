@@ -6,6 +6,7 @@ import { createTestDb } from "../helpers/db.js";
 import { upsertAppleAsset, applyAppleMetadata, syncAppleRoot, findAppleCatalogAsset, shouldKickAppleAnalysis, type AppleCatalogAsset } from "../../src/plugins/apple-photos/sync.js";
 import { AnalysisRepo } from "../../src/analysis/analysis-repo.js";
 import { TagRepo } from "../../src/tags/tag-repo.js";
+import { createImportedTagAnalyzer } from "../../src/analysis/analyzers/import-tags.js";
 
 const baseAsset: AppleCatalogAsset = {
   uuid: "asset-1", original_filename: "Beach.JPG", original_path: null, derivative_path: null,
@@ -15,6 +16,32 @@ const baseAsset: AppleCatalogAsset = {
 };
 
 describe("Apple catalogue media mapping", () => {
+  it("imports only catalog-confirmed screenshots and removes the tag when the flag clears", async () => {
+    const db = await createTestDb();
+    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "memorylane-apple-screenshot-"));
+    const library = path.join(scratch, "Test.photoslibrary");
+    const preview = path.join(library, "preview.png");
+    fs.mkdirSync(library);
+    fs.writeFileSync(preview, "preview");
+    const root = Number(db.prepare("INSERT INTO scan_roots (path, enabled, kind) VALUES (?, 1, 'apple-photos')").run(library).lastInsertRowid);
+    try {
+      const first = upsertAppleAsset(db, root, { ...baseAsset, original_filename: "IMG_1234.PNG", derivative_path: preview, screenshot: true });
+      const tags = new TagRepo(db);
+      expect(tags.listForMedia(first.mediaId!).map(({ name, source }) => `${name}:${source}`))
+        .toEqual(["holiday:imported", "screenshot:imported"]);
+      await createImportedTagAnalyzer(db).run([{ id: first.mediaId!, parent_folder_id: 1, absolute_path: preview, media_type: "image" }]);
+      expect(tags.listForMedia(first.mediaId!).map(({ name, source }) => `${name}:${source}`))
+        .toEqual(["holiday:imported", "screenshot:imported"]);
+      tags.addUser(first.mediaId!, "personal");
+      upsertAppleAsset(db, root, { ...baseAsset, original_filename: "IMG_1234.PNG", derivative_path: preview });
+      expect(tags.listForMedia(first.mediaId!).map(({ name, source }) => `${name}:${source}`))
+        .toEqual(["holiday:imported", "personal:user", "screenshot:imported"]);
+      upsertAppleAsset(db, root, { ...baseAsset, original_filename: "IMG_1234.PNG", derivative_path: preview, screenshot: false });
+      expect(tags.listForMedia(first.mediaId!).map(({ name, source }) => `${name}:${source}`))
+        .toEqual(["holiday:imported", "personal:user"]);
+    } finally { db.close(); fs.rmSync(scratch, { recursive: true, force: true }); }
+  });
+
   it("refreshes imported tags when Photos keywords change without changing the image", async () => {
     const db = await createTestDb();
     const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "memorylane-apple-tags-"));

@@ -14,6 +14,7 @@ const assetSchema = z.object({
   original_available: z.boolean(), date: z.string().nullable(),
   title: z.string().nullable(), description: z.string().nullable(), keywords: z.array(z.string()),
   favorite: z.boolean(), hidden: z.boolean(), in_trash: z.boolean(),
+  screenshot: z.boolean().optional(),
   latitude: z.number().nullable(), longitude: z.number().nullable(), faces: z.array(faceSchema),
   exif: exifSchema.nullable().optional(),
 });

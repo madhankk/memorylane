@@ -21,6 +21,7 @@ export interface AppleCatalogAsset {
   favorite: boolean;
   hidden: boolean;
   in_trash: boolean;
+  screenshot?: boolean;
   latitude: number | null;
   longitude: number | null;
   faces: { name: string; x: number; y: number; w: number; h: number }[];
@@ -31,7 +32,7 @@ export interface AppleCatalogAsset {
 }
 
 interface RootRow { path: string; kind: string }
-interface ExistingAsset { media_id: number | null; catalog_date: string | null }
+interface ExistingAsset { media_id: number | null; catalog_date: string | null; is_screenshot: number }
 interface ExistingMedia { absolute_path: string; fingerprint: string; thumbnail_status: string; captured_date: string | null }
 export interface AppleUpsertResult { mediaId: number | null; changed: boolean; preserveCapturedDate: boolean; preservedCapturedDate: string | null }
 
@@ -65,8 +66,9 @@ export function upsertAppleAsset(
   const derivative = derivativeCandidate && (derivativeType === originalType || (originalType === "raw" && derivativeType === "image"))
     ? derivativeCandidate : null;
   const chosen = original ?? derivative;
-  const existing = db.prepare("SELECT media_id, catalog_date FROM apple_photos_assets WHERE scan_root_id = ? AND uuid = ?")
+  const existing = db.prepare("SELECT media_id, catalog_date, is_screenshot FROM apple_photos_assets WHERE scan_root_id = ? AND uuid = ?")
     .get(scanRootId, asset.uuid) as ExistingAsset | undefined;
+  const isScreenshot = asset.screenshot ?? (existing?.is_screenshot === 1);
 
   return db.transaction(() => {
     let mediaId = existing?.media_id ?? null;
@@ -122,8 +124,8 @@ export function upsertAppleAsset(
     db.prepare(`INSERT INTO apple_photos_assets
       (scan_root_id, uuid, media_id, original_filename, original_path, derivative_path,
        title, description, keywords_json, faces_json, favorite, hidden, in_trash, original_available, last_seen_sync_token, catalog_date,
-       catalog_gps_lat, catalog_gps_lon)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       catalog_gps_lat, catalog_gps_lon, is_screenshot)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(scan_root_id, uuid) DO UPDATE SET
         media_id = excluded.media_id, original_filename = excluded.original_filename,
         original_path = excluded.original_path, derivative_path = excluded.derivative_path,
@@ -135,15 +137,16 @@ export function upsertAppleAsset(
         catalog_date = excluded.catalog_date,
         catalog_gps_lat = excluded.catalog_gps_lat,
         catalog_gps_lon = excluded.catalog_gps_lon,
+        is_screenshot = excluded.is_screenshot,
         synced_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`)
       .run(scanRootId, asset.uuid, mediaId, asset.original_filename, original, derivative,
         asset.title, asset.description, JSON.stringify(asset.keywords), JSON.stringify(asset.faces),
         asset.favorite ? 1 : 0, asset.hidden ? 1 : 0, asset.in_trash ? 1 : 0, original ? 1 : 0, syncToken, asset.date,
-        asset.latitude, asset.longitude);
+        asset.latitude, asset.longitude, isScreenshot ? 1 : 0);
 
     if (mediaId !== null && !asset.hidden && !asset.in_trash) {
       applyAppleMetadata(db, mediaId, asset, preserveCapturedDate, preservedCapturedDate);
-      new TagRepo(db).replaceImported(mediaId, asset.keywords);
+      new TagRepo(db).replaceImported(mediaId, isScreenshot ? [...asset.keywords, "screenshot"] : asset.keywords);
     }
 
     return { mediaId, changed, preserveCapturedDate, preservedCapturedDate };

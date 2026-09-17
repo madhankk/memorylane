@@ -50,6 +50,7 @@ def map_photo(photo) -> dict:
         "favorite": bool(getattr(photo, "favorite", False)),
         "hidden": bool(getattr(photo, "hidden", False)),
         "in_trash": bool(getattr(photo, "intrash", False)),
+        "screenshot": bool(getattr(photo, "screenshot", False)),
         "latitude": getattr(photo, "latitude", None),
         "longitude": getattr(photo, "longitude", None),
         "faces": faces,
