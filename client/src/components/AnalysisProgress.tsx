@@ -6,6 +6,8 @@ const LABELS: Record<string, string> = {
   exif_full: "EXIF metadata",
   phash: "Visual fingerprints (stacks)",
   embed_image: "AI embeddings (similar, search, stacks)",
+  ai_tags: "AI photo tags",
+  import_tags: "Imported keywords",
   faces: "Faces (People)",
 };
 

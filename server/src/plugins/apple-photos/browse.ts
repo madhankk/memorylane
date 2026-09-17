@@ -28,7 +28,8 @@ export interface AppleBrowseResult {
 
 const FROM = `FROM apple_photos_assets a
   LEFT JOIN media m ON m.id = a.media_id AND m.status = 'active'
-  WHERE a.scan_root_id = ? AND a.hidden = 0 AND a.in_trash = 0`;
+  WHERE a.scan_root_id = ? AND a.hidden = 0 AND a.in_trash = 0
+    AND NOT EXISTS (SELECT 1 FROM deletion_marks dm WHERE dm.media_id = a.media_id)`;
 const DATE = "COALESCE(m.captured_date, a.catalog_date)";
 
 export function previewApplePhotos(

@@ -16,6 +16,21 @@ describe("FaceRepo", () => {
     expect(faceQuality(0.9, 0.02, 0.02)).toBeCloseTo(0.36);
   });
 
+  it("allows database writes while face vectors are read for an index rebuild", async () => {
+    const db = await createTestDb();
+    const root = seedScanRoot(db), folder = seedFolder(db, root, "/lib");
+    const media = seedMedia(db, folder, root);
+    const repo = new FaceRepo(db);
+    const { ids } = repo.replaceForMedia(media, "m@1", [det(0.1, 0.1, 0.2, 0.2), det(0.6, 0.6, 0.2, 0.2)]);
+
+    const rows = repo.iterateVectors("m@1");
+    expect(rows.next().value?.id).toBe(ids[0]);
+    await Promise.resolve();
+    expect(() => db.prepare("UPDATE media SET filename = ? WHERE id = ?").run("kept.jpg", media)).not.toThrow();
+    expect(rows.next().value?.id).toBe(ids[1]);
+    expect(rows.next().done).toBe(true);
+  });
+
   it("replaces faces per media and carries user assignments/rejections across by overlap", async () => {
     const db = await createTestDb();
     const root = seedScanRoot(db), folder = seedFolder(db, root, "/lib");

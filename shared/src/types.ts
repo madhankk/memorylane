@@ -9,6 +9,13 @@ export type ThumbnailStatus = "pending" | "done" | "failed" | "unsupported";
 
 export type MediaStatus = "active" | "missing";
 
+export interface CleanupMarkDto {
+  media: MediaDto;
+  markedAt: string;
+  reason: string;
+  trashStatus: "moving" | "trashed" | null;
+}
+
 export type ScanTrigger = "manual" | "scheduled";
 
 export type ScanRunStatus = "running" | "completed" | "failed";
@@ -235,6 +242,37 @@ export interface AppleBrowseDto {
   limit: number;
 }
 
+export interface LocationSummaryDto {
+  total: number;
+  sources: { filesystem: number; apple: number };
+  years: { year: number; count: number }[];
+  undated: number;
+}
+
+export interface LocationCellDto {
+  key: string;
+  lat: number;
+  lon: number;
+  count: number;
+}
+
+export interface LocationCellsDto {
+  total: number;
+  items: LocationCellDto[];
+}
+
+export type LocationItemDto =
+  | { kind: "media"; media: MediaDto; lat: number; lon: number; date: string | null }
+  | { kind: "apple-catalog"; rootId: number; uuid: string; filename: string; lat: number; lon: number; date: string | null };
+
+export interface LocationItemsDto {
+  total: number;
+  mediaTotal: number;
+  offset: number;
+  limit: number;
+  items: LocationItemDto[];
+}
+
 export interface MediaDto {
   id: number;
   parentFolderId: number;
@@ -388,6 +426,10 @@ export interface PaginatedResult<T> {
   offset: number;
   limit: number;
 }
+
+export type TagSource = "user" | "imported" | "ai";
+export interface TagFacetDto { id: number; name: string; count: number }
+export interface MediaTagDto { id: number; name: string; source: TagSource; score: number | null }
 
 export type SearchResultType = "folder" | "media";
 

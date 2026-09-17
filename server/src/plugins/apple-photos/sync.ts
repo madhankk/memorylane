@@ -6,6 +6,7 @@ import { computeFingerprint } from "../../scanner/fingerprint.js";
 import { classifyExtension } from "../../scanner/media-types.js";
 import { getOrCreateFolder } from "../../scanner/folder-repo.js";
 import { AnalysisRepo } from "../../analysis/analysis-repo.js";
+import { TagRepo } from "../../tags/tag-repo.js";
 
 export interface AppleCatalogAsset {
   uuid: string;
@@ -140,7 +141,10 @@ export function upsertAppleAsset(
         asset.favorite ? 1 : 0, asset.hidden ? 1 : 0, asset.in_trash ? 1 : 0, original ? 1 : 0, syncToken, asset.date,
         asset.latitude, asset.longitude);
 
-    if (mediaId !== null && !asset.hidden && !asset.in_trash) applyAppleMetadata(db, mediaId, asset, preserveCapturedDate, preservedCapturedDate);
+    if (mediaId !== null && !asset.hidden && !asset.in_trash) {
+      applyAppleMetadata(db, mediaId, asset, preserveCapturedDate, preservedCapturedDate);
+      new TagRepo(db).replaceImported(mediaId, asset.keywords);
+    }
 
     return { mediaId, changed, preserveCapturedDate, preservedCapturedDate };
   })();

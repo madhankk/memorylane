@@ -249,7 +249,7 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
     if (!parsed.success) return reply.code(400).send({ error: "Invalid input" });
     const asset = ctx.db.prepare(`SELECT a.uuid FROM apple_photos_assets a JOIN media m ON m.id = a.media_id
       JOIN scan_roots r ON r.id = a.scan_root_id
-      WHERE a.media_id = ? AND m.status = 'active' AND r.enabled = 1`)
+      WHERE a.media_id = ? AND (m.status = 'active' OR m.id IN (SELECT media_id FROM deletion_marks)) AND r.enabled = 1`)
       .get(parsed.data.mediaId) as { uuid: string } | undefined;
     if (!asset) return reply.code(404).send({ error: "Apple Photos item not found" });
     try {

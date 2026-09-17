@@ -16,6 +16,7 @@ import { LanceVectorIndex } from "./vectors/lance-vector-index.js";
 import { EmbeddingRepo } from "./vectors/embedding-repo.js";
 import { spaceFor } from "./vectors/vector-index.js";
 import { PersonService } from "./persons/person-service.js";
+import { FaceRepo } from "./persons/face-repo.js";
 import { buildApp } from "./app.js";
 import type { AppContext } from "./context.js";
 
@@ -99,12 +100,7 @@ async function main(): Promise<void> {
       .ensureSynced(
         faceSpace,
         faceCount,
-        function* () {
-          const stmt = db.prepare("SELECT id, embedding FROM faces WHERE model = ? ORDER BY id");
-          for (const row of stmt.iterate(faceModel) as IterableIterator<{ id: number; embedding: Buffer }>) {
-            yield { id: row.id, vector: new Float32Array(new Uint8Array(row.embedding).buffer) };
-          }
-        },
+        () => new FaceRepo(db).iterateVectors(faceModel),
         null,
       )
       .then((r) => {

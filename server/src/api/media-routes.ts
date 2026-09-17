@@ -20,7 +20,7 @@ interface MediaWithRootRow extends MediaRow {
 // Central safe-lookup: resolves a media id to a verified, on-disk, enabled-root
 // path. Never trusts a path from the request - only the database. See spec
 // section 24 (Safe File Serving).
-function resolveVerifiedMedia(ctx: AppContext, id: number): MediaWithRootRow | null {
+function resolveVerifiedMedia(ctx: AppContext, id: number, allowMarkedMissing = false): MediaWithRootRow | null {
   const row = ctx.db
     .prepare(
       `SELECT media.*, scan_roots.path as scan_root_path, scan_roots.enabled as scan_root_enabled
@@ -29,7 +29,8 @@ function resolveVerifiedMedia(ctx: AppContext, id: number): MediaWithRootRow | n
     )
     .get(id) as MediaWithRootRow | undefined;
   if (!row) return null;
-  if (!row.scan_root_enabled || row.status !== "active") return null;
+  if (!row.scan_root_enabled) return null;
+  if (row.status !== "active" && !(allowMarkedMissing && ctx.db.prepare("SELECT 1 FROM deletion_marks WHERE media_id = ?").get(id))) return null;
   if (row.source_kind === "apple-photos" && !isApplePhotosEnabled(ctx.db)) return null;
 
   const resolvedPath = path.resolve(row.absolute_path);
@@ -120,7 +121,7 @@ export async function registerMediaRoutes(app: FastifyInstance, ctx: AppContext)
 
   app.get("/api/media/:id/thumbnail", { preHandler: app.requireAuth }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
-    const media = resolveVerifiedMedia(ctx, id);
+    const media = resolveVerifiedMedia(ctx, id, true);
     if (!media) return reply.code(404).send({ error: "Media not found" });
 
     const thumbPath = thumbnailPathForMediaId(paths.thumbnailsDir, id);
@@ -136,7 +137,7 @@ export async function registerMediaRoutes(app: FastifyInstance, ctx: AppContext)
   // standard images (they use /file at full original resolution instead).
   app.get("/api/media/:id/preview", { preHandler: app.requireAuth }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id);
-    const media = resolveVerifiedMedia(ctx, id);
+    const media = resolveVerifiedMedia(ctx, id, true);
     if (!media) return reply.code(404).send({ error: "Media not found" });
 
     const previewPath = previewPathForMediaId(paths.previewsDir, id);

@@ -371,7 +371,7 @@ export class ScannerService {
       if (entry.isDirectory()) {
         // Ignored folders are skipped entirely - never indexed, no folder row
         // created for them - rather than indexed then filtered out later.
-        if (ignoredPaths.has(entryPath) || entry.name.toLowerCase().endsWith(".photoslibrary")) continue;
+        if (ignoredPaths.has(entryPath) || entry.name === "_MemoryLane-Trash" || entry.name.toLowerCase().endsWith(".photoslibrary")) continue;
         const folder = getOrCreateFolder(this.db, root.id, parentFolderId, entry.name, entryPath);
         await this.walkDirectory(root, folder.id, entryPath, stats, ignoredPaths, enqueueProcessing, flushIfNeeded);
         continue;

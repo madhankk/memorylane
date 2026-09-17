@@ -15,6 +15,10 @@ export interface EmbeddingRow {
   vector: Float32Array;
 }
 
+// Rebuilds await LanceDB writes between rows. Keep each SQLite query short so
+// the shared connection is free for requests and analysis during that await.
+export const VECTOR_READ_PAGE_SIZE = 256;
+
 // media_embeddings access. SQLite is the durable store; the VectorIndex is a
 // cache rebuilt from `iterate` when its row count disagrees.
 export class EmbeddingRepo {
@@ -49,9 +53,17 @@ export class EmbeddingRepo {
   }
 
   *iterate(model: string): Generator<EmbeddingRow> {
-    const stmt = this.db.prepare("SELECT media_id, vector FROM media_embeddings WHERE model = ? ORDER BY media_id");
-    for (const row of stmt.iterate(model) as IterableIterator<{ media_id: number; vector: Buffer }>) {
-      yield { id: row.media_id, vector: blobToVector(row.vector) };
+    const stmt = this.db.prepare(
+      "SELECT media_id, vector FROM media_embeddings WHERE model = ? AND media_id > ? ORDER BY media_id LIMIT ?",
+    );
+    let lastId = 0;
+    while (true) {
+      const page = stmt.all(model, lastId, VECTOR_READ_PAGE_SIZE) as { media_id: number; vector: Buffer }[];
+      if (page.length === 0) return;
+      for (const row of page) {
+        lastId = row.media_id;
+        yield { id: row.media_id, vector: blobToVector(row.vector) };
+      }
     }
   }
 

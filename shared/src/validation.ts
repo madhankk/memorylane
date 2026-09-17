@@ -195,3 +195,7 @@ export const personFacesQuerySchema = paginationQuerySchema;
 export const personsListQuerySchema = z.object({ includeHidden: booleanQueryParam });
 
 export const moveDataDirRequestSchema = z.object({ path: z.string().min(1).max(4096) });
+
+export const markForDeletionRequestSchema = z.object({
+  mediaIds: z.array(z.number().int().positive()).min(1).max(200),
+});

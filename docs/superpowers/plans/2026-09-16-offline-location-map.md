@@ -38,7 +38,7 @@
 
 - [ ] **Step 1: Write failing source tests.** Seed one ordinary media row with GPS, one linked Apple asset with both catalog and media GPS, one catalog-only Apple asset, an invalid coordinate, a marked media row, a hidden Apple asset, and a disabled Apple plugin. Assert catalog precedence, UUID deduplication, coordinate rejection, and visibility. Reuse `createTestDb`, `seedMedia`, and the existing Apple asset fixture pattern in `server/test/apple-photos/sync.test.ts`.
 - [ ] **Step 2: Run** `cd server && npx vitest run test/locations/location-repo.test.ts`; verify failure because `LocationRepo` is absent.
-- [ ] **Step 3: Implement** the two source queries in `LocationRepo`: ordinary media rows exclude Apple source, missing media, marked rows, Live Photo video companions, and paired RAW companions; Apple rows come from `apple_photos_assets` joined to enabled Apple roots and optional active media, excluding hidden/trash/marked rows and checking plugin enablement. Resolve each Apple point as `COALESCE(catalog_gps_lat, media.gps_lat)` with the matching longitude and catalog-first date. Validate both coordinate members together and apply source/date/bounds filters. Keep each synchronous iterator inside the synchronous repository call so no SQLite cursor crosses an `await`.
+- [ ] **Step 3: Implement** the two source queries in `LocationRepo`: ordinary media rows exclude Apple source, missing media, marked rows, Live Photo video companions, and paired RAW companions; Apple rows come from `apple_photos_assets` joined to enabled Apple roots and optional active media, excluding hidden/trash/marked rows and checking plugin enablement. Prefer a complete, valid catalog coordinate pair; otherwise use the complete media pair. Prefer catalog date. Validate coordinates and apply source/date/bounds filters. Use the GPS indexes for viewport queries. Keep each synchronous iterator inside the synchronous repository call so no SQLite cursor crosses an `await`.
 - [ ] **Step 4: Write failing grid tests** for the same point mapping to the same key, zoom splitting nearby points, stable centroids, latitude clamp, and longitude near the antimeridian. Run `cd server && npx vitest run test/locations/location-grid.test.ts` and verify the expected failure.
 - [ ] **Step 5: Implement** Web Mercator cell keys with `n = 32 * 2 ** zoom`, `x = floor(((lon + 180) / 360) * n)`, and `y = floor(((1 - asinh(tan(latRadians)) / PI) / 2) * n)` after clamping latitude to ±85.05112878. Group points into a `Map<string, {count,sumLat,sumLon}>`, returning bounded cells. Add partial/location indexes to migration 034 for media GPS and Apple catalog GPS.
 - [ ] **Step 6: Run** both location suites and `npm run typecheck --workspace=server`; commit only Task 1 files.
@@ -55,17 +55,17 @@
 **Interfaces:**
 - `GET /api/locations/summary?source=&fromYear=&toYear=` returns `{total, sources, years, undated}`.
 - `GET /api/locations/cells?source=&fromYear=&toYear=&west=&east=&south=&north=&zoom=` returns `{total, items: LocationCellDto[]}`.
-- `GET /api/locations/cells/:key/items?source=&fromYear=&toYear=&offset=&limit=` returns `{total, offset, limit, items: LocationItemDto[]}` where each item is either `{kind:"media", media: MediaDto}` or `{kind:"apple-catalog", rootId, uuid, filename, date}`.
+- `GET /api/locations/cells/:key/items?source=&fromYear=&toYear=&offset=&limit=` returns `{total, mediaTotal, offset, limit, items: LocationItemDto[]}` where each item is either `{kind:"media", media: MediaDto}` or `{kind:"apple-catalog", rootId, uuid, filename, date}`.
 
 - [ ] **Step 1: Write failing API tests** using `createTestApp`: unauthenticated requests return 401; malformed coordinate/zoom/year ranges return 400; summary, cells, and cell items agree on counts; a catalog-only result contains a UUID and no fake `MediaDto`; plugin disable removes Apple results.
 - [ ] **Step 2: Run** `cd server && npx vitest run test/api/location-routes.test.ts`; verify route absence or response mismatch.
-- [ ] **Step 3: Add DTOs** in `shared/src/types.ts` and validate query parameters in `location-routes.ts` with Zod (`zoom` integer 0–10, years 1800–2100, `limit` 1–100, valid latitude/longitude bounds, `fromYear <= toYear`). Bind the route to `LocationRepo`; use the existing media mapper and `decorateMedia` for linked items. Cell item pagination must use the same key and filters as cell aggregation.
+- [ ] **Step 3: Add DTOs** in `shared/src/types.ts` and validate query parameters in `location-routes.ts` with Zod (`zoom` integer 0–10, years 0–9999, `limit` 1–100, valid latitude/longitude bounds, `fromYear <= toYear`). Bind the route to `LocationRepo`; use the existing media mapper and `decorateMedia` for linked items. Cell item pagination must use the same key and filters as cell aggregation.
 - [ ] **Step 4: Run** the API suite, `npm run typecheck --workspace=server`, and `npm run typecheck --workspace=client`; commit Task 2 files.
 
 ### Task 3: Offline map page and interactive time filter
 
 **Files:**
-- Add: `client/src/assets/ne_110m_land.geojson` from the Natural Earth 1:110m public-domain land dataset
+- Add: `client/src/assets/ne_110m_land.json` from the Natural Earth 1:110m public-domain land GeoJSON dataset
 - Add: `client/src/pages/LocationsPage.tsx`
 - Add: `client/src/utils/location-map.ts`
 - Add: `client/src/utils/location-map.test.ts`

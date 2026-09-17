@@ -20,6 +20,17 @@ const statusOf = (db: Database.Database, id: number) =>
     | undefined;
 
 describe("AnalysisRepo", () => {
+  it("does not queue or claim marked media", async () => {
+    const { db, root, folder, repo } = await setup();
+    const marked = seedMedia(db, folder, root);
+    const visible = seedMedia(db, folder, root);
+    repo.ensureQueued(stills);
+    db.prepare("INSERT INTO deletion_marks (media_id) VALUES (?)").run(marked);
+    expect(repo.claimBatch(stills).map((row) => row.id)).toEqual([visible]);
+    const later = seedMedia(db, folder, root);
+    db.prepare("INSERT INTO deletion_marks (media_id) VALUES (?)").run(later);
+    expect(repo.ensureQueued(stills)).toBe(0);
+  });
   it("ensureQueued adds pending rows only for matching active media, idempotently", async () => {
     const { db, root, folder, repo } = await setup();
     const a = seedMedia(db, folder, root);
@@ -30,15 +41,24 @@ describe("AnalysisRepo", () => {
     expect(statusOf(db, a)?.status).toBe("pending");
   });
 
+  it("queues dependent work only for completed media IDs", async () => {
+    const { db, root, folder, repo } = await setup();
+    const first = seedMedia(db, folder, root);
+    const second = seedMedia(db, folder, root);
+    expect(repo.ensureQueuedForIds(stills, [first])).toBe(1);
+    expect(statusOf(db, first)?.status).toBe("pending");
+    expect(statusOf(db, second)).toBeUndefined();
+  });
+
   it("claimBatch marks rows running and returns media rows; complete records outcomes", async () => {
     const { db, root, folder, repo } = await setup();
     const a = seedMedia(db, folder, root);
     const b = seedMedia(db, folder, root);
     repo.ensureQueued(stills);
-    const batch = repo.claimBatch("t", 5);
+    const batch = repo.claimBatch(stills);
     expect(batch.map((r) => r.id).sort()).toEqual([a, b]);
     expect(statusOf(db, a)?.status).toBe("running");
-    expect(repo.claimBatch("t", 5)).toEqual([]);
+    expect(repo.claimBatch(stills)).toEqual([]);
 
     repo.complete("t", "v1", [
       { mediaId: a, status: "done" },
@@ -55,11 +75,11 @@ describe("AnalysisRepo", () => {
     const a = seedMedia(db, folder, root);
     repo.ensureQueued(stills);
     for (let i = 0; i < MAX_ATTEMPTS; i++) {
-      repo.claimBatch("t", 5);
+      repo.claimBatch(stills);
       repo.complete("t", "v1", [{ mediaId: a, status: "failed", error: "x" }]);
     }
     expect(statusOf(db, a)).toMatchObject({ status: "failed", attempts: MAX_ATTEMPTS });
-    expect(repo.claimBatch("t", 5)).toEqual([]);
+    expect(repo.claimBatch(stills)).toEqual([]);
     expect(repo.retryFailed("t")).toBe(1);
     expect(statusOf(db, a)).toMatchObject({ status: "pending", attempts: 0 });
   });
@@ -81,7 +101,7 @@ describe("AnalysisRepo", () => {
     repo.markDone(a, "t", "v1");
     repo.resetForMedia(a);
     expect(statusOf(db, a)?.status).toBe("pending");
-    repo.claimBatch("t", 5);
+    repo.claimBatch(stills);
     expect(statusOf(db, a)?.status).toBe("running");
     expect(repo.resetRunning()).toBe(1);
     expect(statusOf(db, a)?.status).toBe("pending");

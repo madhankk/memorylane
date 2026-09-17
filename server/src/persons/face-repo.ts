@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import type { FaceDetection } from "../providers/types.js";
-import { blobToVector, vectorToBlob } from "../vectors/embedding-repo.js";
-import { ACTIVE_SOURCE_SQL } from "../query/media-query.js";
+import { blobToVector, vectorToBlob, VECTOR_READ_PAGE_SIZE, type EmbeddingRow } from "../vectors/embedding-repo.js";
+import { ACTIVE_SOURCE_SQL, UNMARKED_MEDIA_SQL } from "../query/media-query.js";
 
 export interface FaceRow {
   id: number;
@@ -36,6 +36,21 @@ const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
 
 export class FaceRepo {
   constructor(private db: Database.Database) {}
+
+  *iterateVectors(model: string): Generator<EmbeddingRow> {
+    const stmt = this.db.prepare(
+      "SELECT id, embedding FROM faces WHERE model = ? AND id > ? ORDER BY id LIMIT ?",
+    );
+    let lastId = 0;
+    while (true) {
+      const page = stmt.all(model, lastId, VECTOR_READ_PAGE_SIZE) as { id: number; embedding: Buffer }[];
+      if (page.length === 0) return;
+      for (const row of page) {
+        lastId = row.id;
+        yield { id: row.id, vector: blobToVector(row.embedding) };
+      }
+    }
+  }
 
   // Replaces a media item's faces for `model`, carrying *every* assignment
   // (user and automatic) plus rejections over to the best-overlapping new
@@ -125,7 +140,7 @@ export class FaceRepo {
   listForPerson(personId: number, limit: number, offset: number): FaceRow[] {
     return this.db
       .prepare(`SELECT faces.* FROM faces JOIN media ON media.id = faces.media_id
-        WHERE faces.person_id = ? AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL}
+        WHERE faces.person_id = ? AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL}
         ORDER BY faces.quality DESC, faces.id LIMIT ? OFFSET ?`)
       .all(personId, limit, offset) as FaceRow[];
   }
@@ -139,7 +154,7 @@ export class FaceRepo {
     return this.db
       .prepare(`SELECT faces.* FROM faces JOIN media ON media.id = faces.media_id
         WHERE faces.model = ? AND faces.person_id IS NULL AND faces.dismissed = 0 AND faces.quality >= ?
-        AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL} ORDER BY faces.id`)
+        AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL} ORDER BY faces.id`)
       .all(model, QUALITY_FACE_MIN) as FaceRow[];
   }
 
@@ -147,14 +162,14 @@ export class FaceRepo {
     return !!this.db
       .prepare(`SELECT 1 FROM faces JOIN media ON media.id = faces.media_id
         WHERE faces.model = ? AND faces.person_id IS NULL AND faces.dismissed = 0 AND faces.quality >= ?
-        AND faces.discovered_at IS NULL AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL} LIMIT 1`)
+        AND faces.discovered_at IS NULL AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL} LIMIT 1`)
       .get(model, QUALITY_FACE_MIN);
   }
 
   // face id -> person id for every assigned face (drives kNN assignment).
   assignedMap(model: string): Map<number, number> {
     const rows = this.db.prepare(`SELECT faces.id, faces.person_id FROM faces JOIN media ON media.id = faces.media_id
-      WHERE faces.model = ? AND faces.person_id IS NOT NULL AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL}`)
+      WHERE faces.model = ? AND faces.person_id IS NOT NULL AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL}`)
       .all(model) as { id: number; person_id: number }[];
     return new Map(rows.map((r) => [r.id, r.person_id]));
   }
