@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import type { Analyzer, AnalyzerOutcome, AnalysisMediaRow, AnalysisStatus } from "./types.js";
-import { ACTIVE_SOURCE_SQL } from "../query/media-query.js";
+import { ACTIVE_SOURCE_SQL, UNMARKED_MEDIA_SQL } from "../query/media-query.js";
 
 // A row that fails this many times stays 'failed' until an explicit retry
 // (Settings > Analysis > Retry failed) - a poison file must not loop forever.
@@ -18,10 +18,33 @@ export class AnalysisRepo {
       .prepare(
         `INSERT OR IGNORE INTO media_analysis (media_id, analyzer, status, updated_at)
          SELECT id, ?, 'pending', ${NOW} FROM media
-         WHERE media.status = 'active' AND ${ACTIVE_SOURCE_SQL} AND (${a.appliesTo})`,
+         WHERE media.status = 'active' AND ${ACTIVE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL} AND (${a.appliesTo})`,
       )
       .run(a.key);
     return info.changes;
+  }
+
+  // Use completed upstream IDs instead of scanning the whole library after
+  // every analysis batch. This also lets an updated result refresh tags that
+  // were already marked done for an older EXIF/embedding result.
+  ensureQueuedForIds(a: Analyzer, mediaIds: number[]): number {
+    if (mediaIds.length === 0) return 0;
+    const placeholders = mediaIds.map(() => "?").join(",");
+    return this.db.prepare(`INSERT OR IGNORE INTO media_analysis (media_id, analyzer, status, updated_at)
+      SELECT media.id, ?, 'pending', ${NOW} FROM media
+      WHERE media.id IN (${placeholders}) AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL}
+        AND ${UNMARKED_MEDIA_SQL} AND (${a.appliesTo})`).run(a.key, ...mediaIds).changes;
+  }
+
+  refreshDependentForIds(a: Analyzer, mediaIds: number[]): void {
+    if (mediaIds.length === 0) return;
+    const placeholders = mediaIds.map(() => "?").join(",");
+    this.db.transaction(() => {
+      this.db.prepare(`UPDATE media_analysis SET status = 'pending', attempts = 0, error = NULL, updated_at = ${NOW}
+        WHERE analyzer = ? AND media_id IN (${placeholders}) AND status IN ('done', 'unsupported', 'failed')`)
+        .run(a.key, ...mediaIds);
+      this.ensureQueuedForIds(a, mediaIds);
+    })();
   }
 
   requeueStaleVersions(a: Analyzer): number {
@@ -65,21 +88,22 @@ export class AnalysisRepo {
       .run(mediaId);
   }
 
-  claimBatch(analyzerKey: string, limit: number): AnalysisMediaRow[] {
+  claimBatch(analyzer: Analyzer): AnalysisMediaRow[] {
     const claim = this.db.transaction((): AnalysisMediaRow[] => {
       const rows = this.db
         .prepare(
           `SELECT media.id, media.parent_folder_id, media.absolute_path, media.media_type, media.file_size
            FROM media_analysis ma JOIN media ON media.id = ma.media_id
-           WHERE ma.analyzer = ? AND ma.status = 'pending' AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL}
+           WHERE ma.analyzer = ? AND ma.status = 'pending' AND media.status = 'active' AND ${ACTIVE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL}
+             AND (${analyzer.appliesTo})
            ORDER BY ma.media_id LIMIT ?`,
         )
-        .all(analyzerKey, limit) as AnalysisMediaRow[];
+        .all(analyzer.key, analyzer.batchSize) as AnalysisMediaRow[];
       if (rows.length === 0) return rows;
       const placeholders = rows.map(() => "?").join(",");
       this.db
         .prepare(`UPDATE media_analysis SET status = 'running', updated_at = ${NOW} WHERE analyzer = ? AND media_id IN (${placeholders})`)
-        .run(analyzerKey, ...rows.map((r) => r.id));
+        .run(analyzer.key, ...rows.map((r) => r.id));
       return rows;
     });
     return claim();

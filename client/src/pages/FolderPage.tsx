@@ -11,6 +11,7 @@ import Viewer from "../components/Viewer";
 import StackPanel from "../components/StackPanel";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
+import { invertVisibleSelection } from "../utils/selection";
 
 const PAGE_SIZE = 200;
 
@@ -36,6 +37,7 @@ export default function FolderPage() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [stackError, setStackError] = useState<string | null>(null);
+  const [marking, setMarking] = useState(false);
   const { confirm } = useConfirm();
   const loadingMoreRef = useRef(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -80,11 +82,13 @@ export default function FolderPage() {
   }, [folderId]);
 
   const toggleAllFiles = async (checked: boolean) => {
+    setSelectedIds(new Set());
     setShowAllFiles(checked);
     await loadMedia(checked, mediaType);
   };
 
   const changeMediaType = async (type: MediaTypeFilterValue) => {
+    setSelectedIds(new Set());
     setMediaType(type);
     await loadMedia(showAllFiles, type);
   };
@@ -134,6 +138,23 @@ export default function FolderPage() {
     }
   };
 
+  const markSelected = async () => {
+    const ids = [...selectedIds].filter((id) => media.some((item) => item.id === id));
+    if (ids.length === 0) return;
+    const ok = await confirm({ title: `Mark ${ids.length} item(s) for deletion?`,
+      message: "They will leave normal browsing and appear in Cleanup. You can restore them there. No files will be moved yet.",
+      confirmLabel: "Mark for deletion", danger: true });
+    if (!ok) return;
+    setMarking(true);
+    setStackError(null);
+    try {
+      for (let i = 0; i < ids.length; i += 200) await api.cleanup.mark(ids.slice(i, i + 200));
+      exitSelectMode();
+      refreshMedia();
+    } catch (err) { setStackError(err instanceof Error ? err.message : "Could not mark items"); }
+    finally { setMarking(false); }
+  };
+
   const ignoreFolder = async () => {
     if (!folder) return;
     setMenuOpen(false);
@@ -168,6 +189,10 @@ export default function FolderPage() {
             {selectMode ? (
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-muted">{selectedIds.size} selected</span>
+                <button onClick={() => setSelectedIds(new Set(media.map((m) => m.id)))} className="rounded-md border border-border px-3 py-1.5 text-ink hover:bg-hover">Select all {media.length} shown</button>
+                <button onClick={() => setSelectedIds(new Set())} className="rounded-md border border-border px-3 py-1.5 text-ink hover:bg-hover">None</button>
+                <button onClick={() => setSelectedIds(invertVisibleSelection(media.map((m) => m.id), selectedIds))} className="rounded-md border border-border px-3 py-1.5 text-ink hover:bg-hover">Invert shown</button>
+                <button onClick={() => void markSelected()} disabled={selectedIds.size === 0 || marking} className="rounded-md border border-border px-3 py-1.5 text-ink hover:bg-hover disabled:opacity-40">{marking ? "Marking…" : "Mark for deletion"}</button>
                 <button
                   onClick={() => void stackSelected()}
                   disabled={selectedIds.size < 2}

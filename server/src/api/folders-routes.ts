@@ -10,7 +10,7 @@ import {
   type FolderCounts,
   type MediaRow,
 } from "./mappers.js";
-import { buildMediaQuery, mediaCountSql, mediaSelectSql, ACTIVE_SOURCE_SQL, APPLE_PLUGIN_ENABLED_SQL } from "../query/media-query.js";
+import { buildMediaQuery, mediaCountSql, mediaSelectSql, ACTIVE_SOURCE_SQL, APPLE_PLUGIN_ENABLED_SQL, UNMARKED_MEDIA_SQL } from "../query/media-query.js";
 import { isApplePhotosEnabled } from "../plugins/registry.js";
 import { decorateMedia } from "./decorate-media.js";
 
@@ -33,7 +33,7 @@ export function getFolderCounts(
   const mediaCount = (
     ctx.db
       .prepare(
-        `SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${ACTIVE_SOURCE_SQL} AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW}`,
+        `SELECT COUNT(*) as c FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${ACTIVE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL} AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW}`,
       )
       .get(folderId) as { c: number }
   ).c;
@@ -47,7 +47,7 @@ export function getFolderCounts(
   // "re-rolled on every load" feel.
   let thumbRow = ctx.db
     .prepare(
-      `SELECT id, thumbnail_version FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${ACTIVE_SOURCE_SQL} AND thumbnail_status = 'done' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW}
+      `SELECT media.id, media.thumbnail_version FROM media WHERE parent_folder_id = ? AND status = 'active' AND ${ACTIVE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL} AND thumbnail_status = 'done' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW}
        ORDER BY RANDOM() LIMIT 1`,
     )
     .get(folderId) as { id: number; thumbnail_version: number } | undefined;
@@ -60,7 +60,7 @@ export function getFolderCounts(
       .prepare(
         `${DESCENDANT_FOLDERS_CTE}
          SELECT media.id, media.thumbnail_version FROM media
-         WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND ${ACTIVE_SOURCE_SQL} AND thumbnail_status = 'done' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW}
+         WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND ${ACTIVE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL} AND thumbnail_status = 'done' AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW}
          ORDER BY RANDOM() LIMIT 1`,
       )
       .get(folderId) as { id: number; thumbnail_version: number } | undefined;
@@ -83,7 +83,7 @@ export function getRecursiveFolderStats(ctx: AppContext, folderId: number): { co
     .prepare(
       `${DESCENDANT_FOLDERS_CTE}
        SELECT COUNT(*) as c, COALESCE(SUM(file_size), 0) as s FROM media
-       WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND ${ACTIVE_SOURCE_SQL}`,
+       WHERE parent_folder_id IN (SELECT id FROM descendant_folders) AND status = 'active' AND ${ACTIVE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL}`,
     )
     .get(folderId) as { c: number; s: number };
   return { count: row.c, sizeBytes: row.s };

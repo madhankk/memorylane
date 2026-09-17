@@ -1,5 +1,6 @@
+import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BarChart3, FolderOpen, LogOut, Search, Settings as SettingsIcon, Star, Users, type LucideIcon } from "lucide-react";
+import { BarChart3, ChevronDown, FolderOpen, LibraryBig, LogOut, MapPinned, Search, Settings as SettingsIcon, Star, Tags, Trash2, Users, type LucideIcon } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 
 // Mirrors life-archive-app's ArchiveNav.tsx: sticky glass header, serif
@@ -8,15 +9,38 @@ import { useAuth } from "../hooks/useAuth";
 const navItems: { to: string; label: string; icon: LucideIcon; end?: boolean }[] = [
   { to: "/", label: "Browse", icon: FolderOpen, end: true },
   { to: "/favorites", label: "Favorites", icon: Star },
-  { to: "/reports", label: "Reports", icon: BarChart3 },
-  { to: "/people", label: "People", icon: Users },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
+];
+
+const libraryItems: { to: string; label: string; icon: LucideIcon }[] = [
+  { to: "/locations", label: "Locations", icon: MapPinned },
+  { to: "/people", label: "People", icon: Users },
+  { to: "/tags", label: "Tags", icon: Tags },
+  { to: "/reports", label: "Reports", icon: BarChart3 },
+  { to: "/cleanup", label: "Cleanup", icon: Trash2 },
 ];
 
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const libraryRef = useRef<HTMLDivElement>(null);
+  const libraryButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => { setLibraryOpen(false); }, [location.pathname]);
+  useEffect(() => {
+    if (!libraryOpen) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!libraryRef.current?.contains(event.target as Node)) setLibraryOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setLibraryOpen(false); libraryButtonRef.current?.focus(); }
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("pointerdown", onPointer); document.removeEventListener("keydown", onKey); };
+  }, [libraryOpen]);
 
   const handleLogout = async () => {
     await logout();
@@ -24,6 +48,7 @@ export default function Layout() {
   };
 
   const isSearchActive = location.pathname === "/search";
+  const libraryActive = libraryItems.some((item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`));
 
   return (
     <div className="min-h-screen bg-page text-ink">
@@ -33,7 +58,7 @@ export default function Layout() {
             MemoryLane
           </Link>
           <nav className="flex items-center gap-1 rounded-full border border-border bg-nav-pill p-1 text-[13px] font-medium text-nav-muted shadow-nav">
-            {navItems.map((item) => {
+            {navItems.slice(0, 2).map((item) => {
               const Icon = item.icon;
               return (
                 <NavLink
@@ -46,7 +71,7 @@ export default function Layout() {
                   // screen at all - it was forcing the whole page to scroll
                   // horizontally) - text labels return once there's room.
                   className={({ isActive }) =>
-                    `flex size-9 items-center justify-center gap-2 rounded-full transition sm:w-auto sm:justify-start sm:px-3.5 ${
+                    `${item.to === "/favorites" ? "hidden sm:flex" : "flex"} size-9 items-center justify-center gap-2 rounded-full transition sm:w-auto sm:justify-start sm:px-3.5 ${
                       isActive ? "bg-photo-shell text-white" : "hover:bg-hover-soft hover:text-ink"
                     }`
                   }
@@ -55,6 +80,42 @@ export default function Layout() {
                   <span className="hidden sm:inline">{item.label}</span>
                 </NavLink>
               );
+            })}
+            <div ref={libraryRef} className="relative">
+              <button ref={libraryButtonRef} type="button" aria-label="Library" aria-expanded={libraryOpen}
+                aria-controls="library-menu" onClick={() => setLibraryOpen((open) => !open)}
+                className={`flex size-9 items-center justify-center gap-2 rounded-full transition sm:w-auto sm:px-3.5 ${libraryActive || libraryOpen ? "bg-photo-shell text-white" : "hover:bg-hover-soft hover:text-ink"}`}>
+                <LibraryBig aria-hidden size={15} strokeWidth={1.8} />
+                <span className="hidden sm:inline">Library</span>
+                <ChevronDown aria-hidden size={13} className="hidden sm:inline" />
+              </button>
+              {libraryOpen && <div id="library-menu" className="absolute right-0 top-full z-30 mt-2 w-52 rounded-xl border border-border bg-surface p-1.5 text-ink shadow-card"
+                aria-label="Library pages">
+                {libraryItems.map((item) => {
+                  const Icon = item.icon;
+                  return <NavLink key={item.to} to={item.to} onClick={() => setLibraryOpen(false)}
+                    className={({ isActive }) => `flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${isActive ? "bg-accent/15 text-accent" : "hover:bg-hover"}`}>
+                    <Icon aria-hidden size={16} strokeWidth={1.8} />{item.label}
+                  </NavLink>;
+                })}
+                <div className="my-1 border-t border-border sm:hidden" />
+                <NavLink to="/favorites" onClick={() => setLibraryOpen(false)}
+                  className={({ isActive }) => `flex items-center gap-2 rounded-lg px-3 py-2 text-sm sm:hidden ${isActive ? "bg-accent/15 text-accent" : "hover:bg-hover"}`}>
+                  <Star aria-hidden size={16} />Favorites
+                </NavLink>
+                <NavLink to="/settings" onClick={() => setLibraryOpen(false)}
+                  className={({ isActive }) => `flex items-center gap-2 rounded-lg px-3 py-2 text-sm sm:hidden ${isActive ? "bg-accent/15 text-accent" : "hover:bg-hover"}`}>
+                  <SettingsIcon aria-hidden size={16} />Settings
+                </NavLink>
+              </div>}
+            </div>
+            {navItems.slice(2).map((item) => {
+              const Icon = item.icon;
+              return <NavLink key={item.to} to={item.to} title={item.label}
+                className={({ isActive }) => `hidden size-9 items-center justify-center gap-2 rounded-full transition sm:flex sm:w-auto sm:px-3.5 ${isActive ? "bg-photo-shell text-white" : "hover:bg-hover-soft hover:text-ink"}`}>
+                <Icon aria-hidden size={15} strokeWidth={1.8} />
+                <span className="hidden sm:inline">{item.label}</span>
+              </NavLink>;
             })}
             <Link
               to="/search"

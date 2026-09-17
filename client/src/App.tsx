@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
 import Layout from "./components/Layout";
@@ -14,6 +15,9 @@ import ReportsPage from "./pages/ReportsPage";
 import SimilarPage from "./pages/SimilarPage";
 import PeoplePage from "./pages/PeoplePage";
 import PersonPage from "./pages/PersonPage";
+import CleanupPage from "./pages/CleanupPage";
+import TagsPage from "./pages/TagsPage";
+const LocationsPage = lazy(() => import("./pages/LocationsPage"));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, needsSetup, loading } = useAuth();
@@ -46,6 +50,9 @@ export default function App() {
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/surprise" element={<SurprisePage />} />
         <Route path="/favorites" element={<FavoritesPage />} />
+        <Route path="/cleanup" element={<CleanupPage />} />
+        <Route path="/tags" element={<TagsPage />} />
+        <Route path="/locations" element={<Suspense fallback={<p className="text-sm text-muted">Loading map…</p>}><LocationsPage /></Suspense>} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/similar/:id" element={<SimilarPage />} />
         <Route path="/people" element={<PeoplePage />} />

@@ -5,6 +5,7 @@ import path from "node:path";
 import { createTestDb } from "../helpers/db.js";
 import { upsertAppleAsset, applyAppleMetadata, syncAppleRoot, findAppleCatalogAsset, shouldKickAppleAnalysis, type AppleCatalogAsset } from "../../src/plugins/apple-photos/sync.js";
 import { AnalysisRepo } from "../../src/analysis/analysis-repo.js";
+import { TagRepo } from "../../src/tags/tag-repo.js";
 
 const baseAsset: AppleCatalogAsset = {
   uuid: "asset-1", original_filename: "Beach.JPG", original_path: null, derivative_path: null,
@@ -14,6 +15,23 @@ const baseAsset: AppleCatalogAsset = {
 };
 
 describe("Apple catalogue media mapping", () => {
+  it("refreshes imported tags when Photos keywords change without changing the image", async () => {
+    const db = await createTestDb();
+    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "memorylane-apple-tags-"));
+    const library = path.join(scratch, "Test.photoslibrary");
+    const preview = path.join(library, "preview.jpg");
+    fs.mkdirSync(library);
+    fs.writeFileSync(preview, "preview");
+    const root = Number(db.prepare("INSERT INTO scan_roots (path, enabled, kind) VALUES (?, 1, 'apple-photos')").run(library).lastInsertRowid);
+    try {
+      const first = upsertAppleAsset(db, root, { ...baseAsset, derivative_path: preview });
+      const tags = new TagRepo(db);
+      tags.addUser(first.mediaId!, "personal");
+      upsertAppleAsset(db, root, { ...baseAsset, derivative_path: preview, keywords: ["mountain"] });
+      expect(tags.listForMedia(first.mediaId!).map(({ name, source }) => `${name}:${source}`))
+        .toEqual(["mountain:imported", "personal:user"]);
+    } finally { db.close(); fs.rmSync(scratch, { recursive: true, force: true }); }
+  });
   it("schedules bounded analysis catch-up during a long sync", () => {
     expect(shouldKickAppleAnalysis(1)).toBe(false);
     expect(shouldKickAppleAnalysis(249)).toBe(false);

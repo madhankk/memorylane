@@ -8,6 +8,7 @@ import { displaySrc } from "../utils/mediaSrc";
 import { formatBytes, formatDuration } from "../utils/format";
 import { useEngagementTracking } from "../hooks/useEngagementTracking";
 import { ApplePreviewNotice } from "./ApplePreviewNotice";
+import TagEditor from "./TagEditor";
 
 interface ViewerProps {
   items: MediaDto[];
@@ -94,6 +95,7 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
+      else if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && ["INPUT", "TEXTAREA"].includes((e.target as HTMLElement | null)?.tagName ?? "")) return;
       else if (e.key === "ArrowRight") goNext();
       else if (e.key === "ArrowLeft") goPrev();
       else if (e.key === " ") {
@@ -352,7 +354,7 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
       </div>
 
       {showInfo && (
-        <div className="absolute bottom-24 left-1/2 flex -translate-x-1/2 flex-col gap-1 rounded-lg bg-black/70 px-4.5 py-3 text-sm text-white">
+        <div className="absolute bottom-24 left-1/2 flex max-h-[65vh] -translate-x-1/2 flex-col gap-1 overflow-y-auto rounded-lg bg-black/70 px-4.5 py-3 text-sm text-white">
           {current.capturedDate && <div>Taken: {new Date(current.capturedDate).toLocaleString()}</div>}
           {current.cameraMake && (
             <div>
@@ -369,6 +371,7 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
           <div>Size: {formatBytes(current.fileSize)}</div>
           {current.durationSeconds != null && <div>Duration: {formatDuration(current.durationSeconds)}</div>}
           <div className="max-w-[360px] break-all text-white/70">Path: {current.absolutePath}</div>
+          <TagEditor mediaId={current.id} />
           <button
             onClick={goToFolder}
             className="mt-1 self-start text-left text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent"

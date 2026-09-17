@@ -625,8 +625,8 @@ export default function SettingsPage() {
       <section>
         <h2 className="mb-1 font-serif text-lg font-semibold text-ink">AI</h2>
         <p className="mb-3 text-sm text-muted">
-          An optional local sidecar (<code>memorylane-ai</code>) turns photos into vectors for Find similar, describe-it search and
-          smarter stacks. Nothing leaves your machine.
+          An optional local sidecar (<code>memorylane-ai</code>) turns photos into vectors for Find similar, describe-it search,
+          smarter stacks, and AI tags. Nothing leaves your machine.
         </p>
         <label className="mb-3 flex items-center gap-2 text-sm text-ink">
           <input

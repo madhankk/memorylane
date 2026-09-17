@@ -9,6 +9,19 @@ import type { AppPaths } from "../../src/config/paths.js";
 const logger = { info() {}, warn() {}, error() {}, debug() {} } as unknown as import("pino").Logger;
 
 describe("Photos library scanner boundary", () => {
+  it("never indexes files inside a MemoryLane trash folder", async () => {
+    const db = await createTestDb();
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "memorylane-trash-scan-"));
+    const trash = path.join(root, "_MemoryLane-Trash", "123");
+    fs.mkdirSync(trash, { recursive: true });
+    fs.writeFileSync(path.join(trash, "photo.jpg"), "test");
+    db.prepare("INSERT INTO scan_roots (path, enabled) VALUES (?, 1)").run(root);
+    const paths = { dataDir: root, thumbnailsDir: path.join(root, "thumbs"), previewsDir: path.join(root, "previews") } as AppPaths;
+    try {
+      await new ScannerService(db, paths, logger).runScan("manual");
+      expect((db.prepare("SELECT COUNT(*) AS c FROM media").get() as { c: number }).c).toBe(0);
+    } finally { db.close(); fs.rmSync(root, { recursive: true, force: true }); }
+  });
   it("never descends into a Photos package during a generic folder scan", async () => {
     const db = await createTestDb();
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "memorylane-photos-scan-"));

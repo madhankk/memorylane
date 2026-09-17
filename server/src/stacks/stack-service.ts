@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import type { Logger } from "pino";
 import type { StackDto, StackKind, StackRefDto } from "@memorylane/shared";
 import type { SettingsRepo } from "../db/settings-repo.js";
-import { EXCLUDE_LIVE_PHOTO_VIDEOS, EXCLUDE_PAIRED_RAW } from "../query/media-query.js";
+import { EXCLUDE_LIVE_PHOTO_VIDEOS, EXCLUDE_PAIRED_RAW, UNMARKED_MEDIA_SQL } from "../query/media-query.js";
 import type { MediaRow } from "../api/mappers.js";
 import { groupBursts, STACK_RULE_VERSION, type StackCandidate } from "./stacker.js";
 import { markFoldersDirty } from "./dirty.js";
@@ -59,6 +59,7 @@ export class StackService {
          LEFT JOIN media_embeddings em ON em.media_id = media.id AND em.model = ?
          WHERE media.parent_folder_id = ? AND media.status = 'active' AND media.media_type IN ('image', 'raw')
            AND ${EXCLUDE_LIVE_PHOTO_VIDEOS} AND ${EXCLUDE_PAIRED_RAW}
+           AND ${UNMARKED_MEDIA_SQL}
            AND media.id NOT IN (SELECT media_id FROM stack_exclusions)
            AND media.id NOT IN (SELECT sm.media_id FROM stack_members sm JOIN stacks s ON s.id = sm.stack_id WHERE s.user_modified = 1)`,
       )
@@ -135,9 +136,9 @@ export class StackService {
 
   getStack(id: number): StackDto | null {
     const row = this.db
-      .prepare("SELECT s.*, (SELECT COUNT(*) FROM stack_members m WHERE m.stack_id = s.id) AS count FROM stacks s WHERE s.id = ?")
+      .prepare("SELECT s.*, (SELECT COUNT(*) FROM stack_members m WHERE m.stack_id = s.id AND m.media_id NOT IN (SELECT media_id FROM deletion_marks)) AS count FROM stacks s WHERE s.id = ?")
       .get(id) as StackRow | undefined;
-    return row ? this.toDto(row) : null;
+    return row && row.count > 0 ? this.toDto(row) : null;
   }
 
   private requireStack(id: number): StackDto {
@@ -148,7 +149,7 @@ export class StackService {
 
   getMembers(stackId: number): MediaRow[] {
     return this.db
-      .prepare("SELECT media.* FROM stack_members sm JOIN media ON media.id = sm.media_id WHERE sm.stack_id = ? ORDER BY sm.position, media.id")
+      .prepare("SELECT media.* FROM stack_members sm JOIN media ON media.id = sm.media_id WHERE sm.stack_id = ? AND media.id NOT IN (SELECT media_id FROM deletion_marks) ORDER BY sm.position, media.id")
       .all(stackId) as MediaRow[];
   }
 
@@ -159,7 +160,7 @@ export class StackService {
     const placeholders = items.map(() => "?").join(",");
     const rows = this.db
       .prepare(
-        `SELECT sm.media_id, s.id, s.cover_media_id, (SELECT COUNT(*) FROM stack_members m2 WHERE m2.stack_id = s.id) AS count
+        `SELECT sm.media_id, s.id, s.cover_media_id, (SELECT COUNT(*) FROM stack_members m2 WHERE m2.stack_id = s.id AND m2.media_id NOT IN (SELECT media_id FROM deletion_marks)) AS count
          FROM stack_members sm JOIN stacks s ON s.id = sm.stack_id WHERE sm.media_id IN (${placeholders})`,
       )
       .all(...items.map((i) => i.id)) as { media_id: number; id: number; cover_media_id: number; count: number }[];

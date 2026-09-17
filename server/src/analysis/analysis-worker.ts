@@ -108,7 +108,7 @@ export class AnalysisWorker {
       if (a.isEnabled && !a.isEnabled()) continue;
       const backoff = this.backoff.get(a.key);
       if (backoff && backoff.until > Date.now()) continue;
-      const rows = this.repo.claimBatch(a.key, a.batchSize);
+      const rows = this.repo.claimBatch(a);
       if (rows.length === 0) continue;
       const runnable = rows.filter((row) => isMediaSourceVisible(this.db, row.id));
       this.repo.unclaim(a.key, rows.filter((row) => !isMediaSourceVisible(this.db, row.id)).map((row) => row.id));
@@ -118,6 +118,12 @@ export class AnalysisWorker {
         const completed = outcomes.filter((outcome) => isMediaSourceVisible(this.db, outcome.mediaId));
         this.repo.unclaim(a.key, runnable.filter((row) => !isMediaSourceVisible(this.db, row.id)).map((row) => row.id));
         this.repo.complete(a.key, a.version, completed);
+        const doneIds = completed.filter((outcome) => outcome.status === "done").map((outcome) => outcome.mediaId);
+        if (doneIds.length > 0) {
+          for (const dependent of this.analyzers) {
+            if (dependent.requires?.includes(a.key)) this.repo.refreshDependentForIds(dependent, doneIds);
+          }
+        }
         if (backoff) {
           this.backoff.delete(a.key);
           this.logger.info({ analyzer: a.key }, "Provider reachable again - resuming");

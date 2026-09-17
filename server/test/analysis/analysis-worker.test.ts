@@ -63,7 +63,7 @@ describe("AnalysisWorker", () => {
     const { db, ids, repo } = await setup(2);
     repo.markDone(ids[0], "fake", "v0"); // stale version
     repo.ensureQueued(fakeAnalyzer());
-    repo.claimBatch("fake", 1); // simulate a crash mid-run
+    repo.claimBatch(fakeAnalyzer({ batchSize: 1 })); // simulate a crash mid-run
     const a = fakeAnalyzer();
     const w = new AnalysisWorker(db, logger, [a], () => false, { idleMs: 5 });
     w.start();

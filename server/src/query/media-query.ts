@@ -13,6 +13,7 @@ export const EXCLUDE_PAIRED_RAW = "media.id NOT IN (SELECT raw_pair_id FROM medi
 // tile per burst. Off for search/favorites/reports, which are about frames.
 export const COLLAPSE_STACKS =
   "(media.id NOT IN (SELECT media_id FROM stack_members) OR media.id IN (SELECT cover_media_id FROM stacks))";
+export const UNMARKED_MEDIA_SQL = "media.id NOT IN (SELECT media_id FROM deletion_marks)";
 
 // Source visibility is a runtime plugin decision, not a property of the cached
 // media row. Keep the clause reusable by listings and non-listing queries.
@@ -41,6 +42,8 @@ export interface MediaQueryParams {
   type?: MediaTypeFilter;
   // Default false: companions (Live Photo videos, paired RAWs) are hidden.
   includeCompanions?: boolean;
+  // Cleanup explicitly includes marked rows; ordinary listings hide them.
+  includeMarked?: boolean;
   thumbnailDone?: boolean;
   collapseStacks?: boolean;
   // Joins media_engagement as `me` (so callers may ORDER BY me.favorited_at).
@@ -50,6 +53,7 @@ export interface MediaQueryParams {
   requireExifJoin?: boolean;
   // Photos with at least one face assigned to any of these persons.
   personIds?: number[];
+  tagId?: number;
 }
 
 export interface BuiltMediaQuery {
@@ -81,7 +85,9 @@ export function hasExifFilter(exif: ExifFilterQuery | undefined): boolean {
 export function buildMediaQuery(p: MediaQueryParams): BuiltMediaQuery {
   const cteBindings: unknown[] = [];
   const bindings: unknown[] = [];
-  const where: string[] = ["media.status = 'active'", ACTIVE_SOURCE_SQL];
+  const where: string[] = [p.includeMarked
+    ? "(media.status = 'active' OR media.id IN (SELECT media_id FROM deletion_marks))"
+    : "media.status = 'active'", ACTIVE_SOURCE_SQL];
   const joins: string[] = [];
   let cte = "";
 
@@ -107,12 +113,17 @@ export function buildMediaQuery(p: MediaQueryParams): BuiltMediaQuery {
   }
 
   if (!p.includeCompanions) where.push(EXCLUDE_LIVE_PHOTO_VIDEOS, EXCLUDE_PAIRED_RAW);
+  if (!p.includeMarked) where.push(UNMARKED_MEDIA_SQL);
   if (p.type && p.type !== "all") where.push(mediaTypeFilterClause(p.type));
   if (p.thumbnailDone) where.push("media.thumbnail_status = 'done'");
   if (p.collapseStacks) where.push(COLLAPSE_STACKS);
   if (p.personIds && p.personIds.length > 0) {
     where.push(`media.id IN (SELECT f.media_id FROM faces f WHERE f.person_id IN (${p.personIds.map(() => "?").join(",")}))`);
     bindings.push(...p.personIds);
+  }
+  if (p.tagId !== undefined) {
+    where.push("EXISTS (SELECT 1 FROM media_tags mt WHERE mt.media_id = media.id AND mt.tag_id = ?)");
+    bindings.push(p.tagId);
   }
 
   if (p.favoritesOnly) {

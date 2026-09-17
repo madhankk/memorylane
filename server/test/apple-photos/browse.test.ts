@@ -53,4 +53,17 @@ describe("Apple Photos virtual browse", () => {
       expect((db.prepare("SELECT COUNT(*) AS c FROM folders").get() as { c: number }).c).toBe(1);
     } finally { db.close(); }
   });
+
+  it("hides marked indexed assets while retaining catalog-only assets", async () => {
+    const db = await createTestDb();
+    try {
+      const root = Number(db.prepare("INSERT INTO scan_roots (path, enabled, kind) VALUES ('/Marked.photoslibrary', 1, 'apple-photos')").run().lastInsertRowid);
+      const folder = seedFolder(db, root, "/Marked.photoslibrary");
+      const mediaId = seedMedia(db, folder, root, { captured_date: "2021-08-11T09:00:00" });
+      db.prepare("INSERT INTO apple_photos_assets (scan_root_id, uuid, media_id, catalog_date) VALUES (?, 'marked', ?, '2021-08-11')").run(root, mediaId);
+      db.prepare("INSERT INTO apple_photos_assets (scan_root_id, uuid, catalog_date) VALUES (?, 'cloud', '2021-08-12')").run(root);
+      db.prepare("INSERT INTO deletion_marks (media_id) VALUES (?)").run(mediaId);
+      expect(browseApplePhotos(db, root, "2021", "08", 0, 20).items.map((item) => item.uuid)).toEqual(["cloud"]);
+    } finally { db.close(); }
+  });
 });

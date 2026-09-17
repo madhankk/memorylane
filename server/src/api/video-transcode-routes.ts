@@ -12,6 +12,7 @@ import { streamFile } from "./file-streaming.js";
 import { transcodingPathForMediaId, transcodingThumbnailPathForMediaId } from "../config/paths.js";
 import { NEEDS_TRANSCODE_SQL_CLAUSE } from "../media/video-compatibility.js";
 import { isMediaSourceVisible } from "../plugins/registry.js";
+import { UNMARKED_MEDIA_SQL } from "../query/media-query.js";
 
 const WRITABLE_SOURCE_SQL = "(media.source_kind IS NULL OR media.source_kind != 'apple-photos')";
 
@@ -23,7 +24,7 @@ const WRITABLE_SOURCE_SQL = "(media.source_kind IS NULL OR media.source_kind != 
 function needsTranscodeIdsSql(): string {
   return `
     SELECT media.id FROM media
-    WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active' AND ${WRITABLE_SOURCE_SQL} AND ${NEEDS_TRANSCODE_SQL_CLAUSE}
+    WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active' AND ${WRITABLE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL} AND ${NEEDS_TRANSCODE_SQL_CLAUSE}
       AND id NOT IN (SELECT media_id FROM video_transcode_jobs WHERE status IN ('pending', 'transcoding', 'done'))
   `;
 }
@@ -32,7 +33,7 @@ function verifiedIdsSql(): string {
   return `
     SELECT vtj.media_id as id FROM video_transcode_jobs vtj
     JOIN media ON media.id = vtj.media_id
-    WHERE media.scan_root_id = ? AND ${WRITABLE_SOURCE_SQL} AND vtj.status = 'done' AND vtj.verified = 1
+    WHERE media.scan_root_id = ? AND ${WRITABLE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL} AND vtj.status = 'done' AND vtj.verified = 1
   `;
 }
 
@@ -48,7 +49,7 @@ export async function registerVideoTranscodeRoutes(app: FastifyInstance, ctx: Ap
     const total = (
       db
         .prepare(
-          `SELECT COUNT(*) as c FROM media WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active' AND ${WRITABLE_SOURCE_SQL} AND ${NEEDS_TRANSCODE_SQL_CLAUSE}`,
+          `SELECT COUNT(*) as c FROM media WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active' AND ${WRITABLE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL} AND ${NEEDS_TRANSCODE_SQL_CLAUSE}`,
         )
         .get(id) as { c: number }
     ).c;
@@ -59,7 +60,7 @@ export async function registerVideoTranscodeRoutes(app: FastifyInstance, ctx: Ap
 
     const rows = db
       .prepare(
-        `SELECT * FROM media WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active' AND ${WRITABLE_SOURCE_SQL} AND ${NEEDS_TRANSCODE_SQL_CLAUSE}
+        `SELECT * FROM media WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active' AND ${WRITABLE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL} AND ${NEEDS_TRANSCODE_SQL_CLAUSE}
          ORDER BY captured_date IS NULL, captured_date, filename LIMIT ? OFFSET ?`,
       )
       .all(id, limit, offset) as MediaRow[];
@@ -88,7 +89,7 @@ export async function registerVideoTranscodeRoutes(app: FastifyInstance, ctx: Ap
 
     const mediaIds = parsed.data.all
       ? ((db.prepare(needsTranscodeIdsSql()).all(scanRootId) as { id: number }[]).map((r) => r.id))
-      : parsed.data.mediaIds!.filter((id) => !!db.prepare(`SELECT media.id FROM media WHERE id = ? AND ${WRITABLE_SOURCE_SQL}`).get(id));
+      : parsed.data.mediaIds!.filter((id) => !!db.prepare(`SELECT media.id FROM media WHERE id = ? AND ${WRITABLE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL}`).get(id));
     transcodeWorker.startTranscode(mediaIds, parsed.data.quality);
     return reply.send({ ok: true, count: mediaIds.length });
   });
@@ -97,7 +98,7 @@ export async function registerVideoTranscodeRoutes(app: FastifyInstance, ctx: Ap
     const id = Number((request.params as { id: string }).id);
     const rows = db
       .prepare(
-        `SELECT vtj.* FROM video_transcode_jobs vtj JOIN media ON media.id = vtj.media_id WHERE media.scan_root_id = ? AND ${WRITABLE_SOURCE_SQL}`,
+        `SELECT vtj.* FROM video_transcode_jobs vtj JOIN media ON media.id = vtj.media_id WHERE media.scan_root_id = ? AND ${WRITABLE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL}`,
       )
       .all(id) as TranscodeJobRow[];
     return reply.send(rows.map(toTranscodeJobDto));
@@ -110,7 +111,7 @@ export async function registerVideoTranscodeRoutes(app: FastifyInstance, ctx: Ap
 
     const mediaIds = parsed.data.all
       ? ((db.prepare(verifiedIdsSql()).all(scanRootId) as { id: number }[]).map((r) => r.id))
-      : parsed.data.mediaIds!.filter((id) => !!db.prepare(`SELECT media.id FROM media WHERE id = ? AND ${WRITABLE_SOURCE_SQL}`).get(id));
+      : parsed.data.mediaIds!.filter((id) => !!db.prepare(`SELECT media.id FROM media WHERE id = ? AND ${WRITABLE_SOURCE_SQL} AND ${UNMARKED_MEDIA_SQL}`).get(id));
     const result = await transcodeWorker.archive(mediaIds);
     return reply.send(result);
   });

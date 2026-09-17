@@ -12,6 +12,7 @@ import {
 import type { AppContext } from "../context.js";
 import { NEEDS_TRANSCODE_SQL_CLAUSE } from "../media/video-compatibility.js";
 import { isApplePhotosEnabled } from "../plugins/registry.js";
+import { UNMARKED_MEDIA_SQL } from "../query/media-query.js";
 
 interface ScanRootRow {
   id: number;
@@ -37,7 +38,7 @@ function getScanRootStats(db: Database.Database, scanRootId: number): ScanRootSt
       `SELECT media_type, COUNT(*) as count, SUM(file_size) as size,
         SUM(CASE WHEN thumbnail_status = 'pending' THEN 1 ELSE 0 END) as pending,
         SUM(CASE WHEN thumbnail_status = 'failed' THEN 1 ELSE 0 END) as failed
-       FROM media WHERE scan_root_id = ? AND status = 'active' GROUP BY media_type`,
+       FROM media WHERE scan_root_id = ? AND status = 'active' AND ${UNMARKED_MEDIA_SQL} GROUP BY media_type`,
     )
     .all(scanRootId) as MediaTypeAggRow[];
 
@@ -51,7 +52,7 @@ function getScanRootStats(db: Database.Database, scanRootId: number): ScanRootSt
     db
       .prepare(
         `SELECT COUNT(*) as c FROM media
-         WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active'
+         WHERE scan_root_id = ? AND media_type = 'video' AND status = 'active' AND ${UNMARKED_MEDIA_SQL}
            AND (source_kind IS NULL OR source_kind != 'apple-photos') AND ${NEEDS_TRANSCODE_SQL_CLAUSE}`,
       )
       .get(scanRootId) as { c: number }

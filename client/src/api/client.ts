@@ -42,6 +42,12 @@ import type {
   PluginDto,
   ApplePhotosSyncStatusDto,
   AppleBrowseDto,
+  CleanupMarkDto,
+  TagFacetDto,
+  MediaTagDto,
+  LocationSummaryDto,
+  LocationCellsDto,
+  LocationItemsDto,
 } from "@memorylane/shared";
 import { trackPageRead } from "../utils/pageLoad";
 
@@ -86,6 +92,8 @@ async function performRequest<T>(path: string, init?: RequestInit): Promise<T> {
 export { ApiError };
 
 export type ReportFilters = ExifFilterQuery & { type?: MediaTypeFilter; personIds?: string };
+export type LocationFilters = { source: "all" | "filesystem" | "apple"; fromYear?: number; toYear?: number };
+export type LocationBounds = { west: number; east: number; south: number; north: number };
 
 // Serialises only defined filter values, so the same object drives the
 // grid request, the facets request, and the CSV link.
@@ -99,6 +107,29 @@ export function toQueryString(params: Record<string, string | number | undefined
 }
 
 export const api = {
+  locations: {
+    summary: (filters: LocationFilters) => request<LocationSummaryDto>(`/api/locations/summary${toQueryString(filters)}`),
+    cells: (filters: LocationFilters, bounds: LocationBounds, zoom: number) =>
+      request<LocationCellsDto>(`/api/locations/cells${toQueryString({ ...filters, ...bounds, zoom })}`),
+    items: (key: string, filters: LocationFilters, bounds: LocationBounds, offset = 0, limit = 100) =>
+      request<LocationItemsDto>(`/api/locations/cells/${encodeURIComponent(key)}/items${toQueryString({ ...filters, ...bounds, offset, limit })}`),
+  },
+  tags: {
+    list: (q = "", offset = 0, limit = 100) => request<PaginatedResult<TagFacetDto>>(`/api/tags${toQueryString({ q, offset, limit })}`),
+    media: (id: number, offset = 0, limit = 100) => request<PaginatedResult<MediaDto>>(`/api/tags/${id}/media?offset=${offset}&limit=${limit}`),
+    forMedia: (id: number) => request<MediaTagDto[]>(`/api/media/${id}/tags`),
+    add: (id: number, name: string) => request<MediaTagDto>(`/api/media/${id}/tags`, { method: "POST", body: JSON.stringify({ name }) }),
+    remove: (id: number, tagId: number, source: "user" | "ai") => request<{ ok: true }>(`/api/media/${id}/tags/${tagId}?source=${source}`, { method: "DELETE" }),
+    generate: () => request<void>("/api/tags/generate", { method: "POST" }),
+  },
+  cleanup: {
+    marks: (offset = 0, limit = 100) => request<PaginatedResult<CleanupMarkDto>>(`/api/cleanup/marks?offset=${offset}&limit=${limit}`),
+    mark: (mediaIds: number[]) => request<{ marked: number }>("/api/cleanup/marks", { method: "POST", body: JSON.stringify({ mediaIds }) }),
+    unmark: (id: number) => request<{ ok: true }>(`/api/cleanup/marks/${id}`, { method: "DELETE" }),
+    moveToTrash: (mediaIds: number[]) => request<{ results: { mediaId: number; ok: boolean; error?: string }[] }>("/api/cleanup/trash", { method: "POST", body: JSON.stringify({ mediaIds }) }),
+    restoreTrash: (id: number) => request<{ ok: true }>(`/api/cleanup/trash/${id}/restore`, { method: "POST" }),
+    emptyTrash: (id: number) => request<{ ok: true }>(`/api/cleanup/trash/${id}`, { method: "DELETE", body: JSON.stringify({ confirm: true }) }),
+  },
   plugins: {
     list: () => request<PluginDto[]>("/api/plugins"),
     setApplePhotosEnabled: (enabled: boolean) => request<PluginDto>("/api/plugins/apple-photos", { method: "PUT", body: JSON.stringify({ enabled }) }),
