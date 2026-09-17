@@ -29,6 +29,23 @@ it("generates a scene tag from an existing image embedding without reading the p
   } finally { db.close(); }
 });
 
+it("does not infer screenshot from text similarity alone", async () => {
+  const db = await createTestDb();
+  try {
+    const root = seedScanRoot(db), folder = seedFolder(db, root, "/library"), media = seedMedia(db, folder, root);
+    new EmbeddingRepo(db).upsertMany("test-model", [{ mediaId: media, vector: new Float32Array([1, 0]) }]);
+    const provider = {
+      expectedModel: "test-model",
+      health: async () => ({ reachable: true }),
+      embedText: async (texts: string[]) => ({ model: "test-model", dim: 2,
+        vectors: texts.map((text) => text.includes("screenshot") ? new Float32Array([1, 0]) : new Float32Array([0, 1])) }),
+    } as EmbeddingProvider;
+    const analyzer = createAiTagAnalyzer(db, provider, () => true);
+    await analyzer.run([{ id: media, parent_folder_id: folder, absolute_path: "/unused", media_type: "image" }]);
+    expect(new TagRepo(db).listForMedia(media).filter((tag) => tag.source === "ai").map((tag) => tag.name)).not.toContain("screenshot");
+  } finally { db.close(); }
+});
+
 it("backfills tags after image embeddings finish in the same worker pass", async () => {
   const db = await createTestDb();
   try {
