@@ -33,7 +33,7 @@ Photos, RAW, video, and Apple Live Photos are all indexed and browsable.
 
 ## AI features (optional)
 
-Find similar, describe-it search, image-similarity stacking and People use small local models served by the `memorylane-ai` sidecar (CLIP for image/text vectors, YuNet + SFace or InsightFace ArcFace for faces, all via ONNX Runtime). Nothing leaves your machine: the sidecar never sees your file paths - the server sends it thumbnails and keeps the resulting vectors in its own data directory. It runs on Windows, macOS (Apple Silicon) and Linux; CPU is plenty (about 50 photos/s for embeddings on an M2 Max), GPU optional. Start it with `npm run ai` in a second terminal (Python 3.11+ required, ~350 MB model download on first start); see [memorylane-ai/README.md](memorylane-ai/README.md). Without it, everything else works exactly as before - EXIF reports and time/hash-based stacks need no sidecar.
+Find similar, describe-it search, image-similarity stacking and People use small local models served by the `memorylane-ai` sidecar (CLIP for image/text vectors, YuNet + SFace or InsightFace ArcFace for faces, all via ONNX Runtime). Nothing leaves your machine: the sidecar never sees your file paths - the server sends it thumbnails and keeps the resulting vectors in its own data directory. It runs on Windows, macOS (Apple Silicon) and Linux; CPU is plenty (about 50 photos/s for embeddings on an M2 Max), GPU optional. Start it with `npm run ai` in a second terminal (Python 3.11+ required, ~350 MB model download on first start); see [its README](plugins/optional/com.memorylane.ai-runtime/python/README.md). Without it, everything else works exactly as before - EXIF reports and time/hash-based stacks need no sidecar.
 
 ## Requirements
 
@@ -50,6 +50,8 @@ npm install
 npm run build
 npm start
 ```
+
+No configuration is required to get this far. If you want to override any defaults (a custom port, a throwaway data directory, plugin development - see "Configuration" and "Development" below), copy `.env.example` to `.env` first; `npm start`/`npm run dev` load it automatically.
 
 Open `http://127.0.0.1:4280`. On first launch you'll be asked to create an admin username and password - there's no default account and no public sign-up, so this is the only way in. After logging in, go to **Settings** and add one or more folders to scan; MemoryLane will index them and start generating thumbnails in the background.
 
@@ -70,32 +72,35 @@ Use two terminals:
 
 ```bash
 npm install
-npm run dev          # starts the Fastify server on :4280
-npm run dev:client   # in a second terminal - Vite dev server on :5173 with API proxy
+cp .env.example .env   # optional - see "Configuration" and the plugin section below
+npm run dev            # starts the Fastify server on :4280
+npm run dev:client     # in a second terminal - Vite dev server on :5173 with API proxy
 ```
 
 Open `http://localhost:5173` (the client dev server proxies `/api` to the backend). This is the fastest inner loop - no Go build, no runtime staging - and is what you want for almost all server/client work.
 
+`npm run dev`/`npm start` both load `.env` from the repo root automatically (see `.env.example`) - it's the place to put anything you'd otherwise have to re-export in every shell: a throwaway `MEMORYLANE_DATA_DIR`, the optional real-signed-pipeline variables covered below, and so on. Any path-shaped value in it is resolved against the repo root, not npm's own working directory, so relative paths just work.
+
 ### Building and running a plugin
 
-Plugins live under `plugins/` (`required/`, `optional/`, or a new folder of your own) as a `manifest.template.json` plus source; `plugins/fixtures/com.memorylane.fixture-module` is a minimal example. Against a server already running from `npm run dev`, exercise your plugin with a local catalog instead of a real signing key or a hosted feed:
+Plugins live under `plugins/` (`required/`, `optional/`, or a new folder of your own) as a `manifest.template.json` plus source; `plugins/fixtures/com.memorylane.fixture-module` is a minimal example.
+
+**Dev-catalog mode is automatic and needs no setup.** Whenever `npm run dev`/`npm start` finds neither `MEMORYLANE_PLUGIN_CATALOG_URL` nor `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY` set (the default, with a stock `.env`), it loads plugins straight from `plugins/required/` and `plugins/optional/` on disk - no build step, no signing key, no network. Required plugins (`metadata-raw`, `video-tools`) just start; drop a new folder with its own `manifest.template.json` under `plugins/optional/` and it shows up in Settings → Plugins to install and enable, same as any other plugin. After changing a module or command-kind plugin's source, re-enable it (or restart the server) to pick up the change - there's no artifact to rebuild.
+
+A service-kind dev plugin (one whose `entry.kind` is `"service"`) can also be run and restarted independently of core: declare a fixed `devPort` on its manifest entry and run it yourself (your own `npm run dev`, watch-and-restart, whatever) instead of letting the server spawn it. Core then only health-checks that port - it never starts, stops, or restarts a process with a `devPort` set, so your own dev loop is in full control. The plugin still needs to answer the same `/health` contract every service plugin does; authenticate with the fixed `DEV_SERVICE_TOKEN` exported from `@memorylane/plugin-sdk` instead of the per-launch token core would normally inject.
+
+Dropping into Settings and clicking Install/Update on a dev-catalog plugin is a no-op beyond enabling it - there's no artifact to download, since it's already sitting on disk.
+
+**Testing the real signed pipeline** (the one a packaged installer actually uses) is a separate, less common case - use it if you're working on plugin *signing/distribution* itself, not on a plugin's own code:
 
 ```bash
 npm run build --workspace=plugin-sdk
 npm run plugins:build -- stable development
 ```
 
-`development` (skip it if you have the real key - see below) generates a throwaway signing keypair and writes its public half to `dist/plugin-repository/v1/stable/development-public-key.pem`. Point the server at both, using absolute paths since `npm run dev` runs with its cwd inside `server/`:
+`development` (skip it if you have the real key - see below) generates a throwaway signing keypair and writes its public half to `dist/plugin-repository/v1/stable/development-public-key.pem`. Uncomment the two `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY`/`MEMORYLANE_PLUGIN_PUBLIC_KEY` lines in `.env` (copy `.env.example` first if you haven't) and restart `npm run dev` - this takes over from dev-catalog mode and serves install/update requests from that signed local directory instead. After changing plugin source, re-run `npm run plugins:build -- stable development` and hit **Install** again (bump `version` in `manifest.template.json` first if you want **Update** instead, which requires a strictly newer version).
 
-```bash
-MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY=/absolute/path/to/dist/plugin-repository/v1/stable \
-MEMORYLANE_PLUGIN_PUBLIC_KEY=/absolute/path/to/dist/plugin-repository/v1/stable/development-public-key.pem \
-npm run dev
-```
-
-Restart the server with the same two variables set. Then in Settings → Plugins, install and enable your plugin by id/version - the server serves install/update requests from that local directory instead of a real HTTPS catalog whenever `MEMORYLANE_PLUGIN_CATALOG_URL` isn't set. After changing plugin source, re-run `npm run plugins:build -- stable development` and hit **Install** again (bump `version` in `manifest.template.json` first if you want **Update** instead, which requires a strictly newer version).
-
-If `.keys/plugin-release-private.pem` exists locally (see "Building for production" below), drop `development` and `MEMORYLANE_PLUGIN_PUBLIC_KEY` entirely - the build signs with the real key, which the server trusts by default.
+If `.keys/plugin-release-private.pem` exists locally (see "Building for production" below), you don't need `MEMORYLANE_PLUGIN_PUBLIC_KEY` at all - the build signs with the real key, which the server trusts by default.
 
 ### With the desktop tray
 
@@ -115,7 +120,7 @@ For an isolated supervisor check without the full tray UI, run `go -C tray-go ru
 
 ## Configuration
 
-MemoryLane is configured entirely through environment variables (no config file):
+MemoryLane is configured entirely through environment variables. `npm run dev`/`npm start` load `<repo-root>/.env` automatically if present (see `.env.example`); a packaged desktop build has no `.env` and relies solely on variables compiled in or set in its own environment.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -124,8 +129,9 @@ MemoryLane is configured entirely through environment variables (no config file)
 | `MEMORYLANE_BIND_ADDRESS` | `0.0.0.0` | Bind address - `0.0.0.0` (the default) listens on every network interface, so other devices on your LAN (phone, tablet, another computer) can reach it at `http://<this-machine's-LAN-IP>:4280`. Set to `127.0.0.1` to restrict it to this machine only. |
 | `MEMORYLANE_ALLOW_REMOTE_SETUP` | unset (disabled) | Initial admin account setup is restricted to the machine hosting MemoryLane by default - since the server is reachable on your LAN as soon as it starts, this stops someone else on the network from claiming the one admin account before you do. Set to `1` to allow completing setup from another device. |
 | `MEMORYLANE_PLUGIN_DIR` | OS-standard local application support | Fixed location for installed plugin code and activation state. This does not move with the media data directory. |
-| `MEMORYLANE_PLUGIN_CATALOG_URL` | unset when running from source (`npm run dev`/`npm start`) | HTTPS URL of the signed first-party `catalog.json`. Plugin installation remains unavailable until configured. Packaged desktop builds compile in `https://memorylaneapp.org/plugins/v1/stable/catalog.json` as the default (see `tray-go/scripts/package-*`) - set this to override it, e.g. for a beta channel or a self-hosted mirror. |
-| `MEMORYLANE_PLUGIN_PUBLIC_KEY` | unset | Ed25519 public key PEM or path to a PEM file used to verify the catalog and plugin artifacts. |
+| `MEMORYLANE_PLUGIN_CATALOG_URL` | unset when running from source (`npm run dev`/`npm start`) | HTTPS URL of the signed first-party `catalog.json`. Plugin installation remains unavailable until configured (unless `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY` is set - see below). Packaged desktop builds compile in `https://memorylaneapp.org/plugins/v1/stable/catalog.json` as the default (see `tray-go/scripts/package-*`) - set this to override it, e.g. for a beta channel or a self-hosted mirror. |
+| `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY` | unset | Dev/local-catalog fallback: a directory built by `npm run plugins:build` (see "Building and running a plugin" above), served for install/update instead of a real HTTPS catalog. Only used when `MEMORYLANE_PLUGIN_CATALOG_URL` isn't set. A relative path is resolved against the repo root, not the working directory. |
+| `MEMORYLANE_PLUGIN_PUBLIC_KEY` | the real committed release key | Ed25519 public key PEM, or a path to one, used to verify the catalog and plugin artifacts (relative paths resolve against the repo root). Point this at a `development-public-key.pem` to trust a `plugins:build -- stable development` output. |
 | `MEMORYLANE_PLUGIN_ALLOW_HTTP` | unset (disabled) | Development only: permits an HTTP catalog. Artifact HTTP remains restricted to loopback. |
 
 MemoryLane has no HTTPS/TLS support, so traffic (including your session cookie and the photos themselves) is unencrypted on the network - fine on a trusted home LAN, but don't expose the default `0.0.0.0` bind directly to the internet (e.g. via router port-forwarding) without putting a reverse proxy with real TLS in front of it.

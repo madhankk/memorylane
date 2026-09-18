@@ -6,6 +6,7 @@ import { APPLE_PHOTOS_PLUGIN_ID, applePhotosPluginStatus } from "./registry.js";
 import { isApplePhotosEnabled } from "./registry.js";
 import { toMediaDto, type MediaRow } from "../api/mappers.js";
 import { decorateMedia } from "../api/decorate-media.js";
+import { resolveRepoPath } from "../config/paths.js";
 
 const updateSchema = z.object({ enabled: z.boolean() }).strict();
 
@@ -106,8 +107,12 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
     const id = (request.params as { id: string }).id;
     const parsed = z.object({ version: z.string() }).strict().safeParse(request.body);
     const catalogUrl = process.env.MEMORYLANE_PLUGIN_CATALOG_URL;
-    const bundledDirectory = process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY;
+    const bundledDirectory = process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY ? resolveRepoPath(process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY) : undefined;
     if (!parsed.success) return reply.code(400).send({ error: "Invalid input" });
+    // Dev-catalog plugins load straight from their source directory (see
+    // dev-catalog.ts) - there's nothing to download or unpack, so "install"
+    // is a no-op; the enable PUT below is what actually starts/loads them.
+    if (ctx.pluginManager.isDevPlugin(id)) return reply.code(201).send(ctx.pluginManager.inventory().find((plugin) => plugin.id === id));
     if (!catalogUrl && !bundledDirectory) return reply.code(503).send({ error: "Plugin catalog is not configured" });
     try {
       if (catalogUrl) await ctx.pluginManager.installFromCatalog(id, parsed.data.version, catalogUrl);
@@ -121,8 +126,10 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
   app.post("/api/plugin-platform/:id/update", { preHandler: app.requireAuth }, async (request, reply) => {
     if (!ctx.pluginManager) return reply.code(503).send({ error: "Plugin platform is unavailable on this system" });
     const id=(request.params as {id:string}).id, parsed=z.object({version:z.string()}).strict().safeParse(request.body);
-    const catalogUrl=process.env.MEMORYLANE_PLUGIN_CATALOG_URL, bundledDirectory=process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY;
-    if(!parsed.success||(!catalogUrl&&!bundledDirectory))return reply.code(400).send({error:"Plugin version or catalog is unavailable"});
+    const catalogUrl=process.env.MEMORYLANE_PLUGIN_CATALOG_URL, bundledDirectory=process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY?resolveRepoPath(process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY):undefined;
+    if(!parsed.success)return reply.code(400).send({error:"Invalid input"});
+    if(ctx.pluginManager.isDevPlugin(id))return reply.send(ctx.pluginManager.inventory().find(p=>p.id===id));
+    if(!catalogUrl&&!bundledDirectory)return reply.code(400).send({error:"Plugin version or catalog is unavailable"});
     try{
       if(catalogUrl)await ctx.pluginManager.updateFromCatalog(id,parsed.data.version,catalogUrl);
       else await ctx.pluginManager.updateFromDirectory(id,parsed.data.version,bundledDirectory!);

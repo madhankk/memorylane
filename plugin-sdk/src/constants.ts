@@ -12,6 +12,13 @@ export const PLUGIN_PLATFORMS = [
 
 export type PluginPlatform = (typeof PLUGIN_PLATFORMS)[number];
 
+// Dev-catalog mode only (a service-kind manifest declaring `devPort`): the
+// fixed bearer token a plugin author's own independently-run process should
+// require on its /health and other endpoints, since core never spawns it and
+// so has no random per-launch token to hand it the way production does.
+// Loopback-only, no real threat model in dev - fixed and shared, not secret.
+export const DEV_SERVICE_TOKEN = "memorylane-dev";
+
 export function currentPluginPlatform(
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch,

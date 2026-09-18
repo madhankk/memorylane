@@ -98,7 +98,7 @@ curl http://127.0.0.1:4281/v1/health
 # {"ok":true,"device":"cpu","models":{"image_embed":{"id":"clip-vit-base-patch32@1","dim":512},"faces":{"id":"yunet-sface@1","dim":128},...}}
 ```
 
-Environment variables pass straight through (`MEMORYLANE_AI_PORT=4282 npm run ai`, `MEMORYLANE_AI_DEVICE=cuda npm run ai`, …). Manual setup, Docker, and the full variable table are in [memorylane-ai/README.md](../memorylane-ai/README.md).
+Environment variables pass straight through (`MEMORYLANE_AI_PORT=4282 npm run ai`, `MEMORYLANE_AI_DEVICE=cuda npm run ai`, …). Manual setup, Docker, and the full variable table are in [its README](../plugins/optional/com.memorylane.ai-runtime/python/README.md).
 
 Notes
 - CPU is the default and does ~50 images/s (embeddings) and ~10 images/s (faces) on an M2 Max. GPU is optional: NVIDIA → `pip install onnxruntime-gpu` in the venv + `MEMORYLANE_AI_DEVICE=cuda`; Windows without CUDA → `pip install onnxruntime-directml` + `MEMORYLANE_AI_DEVICE=dml`.

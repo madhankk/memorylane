@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
-const root=path.resolve(import.meta.dirname,".."), ai=path.join(root,"memorylane-ai"), plugin=path.join(root,"plugins","optional","com.memorylane.ai-runtime"), bin=path.join(plugin,"bin");
+const root=path.resolve(import.meta.dirname,".."), plugin=path.join(root,"plugins","optional","com.memorylane.ai-runtime"), ai=path.join(plugin,"python"), bin=path.join(plugin,"bin");
 const python=path.join(ai,".venv",process.platform==="win32"?"Scripts/python.exe":"bin/python");
 if(!fs.existsSync(python)) execFileSync(process.env.PYTHON??(process.platform==="win32"?"python":"python3"),["-m","venv",path.join(ai,".venv")],{stdio:"inherit"});
 try { execFileSync(python,["-c","import PyInstaller, memorylane_ai"],{stdio:"ignore"}); }

@@ -18,7 +18,7 @@ export class PluginModuleHost {
     if (manifest.entry.kind !== "module") throw new Error("Plugin is not a module");
     const entry = path.resolve(pluginDir, manifest.entry.script);
     if (!entry.startsWith(path.resolve(pluginDir) + path.sep)) throw new Error("Module entry escapes its plugin directory");
-    await this.request({ type: "load", pluginId: manifest.id, entry, dataDir: this.dataDirFor(manifest.id) });
+    await this.request({ type: "load", pluginId: manifest.id, version: manifest.version, entry, dataDir: this.dataDirFor(manifest.id) });
     this.loaded.add(manifest.id);
   }
 

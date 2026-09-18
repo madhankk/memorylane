@@ -654,7 +654,7 @@ export default function SettingsPage() {
                   {analysis.provider.lastError ? ` - ${analysis.provider.lastError}` : ""}
                 </p>
                 <p className="mt-1 text-muted">
-                  Start it with <code>npm run ai</code> in a second terminal (see memorylane-ai/README.md). Photos queue up meanwhile and are
+                  Start it with <code>npm run ai</code> in a second terminal (see its README). Photos queue up meanwhile and are
                   analysed once it's reachable; this card refreshes within a few seconds.
                 </p>
               </div>

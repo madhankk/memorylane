@@ -5,6 +5,11 @@ import yazl from "yazl";
 import { PluginCatalogSchema, PluginManifestSchema, PLUGIN_PLATFORMS } from "../plugin-sdk/dist/index.js";
 
 const root = path.resolve(import.meta.dirname, "..");
+// Directories holding a plugin's own out-of-band source (build tooling,
+// venvs, test caches - see plugins/optional/com.memorylane.ai-runtime/python/)
+// rather than shipped content - never descended into by either the plugin
+// discovery walk or the packaging walk below.
+const PLUGIN_SOURCE_DIR_NAMES = ["src", "python"];
 const defaultReleasePlatforms = ["win32-x64", "darwin-x64", "darwin-arm64"];
 const args = process.argv.slice(2);
 const valueAfter = (flag) => {
@@ -59,9 +64,14 @@ for (const pluginRoot of findPluginRoots(sourceRoot)) {
     const allowedPlatforms = buildPlatforms.includes("host") ? [`${process.platform}-${process.arch}`] : buildPlatforms;
     if (!allowedPlatforms.includes(platform)) continue;
     const manifest = PluginManifestSchema.parse({ ...template, platform });
-    const packageFiles = listFiles(pluginRoot).filter((file) => {
-      const relative = path.relative(pluginRoot, file).replaceAll("\\", "/");
-      return path.basename(file) !== "manifest.template.json" && !path.basename(file).startsWith(".signed-") && !relative.startsWith("src/") && !relative.startsWith("python/");
+    // src/ and python/ hold a plugin's own out-of-band source (build tooling,
+    // venvs, test caches, egg-info - see plugins/optional/com.memorylane.ai-runtime/python/)
+    // rather than shipped content, so they're skipped during the walk itself,
+    // not just filtered out afterward - descending into a Python .venv or
+    // .pytest_cache can hit locked/permission-denied files that have no
+    // business slowing down or breaking a plugin release build.
+    const packageFiles = listFiles(pluginRoot, [], PLUGIN_SOURCE_DIR_NAMES).filter((file) => {
+      return path.basename(file) !== "manifest.template.json" && !path.basename(file).startsWith(".signed-");
     });
     const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
     const installedSize = manifestBytes.length + packageFiles.reduce((sum, file) => sum + fs.statSync(file).size, 0);
@@ -98,10 +108,11 @@ const published = listFiles(outputDir).filter((file) => path.basename(file) !== 
 fs.writeFileSync(path.join(outputDir, "release-manifest.json"), `${JSON.stringify({ formatVersion: 1, channel, files: published }, null, 2)}\n`);
 console.log(`Built ${releases.length} plugin artifact(s) in ${path.relative(root, outputDir)}`);
 
-function listFiles(directory, result = []) {
+function listFiles(directory, result = [], skipDirNames = []) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isDirectory() && skipDirNames.includes(entry.name)) continue;
     const item = path.join(directory, entry.name);
-    if (entry.isDirectory()) listFiles(item, result); else result.push(item);
+    if (entry.isDirectory()) listFiles(item, result, skipDirNames); else result.push(item);
   }
   return result.sort();
 }
@@ -115,7 +126,7 @@ function listFiles(directory, result = []) {
 function findPluginRoots(directory, result = [], includeFixtures = development, isRoot = true) {
   if (fs.existsSync(path.join(directory, "manifest.template.json"))) result.push(directory);
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name === "node_modules") continue;
+    if (!entry.isDirectory() || entry.name === "node_modules" || PLUGIN_SOURCE_DIR_NAMES.includes(entry.name)) continue;
     if (isRoot && entry.name === "fixtures" && !includeFixtures) continue;
     findPluginRoots(path.join(directory, entry.name), result, includeFixtures, false);
   }

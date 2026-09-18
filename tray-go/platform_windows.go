@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -28,13 +29,6 @@ func terminateProcessTree(cmd *exec.Cmd) error {
 		return nil
 	}
 	return cmd.Process.Kill()
-}
-
-func openBrowser(raw string) error {
-	if !validLocalURL(raw) {
-		return fmt.Errorf("refusing non-local URL")
-	}
-	return exec.Command("rundll32", "url.dll,FileProtocolHandler", raw).Start()
 }
 
 func launchAtLoginEnabled() bool {
@@ -85,6 +79,25 @@ func acquireSingleInstance() error {
 		return fmt.Errorf("MemoryLane tray is already running")
 	}
 	return nil
+}
+
+// A blocking native message box - no third-party dependency needed, since
+// user32.dll's MessageBoxW is always present. Used only for a startup
+// failure the tray is about to exit over, so blocking the caller until the
+// user dismisses it is fine (there's nothing else left running to serve).
+func showFatalError(title, message string) {
+	user32 := syscall.NewLazyDLL("user32.dll")
+	messageBoxW := user32.NewProc("MessageBoxW")
+	titlePtr, err := syscall.UTF16PtrFromString(title)
+	if err != nil {
+		return
+	}
+	messagePtr, err := syscall.UTF16PtrFromString(message)
+	if err != nil {
+		return
+	}
+	const mbIconError = 0x10
+	_, _, _ = messageBoxW.Call(0, uintptr(unsafe.Pointer(messagePtr)), uintptr(unsafe.Pointer(titlePtr)), mbIconError)
 }
 
 func releaseSingleInstance() {

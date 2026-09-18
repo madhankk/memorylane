@@ -1,4 +1,13 @@
-import { resolveAppPaths } from "./config/paths.js";
+import path from "node:path";
+import { config as loadDotenv } from "dotenv";
+import { resolveAppPaths, repoRootDir, resolveRepoPath } from "./config/paths.js";
+
+// Loads <repo-root>/.env before anything below reads process.env - both `npm
+// run dev` and `npm start` run with cwd inside server/, so this can't just be
+// dotenv's own process.cwd() default. A missing .env is not an error (dotenv
+// resolves it silently); see .env.example for what it's for.
+loadDotenv({ path: path.join(repoRootDir, ".env"), quiet: true });
+
 import { openDatabase } from "./db/connection.js";
 import { runMigrations } from "./db/migrate.js";
 import { SettingsRepo } from "./db/settings-repo.js";
@@ -20,6 +29,7 @@ import type { AppContext } from "./context.js";
 import { APP_VERSION } from "./version.js";
 import { currentPluginPlatform } from "@memorylane/plugin-sdk";
 import { PluginManager } from "./plugin-platform/manager.js";
+import { scanDevPlugins } from "./plugin-platform/dev-catalog.js";
 import { resolvePluginPlatformPaths } from "./plugin-platform/paths.js";
 import { PluginCatalogLoader } from "./plugin-platform/catalog-loader.js";
 import fs from "node:fs";
@@ -52,15 +62,26 @@ async function main(): Promise<void> {
   const configuredPluginKey = process.env.MEMORYLANE_PLUGIN_PUBLIC_KEY;
   let pluginPublicKey = PLUGIN_RELEASE_PUBLIC_KEY;
   if (configuredPluginKey) {
-    try { pluginPublicKey = configuredPluginKey.includes("BEGIN PUBLIC KEY") ? configuredPluginKey : fs.readFileSync(configuredPluginKey, "utf8"); }
+    try { pluginPublicKey = configuredPluginKey.includes("BEGIN PUBLIC KEY") ? configuredPluginKey : fs.readFileSync(resolveRepoPath(configuredPluginKey), "utf8"); }
     catch (error) { bootstrapLogger.warn({ err: error }, "Could not read the configured plugin public key"); }
   }
+  const pluginCatalogUrl = process.env.MEMORYLANE_PLUGIN_CATALOG_URL;
+  const bundledPluginRepository = process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY ? resolveRepoPath(process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY) : undefined;
+  // Dev-catalog mode: when neither a real catalog nor a signed local build is
+  // configured, load plugins straight from plugins/required|optional/ in the
+  // repo - no zip, no signing, no network. This is what makes a plain
+  // `npm run dev`/`npm start` from a source checkout work out of the box,
+  // without falling into the dead middle ground of "no catalog configured at
+  // all" that a from-source run used to land in. A packaged desktop build
+  // always compiles MEMORYLANE_PLUGIN_CATALOG_URL in, so it never reaches here.
+  const devPlugins = !pluginCatalogUrl && !bundledPluginRepository && pluginPlatform
+    ? scanDevPlugins(path.join(repoRootDir, "plugins"), pluginPlatform)
+    : undefined;
   const pluginManager = pluginPlatform ? new PluginManager({
     paths: resolvePluginPlatformPaths(), dataDir: paths.dataDir, coreVersion: APP_VERSION, platform: pluginPlatform, publicKey: pluginPublicKey,
     onOutput: (pluginId, stream, text) => bootstrapLogger.info({ pluginId, stream, text: text.trimEnd() }, "Plugin output"),
+    devPlugins,
   }) : undefined;
-  const pluginCatalogUrl = process.env.MEMORYLANE_PLUGIN_CATALOG_URL;
-  const bundledPluginRepository = process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY;
   if (pluginManager && bundledPluginRepository && pluginPublicKey) {
     try { const catalog = new PluginCatalogLoader({ publicKey: pluginPublicKey }).loadDirectory(bundledPluginRepository); pluginManager.setCatalog(catalog); await pluginManager.installRequiredFromDirectory(bundledPluginRepository, catalog); }
     catch (error) { bootstrapLogger.warn({ err: error }, "Bundled plugin repository could not be installed"); }

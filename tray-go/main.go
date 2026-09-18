@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,7 +40,6 @@ func resolvedPluginCatalogURL() string {
 
 type config struct {
 	Port          int  `json:"port"`
-	AutoStart     bool `json:"autoStart"`
 	LaunchAtLogin bool `json:"launchAtLogin"`
 }
 
@@ -53,18 +51,18 @@ type supervisor struct {
 	token   string
 	logFile *os.File
 	onState func(string)
+	// Only set on the real tray's supervisor - runSmokeTest's own supervisor
+	// wants to handle a startup failure itself (print, return a code) rather
+	// than have fail() show a dialog and os.Exit from under it.
+	exitOnFailure bool
 }
 
 var (
-	sup           *supervisor
-	menuState     *systray.MenuItem
-	menuStart     *systray.MenuItem
-	menuStop      *systray.MenuItem
-	menuOpen      *systray.MenuItem
-	menuAutoStart *systray.MenuItem
-	menuLogin     *systray.MenuItem
-	menuUpdate    *systray.MenuItem
-	tray          *systray.SystemTray
+	sup        *supervisor
+	menuState  *systray.MenuItem
+	menuLogin  *systray.MenuItem
+	menuUpdate *systray.MenuItem
+	tray       *systray.SystemTray
 )
 
 func main() {
@@ -75,7 +73,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		return
 	}
-	sup = &supervisor{state: "stopped"}
+	sup = &supervisor{state: "stopped", exitOnFailure: true}
 	onReady()
 	if err := tray.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -130,17 +128,6 @@ func onReady() {
 	versionItem := menu.Add("Version "+version, nil)
 	versionItem.SetDisabled(true)
 	menu.AddSeparator()
-	menuStart = menu.Add("Start Server", func() { go sup.start(cfg.Port) })
-	menuStop = menu.Add("Stop Server", func() { go sup.stop() })
-	menuOpen = menu.Add("Open in Browser", func() {
-		_ = openBrowser(fmt.Sprintf("http://127.0.0.1:%d", cfg.Port))
-	})
-	menu.AddSeparator()
-	menuAutoStart = menu.AddCheckbox("Start server with MemoryLane", cfg.AutoStart, func() {
-		cfg.AutoStart = !menuAutoStart.IsChecked()
-		menuAutoStart.SetChecked(cfg.AutoStart)
-		_ = saveConfig(cfg)
-	})
 	loginEnabled := launchAtLoginEnabled()
 	menuLogin = menu.AddCheckbox("Launch MemoryLane at login", loginEnabled, func() {
 		enable := !menuLogin.IsChecked()
@@ -165,7 +152,11 @@ func onReady() {
 	updateMenu("stopped")
 	writeReadyMarker()
 
-	if cfg.AutoStart && os.Getenv("MEMORYLANE_TRAY_NO_AUTOSTART") != "1" {
+	// Always start on tray launch - there's no more "Start Server" menu item
+	// for a person to click instead, and a tray icon that isn't running the
+	// server isn't doing its job. MEMORYLANE_TRAY_NO_AUTOSTART remains an
+	// escape hatch for tests that want the tray UI up without a live server.
+	if os.Getenv("MEMORYLANE_TRAY_NO_AUTOSTART") != "1" {
 		go sup.start(cfg.Port)
 	}
 }
@@ -190,21 +181,6 @@ func updateMenu(state string) {
 	}[state]
 	menuState.SetLabel(label)
 	tray.SetTooltip(label)
-	if state == "stopped" || state == "error" {
-		menuStart.SetDisabled(false)
-	} else {
-		menuStart.SetDisabled(true)
-	}
-	if state == "running" || state == "starting" {
-		menuStop.SetDisabled(false)
-	} else {
-		menuStop.SetDisabled(true)
-	}
-	if state == "running" {
-		menuOpen.SetDisabled(false)
-	} else {
-		menuOpen.SetDisabled(true)
-	}
 }
 
 func (s *supervisor) setState(state string) {
@@ -332,6 +308,13 @@ func (s *supervisor) stop() {
 	_ = terminateProcessTree(cmd)
 }
 
+// Only ever reached from a *startup* failure (runtime missing, spawn error,
+// etc. - see the call sites in start()) - a crash after the server was
+// already running just sets state "error" directly, no dialog, since the
+// tray itself is still a perfectly usable way to see that and (once relaunched)
+// try again. A startup failure is different: with no more "Start Server" menu
+// item to retry from, a dead tray icon with only a hard-to-notice disabled
+// menu label as its only signal isn't good enough - show it and exit instead.
 func (s *supervisor) fail(err error) {
 	logPath := filepath.Join(appDataDir(), "tray.log")
 	_ = os.MkdirAll(filepath.Dir(logPath), 0700)
@@ -341,10 +324,14 @@ func (s *supervisor) fail(err error) {
 		_ = f.Close()
 	}
 	s.setState("error")
+	if s.exitOnFailure {
+		showFatalError("MemoryLane could not start", err.Error())
+		os.Exit(1)
+	}
 }
 
 func loadConfig() config {
-	cfg := config{Port: 4280, AutoStart: true}
+	cfg := config{Port: 4280}
 	data, err := os.ReadFile(filepath.Join(appDataDir(), "desktop-config.json"))
 	if err == nil {
 		_ = json.Unmarshal(data, &cfg)
@@ -425,8 +412,3 @@ func writeReadyMarker() {
 }
 
 func nodeBinaryName() string { return platformNodeBinaryName() }
-
-func validLocalURL(raw string) bool {
-	u, err := url.Parse(raw)
-	return err == nil && u.Scheme == "http" && u.Hostname() == "127.0.0.1"
-}

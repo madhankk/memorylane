@@ -3,11 +3,14 @@ import net from "node:net";
 import fs from "node:fs";
 import { randomBytes } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
-import { PluginManifestSchema, type PluginManifest } from "@memorylane/plugin-sdk";
+import { DEV_SERVICE_TOKEN, PluginManifestSchema, type PluginManifest } from "@memorylane/plugin-sdk";
 
 export interface ServiceInstance {
   manifest: PluginManifest & { entry: { kind: "service"; executable: string; args: string[] } };
-  process: ChildProcess;
+  // Absent for a dev-catalog instance (manifest.entry.devPort set) - core
+  // never spawned it, so there's nothing here to own or kill, only a port to
+  // health-check.
+  process?: ChildProcess;
   port: number;
   token: string;
   stopping: boolean;
@@ -31,6 +34,7 @@ export class PluginServiceSupervisor {
     const manifest = PluginManifestSchema.parse(rawManifest);
     if (manifest.entry.kind !== "service") throw new Error("Only service plugins can be supervised");
     if (this.instances.has(manifest.id)) throw new Error(`${manifest.id} is already running`);
+    if (manifest.entry.devPort) return this.startDev(manifest as ServiceInstance["manifest"], manifest.entry.devPort);
     const definition = this.definitions.get(manifest.id) ?? { manifest, pluginDir, attempts: 0 };
     definition.manifest = manifest;
     definition.pluginDir = pluginDir;
@@ -83,6 +87,23 @@ export class PluginServiceSupervisor {
 
   get(pluginId: string): ServiceInstance | undefined { return this.instances.get(pluginId); }
 
+  // Dev-catalog noop lifecycle: the plugin author runs this process
+  // themselves (their own `npm run dev` or equivalent) on a fixed,
+  // manifest-declared port - core only health-checks it, never spawns or
+  // kills it. waitUntilReady is exactly the same poll a spawned instance
+  // uses; it only cares that something answers on the port, not who started it.
+  private async startDev(manifest: ServiceInstance["manifest"], port: number): Promise<ServiceInstance> {
+    const instance: ServiceInstance = { manifest, port, token: DEV_SERVICE_TOKEN, stopping: false, spawnError: null };
+    this.instances.set(manifest.id, instance);
+    try {
+      await this.waitUntilReady(instance);
+      return instance;
+    } catch (error) {
+      this.instances.delete(manifest.id);
+      throw error;
+    }
+  }
+
   async stop(pluginId: string): Promise<void> {
     const instance = this.instances.get(pluginId);
     if (!instance) return;
@@ -90,6 +111,8 @@ export class PluginServiceSupervisor {
     const definition = this.definitions.get(pluginId);
     if (definition?.timer) clearTimeout(definition.timer);
     this.definitions.delete(pluginId);
+    const child = instance.process;
+    if (!child) { this.instances.delete(pluginId); return; }
     try {
       await fetch(`http://127.0.0.1:${instance.port}/shutdown`, {
         method: "POST",
@@ -97,13 +120,13 @@ export class PluginServiceSupervisor {
         signal: AbortSignal.timeout(2_000),
       });
     } catch { /* process termination below is authoritative */ }
-    if (instance.process.exitCode === null) {
+    if (child.exitCode === null) {
       await Promise.race([
-        new Promise<void>((resolve) => instance.process.once("exit", () => resolve())),
+        new Promise<void>((resolve) => child.once("exit", () => resolve())),
         new Promise<void>((resolve) => setTimeout(resolve, 2_000)),
       ]);
     }
-    if (instance.process.exitCode === null) await this.forceStop(instance);
+    if (child.exitCode === null) await this.forceStop(instance);
     this.instances.delete(pluginId);
   }
 
@@ -114,7 +137,7 @@ export class PluginServiceSupervisor {
     const deadline = Date.now() + health.timeoutSeconds * 1_000;
     let lastError = "service did not respond";
     while (Date.now() < deadline) {
-      if (instance.process.exitCode !== null) throw new Error(`Plugin exited before it became ready (${instance.process.exitCode})`);
+      if (instance.process && instance.process.exitCode !== null) throw new Error(`Plugin exited before it became ready (${instance.process.exitCode})`);
       if (instance.spawnError) throw instance.spawnError;
       try {
         const response = await fetch(`http://127.0.0.1:${instance.port}${health.path}`, {
@@ -132,25 +155,29 @@ export class PluginServiceSupervisor {
     throw new Error(`Plugin health check timed out: ${lastError}`);
   }
 
+  // Only ever called on a supervisor-spawned instance (start()'s own catch
+  // block, and stop() after its `!instance.process` dev-lifecycle early
+  // return) - never on a dev-catalog noop instance, but guard anyway.
   private async forceStop(instance: ServiceInstance): Promise<void> {
-    if (instance.process.exitCode !== null) return;
-    if (process.platform === "win32" && instance.process.pid) {
-      const killer = spawn("taskkill.exe", ["/pid", String(instance.process.pid), "/t", "/f"], {
+    const child = instance.process;
+    if (!child || child.exitCode !== null) return;
+    if (process.platform === "win32" && child.pid) {
+      const killer = spawn("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
         shell: false, windowsHide: true, stdio: "ignore",
       });
       await new Promise<void>((resolve) => killer.once("exit", () => resolve()));
-    } else if (instance.process.pid) {
-      try { process.kill(-instance.process.pid, "SIGTERM"); } catch { instance.process.kill(); }
-    } else instance.process.kill();
+    } else if (child.pid) {
+      try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill(); }
+    } else child.kill();
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
         try {
-          if (process.platform !== "win32" && instance.process.pid) process.kill(-instance.process.pid, "SIGKILL");
-          else instance.process.kill("SIGKILL");
+          if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
+          else child.kill("SIGKILL");
         } catch { /* already stopped */ }
         resolve();
       }, 2_000);
-      instance.process.once("exit", () => { clearTimeout(timer); resolve(); });
+      child.once("exit", () => { clearTimeout(timer); resolve(); });
     });
   }
 

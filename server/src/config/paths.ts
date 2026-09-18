@@ -18,6 +18,19 @@ export function platformDefaultDataDir(): string {
   return path.join(xdgDataHome, "MemoryLane");
 }
 
+// Repository root - server/src/config (dev, tsx) or server/dist/config
+// (built) is always three levels below it (config -> src|dist -> server -> root).
+export const repoRootDir = path.resolve(import.meta.dirname, "..", "..", "..");
+
+// Resolves a path-shaped env var (MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY,
+// MEMORYLANE_PLUGIN_PUBLIC_KEY) against the repository root rather than
+// process.cwd() - `npm run dev`/`npm start` run with cwd inside server/, so a
+// relative value from .env or the shell would otherwise resolve against the
+// wrong directory.
+export function resolveRepoPath(value: string): string {
+  return path.isAbsolute(value) ? value : path.resolve(repoRootDir, value);
+}
+
 export const DATA_LOCATION_FILE = "data-location.txt";
 
 export type DataDirSource = "env" | "pointer" | "default";

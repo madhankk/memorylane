@@ -1,7 +1,18 @@
 import { pathToFileURL } from "node:url";
 
+interface PluginLogger {
+  info(message: string, ...args: unknown[]): void;
+  warn(message: string, ...args: unknown[]): void;
+  error(message: string, ...args: unknown[]): void;
+}
+
 interface PluginModule {
-  activate?: (context: { pluginId: string; dataDir: string }) => Promise<PluginModuleInstance> | PluginModuleInstance;
+  activate?: (context: {
+    pluginId: string;
+    dataDir: string;
+    logger: PluginLogger;
+    plugin: { id: string; version: string };
+  }) => Promise<PluginModuleInstance> | PluginModuleInstance;
 }
 
 interface PluginModuleInstance {
@@ -12,13 +23,19 @@ interface PluginModuleInstance {
 const loaded = new Map<string, PluginModuleInstance>();
 
 process.on("message", async (message: unknown) => {
-  const request = message as { requestId: number; type: string; pluginId?: string; entry?: string; dataDir?: string; method?: string; payload?: unknown };
+  const request = message as { requestId: number; type: string; pluginId?: string; version?: string; entry?: string; dataDir?: string; method?: string; payload?: unknown };
   const respond = (response: object) => process.send?.({ requestId: request.requestId, ...response });
   try {
-    if (request.type === "load" && request.pluginId && request.entry && request.dataDir) {
+    if (request.type === "load" && request.pluginId && request.version && request.entry && request.dataDir) {
+      const pluginId = request.pluginId;
+      const logger: PluginLogger = {
+        info: (message, ...args) => console.log(`[${pluginId}]`, message, ...args),
+        warn: (message, ...args) => console.warn(`[${pluginId}]`, message, ...args),
+        error: (message, ...args) => console.error(`[${pluginId}]`, message, ...args),
+      };
       const plugin = await import(pathToFileURL(request.entry).href) as PluginModule;
-      const instance = await plugin.activate?.({ pluginId: request.pluginId, dataDir: request.dataDir }) ?? {};
-      loaded.set(request.pluginId, instance);
+      const instance = await plugin.activate?.({ pluginId, dataDir: request.dataDir, logger, plugin: { id: pluginId, version: request.version } }) ?? {};
+      loaded.set(pluginId, instance);
       return respond({ ok: true });
     }
     if (request.type === "call" && request.pluginId && request.method) {

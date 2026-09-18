@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -21,12 +22,6 @@ func platformNodeBinaryName() string      { return "node-runtime" }
 func configureChildProcess(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }
 func terminateProcessTree(cmd *exec.Cmd) error {
 	return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-}
-func openBrowser(raw string) error {
-	if !validLocalURL(raw) {
-		return fmt.Errorf("refusing non-local URL")
-	}
-	return exec.Command("open", raw).Start()
 }
 func launchAgentPath() string {
 	home, _ := os.UserHomeDir()
@@ -70,6 +65,14 @@ func acquireSingleInstance() error {
 	_, _ = fmt.Fprint(f, os.Getpid())
 	return nil
 }
+
+// A blocking native alert via osascript - no third-party dependency needed.
+// Used only for a startup failure the tray is about to exit over.
+func showFatalError(title, message string) {
+	script := `display alert "` + strings.ReplaceAll(title, `"`, `\"`) + `" message "` + strings.ReplaceAll(message, `"`, `\"`) + `" as critical`
+	_ = exec.Command("osascript", "-e", script).Run()
+}
+
 func releaseSingleInstance() {
 	if instanceFile != nil {
 		path := instanceFile.Name()

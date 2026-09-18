@@ -24,6 +24,11 @@ export interface PluginManagerOptions {
   platform: PluginPlatform;
   publicKey: KeyLike;
   onOutput?: (pluginId: string, stream: "stdout" | "stderr", text: string) => void;
+  // Dev-catalog mode (see dev-catalog.ts) - plugins loaded straight from
+  // their source directory, bypassing PluginInstaller/PluginStateStore
+  // entirely. Only ever populated by server.ts when neither a real catalog
+  // URL nor a signed bundled directory is configured.
+  devPlugins?: Map<string, { manifest: PluginManifest; sourceDir: string }>;
 }
 
 const FIRST_PARTY_PLUGINS = [
@@ -43,6 +48,9 @@ export class PluginManager {
   private readonly output = new Map<string, string[]>();
   private shuttingDown = false;
   private readonly operations = new Set<string>();
+  private readonly devPlugins: Map<string, { manifest: PluginManifest; sourceDir: string }>;
+  private readonly devEnabled = new Set<string>();
+  private readonly devErrors = new Map<string, string>();
 
   constructor(private readonly options: PluginManagerOptions) {
     this.state = new PluginStateStore(options.paths);
@@ -54,8 +62,11 @@ export class PluginManager {
       onOutput: (id, stream, text) => { const lines=this.output.get(id)??[]; lines.push(`[${stream}] ${text}`); this.output.set(id,lines.slice(-200)); options.onOutput?.(id,stream,text); },
     });
     this.moduleHost = new PluginModuleHost((id) => ensureDirectory(path.join(options.dataDir, "plugin-data", id)));
+    this.devPlugins = options.devPlugins ?? new Map();
     this.state.reconcile();
   }
+
+  isDevPlugin(pluginId: string): boolean { return this.devPlugins.has(pluginId); }
 
   setCatalog(catalog: PluginCatalog): void { this.catalog = catalog; }
 
@@ -81,15 +92,35 @@ export class PluginManager {
   inventory(): PluginInventoryItem[] {
     const state = this.state.snapshot();
     const known = new Map<string, (typeof FIRST_PARTY_PLUGINS)[number]>(FIRST_PARTY_PLUGINS.map((item) => [item.id, item]));
-    const ids = new Set([...known.keys(), ...Object.keys(state.plugins), ...(this.catalog?.releases.map((item) => item.manifest.id) ?? [])]);
+    const ids = new Set([...known.keys(), ...Object.keys(state.plugins), ...(this.catalog?.releases.map((item) => item.manifest.id) ?? []), ...this.devPlugins.keys()]);
     // Dependencies are stored as ids on the manifest - resolve them to the
     // display name the UI already shows for that plugin, so "Requires: AI
     // Runtime" reads naturally instead of exposing the raw package id.
     const nameFor = (dependencyId: string): string =>
       known.get(dependencyId)?.name
       ?? this.catalog?.releases.find((item) => item.manifest.id === dependencyId)?.manifest.name
+      ?? this.devPlugins.get(dependencyId)?.manifest.name
       ?? dependencyId;
     return [...ids].sort().flatMap((id) => {
+      const dev = this.devPlugins.get(id);
+      if (dev) {
+        // Same pre-install exclusion as the catalog path below - a pure
+        // dependency like AI Runtime isn't a standalone install choice, it
+        // just gets pulled in transparently (now via enable()'s own
+        // dev-dependency auto-enable) by whatever actually needs it.
+        if (!this.devEnabled.has(id) && dev.manifest.infra) return [];
+        return [{
+          id,
+          name: dev.manifest.name,
+          description: dev.manifest.description,
+          version: dev.manifest.version,
+          state: this.devEnabled.has(id) ? "ready" : "available",
+          required: dev.manifest.required,
+          capabilities: dev.manifest.capabilities,
+          dependsOn: dev.manifest.dependencies.map((dependency) => nameFor(dependency.id)),
+          error: this.devErrors.get(id) ?? null,
+        }] satisfies PluginInventoryItem[];
+      }
       const installed = state.plugins[id];
       const fallback = known.get(id);
       const releases = this.catalog?.releases.filter((item) => item.manifest.id === id && item.manifest.platform === this.options.platform && !this.catalog?.revoked.some((revoked)=>revoked.id===id&&revoked.version===item.manifest.version)) ?? [];
@@ -228,6 +259,39 @@ export class PluginManager {
   }
 
   async enable(pluginId: string, version: string): Promise<void> {
+    const dev = this.devPlugins.get(pluginId);
+    if (dev) {
+      if (dev.manifest.version !== version) throw new Error("Plugin version is not installed");
+      for (const dependency of dev.manifest.dependencies) {
+        if (this.devEnabled.has(dependency.id)) continue;
+        const dependencyDev = this.devPlugins.get(dependency.id);
+        // A dev-catalog dependency is also loaded straight from source, same
+        // as the leaf plugin - auto-enable it first, mirroring how a real
+        // catalog install pulls in its dependencies via
+        // installReleaseWithDependencies rather than making the person
+        // enable them by hand one at a time.
+        if (dependencyDev) {
+          if (!coreVersionSatisfies(dependencyDev.manifest.version, dependency.version)) {
+            throw new Error(`Dependency ${dependency.id} ${dependencyDev.manifest.version} does not satisfy required range ${dependency.version}`);
+          }
+          await this.enable(dependency.id, dependencyDev.manifest.version);
+          continue;
+        }
+        const dependencyState = this.state.snapshot().plugins[dependency.id];
+        const satisfied = !!dependencyState?.enabled && !!dependencyState.activeVersion && coreVersionSatisfies(dependencyState.activeVersion, dependency.version);
+        if (!satisfied) throw new Error(`Enable dependency ${dependency.id} ${dependency.version} first`);
+      }
+      try {
+        if (dev.manifest.entry.kind === "service") await this.supervisor.start(dev.manifest, dev.sourceDir);
+        if (dev.manifest.entry.kind === "module") await this.moduleHost.load(dev.manifest, dev.sourceDir);
+        this.devEnabled.add(pluginId);
+        this.devErrors.delete(pluginId);
+      } catch (error) {
+        this.devErrors.set(pluginId, error instanceof Error ? error.message : String(error));
+        throw error;
+      }
+      return;
+    }
     const installed = this.state.snapshot().plugins[pluginId];
     if (!installed?.installedVersions.includes(version)) throw new Error("Plugin version is not installed");
     const manifest = this.readManifest(pluginId, version);
@@ -255,6 +319,12 @@ export class PluginManager {
   }
 
   async disable(pluginId: string): Promise<void> {
+    if (this.devPlugins.has(pluginId)) {
+      await this.supervisor.stop(pluginId);
+      try { await this.moduleHost.unload(pluginId); } catch { /* plugin may not be a loaded module */ }
+      this.devEnabled.delete(pluginId);
+      return;
+    }
     await this.supervisor.stop(pluginId);
     try { await this.moduleHost.unload(pluginId); } catch { /* plugin may not be a loaded module */ }
     this.state.update((draft) => {
@@ -296,6 +366,14 @@ export class PluginManager {
   }
 
   async startEnabled(): Promise<void> {
+    // Mirrors installRequiredFromDirectory's auto-enable for the signed
+    // bundled-directory path - required dev plugins should just work the
+    // moment the server boots, same as a packaged install's required plugins do.
+    for (const [id, dev] of this.devPlugins) {
+      if (dev.manifest.required && !this.devEnabled.has(id)) {
+        try { await this.enable(id, dev.manifest.version); } catch { /* recorded in devErrors, visible via inventory() */ }
+      }
+    }
     for (const [id, plugin] of Object.entries(this.state.snapshot().plugins)) {
       if (!plugin.enabled || !plugin.activeVersion) continue;
       if (this.supervisor.get(id)) continue;

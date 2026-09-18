@@ -21,6 +21,11 @@ const ServiceEntrySchema = z.object({
   kind: z.literal("service"),
   executable: packagePath,
   args: z.array(z.string().max(1_000)).max(100).default([]),
+  // Dev-catalog mode only: a fixed port the plugin author's own
+  // independently-run process listens on, so core can health-check it
+  // instead of spawning/owning it. Ignored outside dev-catalog mode, where
+  // the supervisor always assigns a random loopback port itself.
+  devPort: z.number().int().min(1024).max(65535).optional(),
 });
 
 const CommandEntrySchema = z.object({
