@@ -76,10 +76,12 @@ export interface PluginDto {
 export interface PluginPlatformDto {
   id: string;
   name: string;
+  description: string;
   version: string | null;
   state: "available" | "downloading" | "installed" | "starting" | "ready" | "failed" | "update-available" | "disabled" | "incompatible";
   required: boolean;
   capabilities: string[];
+  dependsOn: string[];
   error: string | null;
 }
 

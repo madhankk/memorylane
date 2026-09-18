@@ -32,32 +32,44 @@ For local lifecycle testing, insert `development` after the channel name. This c
 
 The shippable directory is `dist/plugin-repository/v1/<channel>/`. `release-manifest.json` records the length and SHA-256 digest of every published file.
 
-Set `MEMORYLANE_BUNDLED_PLUGINS_DIR` to that channel directory during a desktop build to embed the same signed repository. On first startup, core verifies its catalog and artifacts, installs missing required plugins, and then continues to use normal plugin updates. Leave it unset for the small downloader build.
+Set `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY` to that channel directory during a desktop build to embed the same signed repository. On first startup, core verifies its catalog and artifacts, installs missing required plugins, and then continues to use normal plugin updates. Leave it unset for the small downloader build.
+
+## Live infrastructure
+
+The production catalog is hosted at `https://memorylaneapp.org/plugins/v1/stable/` (and `.../beta/`), on the same box as the `memorylaneapp.org` marketing site - see `openlaf.pem` in the deploy credentials for SSH access. `tray-go/scripts/package-windows.ps1` and `package-macos.sh` already compile `https://memorylaneapp.org/plugins/v1/stable/catalog.json` in as `MEMORYLANE_PLUGIN_CATALOG_URL`'s default, verified against the real committed `PLUGIN_RELEASE_PUBLIC_KEY` - a plain packaging run needs no extra configuration. Pass `MEMORYLANE_PLUGIN_CATALOG_URL` at packaging time to point a build at a different catalog instead (a beta channel, a self-hosted mirror); it's also overridable at launch time via the same-named environment variable for local testing (see the dev-mode local-catalog workflow below), which always wins over the compiled-in default.
+
+Directory structure and nginx cache-control rules (below) are already live; only the actual signed catalog/artifact files still need to be uploaded there - see "Atomic upload".
 
 ## Atomic upload
 
 Upload into a new sibling directory. Do not modify the live channel in place.
 
 ```bash
-rsync -av --delay-updates dist/plugin-repository/v1/stable/ deploy@example:/srv/memorylane/plugins/v1/stable.next/
-ssh deploy@example 'cd /srv/memorylane/plugins/v1 && mv stable stable.previous && mv stable.next stable'
+rsync -av --delay-updates dist/plugin-repository/v1/stable/ deploy@memorylaneapp.org:/var/www/memorylaneapp.org/plugins/v1/stable.next/
+ssh deploy@memorylaneapp.org 'cd /var/www/memorylaneapp.org/plugins/v1 && mv stable stable.previous && mv stable.next stable'
 ```
 
 Verify the remote files against `release-manifest.json` before the rename. Retain `stable.previous` until clients have successfully consumed the new catalog. Versioned artifacts are immutable and must never be overwritten; rollback publishes a newly signed catalog that points at a prior version.
 
-With plain SFTP, upload `artifacts/` first, then `release-manifest.json`, and upload `catalog.json` plus `catalog.json.sig` last. Prefer a server-side directory rename because it makes the complete release visible atomically.
+With plain SFTP, upload `artifacts/` first, then `release-manifest.json`, and upload `catalog.json` plus `catalog.json.sig` last. Prefer a server-side directory rename because it makes the complete release visible atomically. (No `deploy` user exists yet for this - today's SSH access is the `root` key in the deploy credentials; a dedicated deploy user is future work alongside the actual upload script.)
 
 ## Static server headers
 
-Example nginx rules:
+Nginx rules, live on `memorylaneapp.org` today (`/etc/nginx/sites-available/memorylaneapp.org`) - the catalog is nested under `/plugins/v1/<channel>/`, not served from the domain root, so the location patterns match on a path segment rather than anchoring to the start:
 
 ```nginx
-location ~ /catalog\.json(\.sig)?$ {
+location ~ ^/plugins/.*/(catalog\.json|catalog\.json\.sig)$ {
+    root /var/www/memorylaneapp.org;
     add_header Cache-Control "no-cache";
 }
 
-location /artifacts/ {
+location ~ ^/plugins/.*/artifacts/ {
+    root /var/www/memorylaneapp.org;
     add_header Cache-Control "public, max-age=31536000, immutable";
+}
+
+location /plugins/ {
+    root /var/www/memorylaneapp.org;
 }
 ```
 
@@ -66,3 +78,5 @@ Serve only over HTTPS. MIME type is not security-sensitive because clients valid
 ## Core update feed
 
 Packaged desktop builds use the Go tray's signed-manifest updater. Set `MEMORYLANE_UPDATE_FEED_URL` and `MEMORYLANE_UPDATE_PUBLIC_KEY` while packaging to compile the feed and Ed25519 public key into the tray. Generate the platform feed with `MEMORYLANE_UPDATE_PRIVATE_KEY=<pem> npm run desktop:update-manifest -- <installer> <public-url> <output.json>`. Publish the signed installer before its manifest. MemoryLane verifies the manifest signature and installer SHA-256, downloads in the background, and offers installation only after scans, transcodes, Apple sync, and plugin operations are idle.
+
+Unlike the plugin catalog, this has no compiled-in default yet - `npm run desktop:update-keygen` hasn't been run for a real release, so there's no signing key to verify a real feed against. The hosting directories already exist and are ready for it (same nginx pattern as the plugin catalog - a `no-cache` manifest, an `immutable` long-cache for the versioned installer next to it): `https://memorylaneapp.org/updates/win32-x64/`, `.../darwin-x64/`, `.../darwin-arm64/`, each holding that platform's `manifest.json` and installer.

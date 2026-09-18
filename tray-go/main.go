@@ -22,6 +22,23 @@ import (
 
 var version = "0.2.0"
 
+// Compiled in at package time via -X main.pluginCatalogURL=... (see
+// package-windows.ps1 / package-macos.sh), same mechanism as updateFeedURL
+// in updater.go. Empty by default so a dev build with no ldflag simply has
+// no catalog configured, same as before this existed.
+var pluginCatalogURL string
+
+// An explicit MEMORYLANE_PLUGIN_CATALOG_URL in the tray's own environment
+// always wins over the compiled-in default - this is what let us point a
+// packaged build at a local dev catalog for testing earlier, and lets
+// anyone self-hosting a mirror or a beta channel override it the same way.
+func resolvedPluginCatalogURL() string {
+	if explicit := os.Getenv("MEMORYLANE_PLUGIN_CATALOG_URL"); explicit != "" {
+		return explicit
+	}
+	return pluginCatalogURL
+}
+
 type config struct {
 	Port          int  `json:"port"`
 	AutoStart     bool `json:"autoStart"`
@@ -241,6 +258,9 @@ func (s *supervisor) start(port int) {
 	)
 	if plugins := bundledPluginsDir(runtimeDir); plugins != "" {
 		cmd.Env = append(cmd.Env, "MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY="+plugins)
+	}
+	if catalogURL := resolvedPluginCatalogURL(); catalogURL != "" {
+		cmd.Env = append(cmd.Env, "MEMORYLANE_PLUGIN_CATALOG_URL="+catalogURL)
 	}
 	configureChildProcess(cmd)
 	stdout, err := cmd.StdoutPipe()

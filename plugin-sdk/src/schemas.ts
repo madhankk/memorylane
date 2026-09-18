@@ -42,6 +42,14 @@ export const PluginManifestSchema = z.object({
   requiresCore: z.string().refine(isValidCoreRange, "Expected a supported core version range"),
   platform: z.enum(PLUGIN_PLATFORMS),
   required: z.boolean(),
+  // Pure infrastructure with no capability a user benefits from directly
+  // (e.g. a shared inference runtime other plugins call into) - never shown
+  // in any install/manage list, regardless of the current dependency graph.
+  // This is a property of the plugin itself, not something derived from
+  // who happens to depend on it today - a plugin that's a real, independently
+  // useful feature could become a dependency of something else in the future
+  // without becoming any less worth showing to users.
+  infra: z.boolean().default(false),
   entry: PluginEntrySchema,
   capabilities: z.array(PluginCapabilitySchema).max(100).refine(
     (items) => new Set(items).size === items.length,

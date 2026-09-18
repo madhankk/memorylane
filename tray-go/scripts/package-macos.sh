@@ -10,12 +10,19 @@ CONTENTS="$APP/Contents"
 
 node "$TRAY_ROOT/scripts/prepare-runtime.mjs"
 mkdir -p "$TRAY_ROOT/dist"
-(cd "$TRAY_ROOT" && go build -trimpath -ldflags "-s -w -X main.version=$VERSION -X main.updateFeedURL=${MEMORYLANE_UPDATE_FEED_URL:-} -X main.updatePublicKey=${MEMORYLANE_UPDATE_PUBLIC_KEY:-}" -o dist/MemoryLane .)
+# The real, signed catalog this verifies against is already hosted - see
+# docs/plugin-repository-deployment.md. Override for a build that should
+# point at a different catalog (e.g. a beta channel or a self-hosted mirror).
+PLUGIN_CATALOG_URL="${MEMORYLANE_PLUGIN_CATALOG_URL:-https://memorylaneapp.org/plugins/v1/stable/catalog.json}"
+(cd "$TRAY_ROOT" && go build -trimpath -ldflags "-s -w -X main.version=$VERSION -X main.updateFeedURL=${MEMORYLANE_UPDATE_FEED_URL:-} -X main.updatePublicKey=${MEMORYLANE_UPDATE_PUBLIC_KEY:-} -X main.pluginCatalogURL=$PLUGIN_CATALOG_URL" -o dist/MemoryLane .)
 rm -rf "$APP"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 cp "$TRAY_ROOT/dist/MemoryLane" "$CONTENTS/MacOS/MemoryLane"
 cp "$TRAY_ROOT/assets/icon.icns" "$CONTENTS/Resources/MemoryLane.icns"
 cp -R "$TRAY_ROOT/runtime" "$CONTENTS/Resources/runtime"
+if [[ -d "$TRAY_ROOT/bundled-plugins" ]]; then
+  cp -R "$TRAY_ROOT/bundled-plugins" "$CONTENTS/Resources/bundled-plugins"
+fi
 cat > "$CONTENTS/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.memorylane.desktop</string><key>CFBundleName</key><string>MemoryLane</string><key>CFBundleDisplayName</key><string>MemoryLane</string><key>CFBundleExecutable</key><string>MemoryLane</string><key>CFBundleIconFile</key><string>MemoryLane.icns</string><key>CFBundleShortVersionString</key><string>$VERSION</string><key>CFBundleVersion</key><string>$VERSION</string><key>LSUIElement</key><true/></dict></plist>
 EOF

@@ -27,11 +27,11 @@ export interface PluginManagerOptions {
 }
 
 const FIRST_PARTY_PLUGINS = [
-  { id: "com.memorylane.metadata-raw", name: "Metadata & RAW", required: true, capabilities: ["media.metadata", "media.raw-preview"] },
-  { id: "com.memorylane.video-tools", name: "Video Tools", required: true, capabilities: ["video.probe", "video.poster", "video.transcode"] },
-  { id: "com.memorylane.ai-runtime", name: "AI Runtime", required: false, capabilities: ["ai.image-embedding", "ai.text-embedding", "people.faces", "vector.store"] },
-  { id: "com.memorylane.ai-search", name: "AI Search & Similar", required: false, capabilities: ["ai.image-embedding", "ai.text-embedding"] },
-  { id: "com.memorylane.people", name: "People", required: false, capabilities: ["people.faces"] },
+  { id: "com.memorylane.metadata-raw", name: "Metadata & RAW", description: "ExifTool metadata extraction, full EXIF capture, and RAW embedded previews.", required: true, infra: false, capabilities: ["media.metadata", "media.raw-preview"] },
+  { id: "com.memorylane.video-tools", name: "Video Tools", description: "FFmpeg video probing, poster extraction, and modernization transcoding.", required: true, infra: false, capabilities: ["video.probe", "video.poster", "video.transcode"] },
+  { id: "com.memorylane.ai-runtime", name: "AI Runtime", description: "Shared local inference and vector runtime for MemoryLane AI features.", required: false, infra: true, capabilities: ["ai.image-embedding", "ai.text-embedding", "people.faces", "vector.store"] },
+  { id: "com.memorylane.ai-search", name: "AI Search & Similar", description: "Semantic search, image embeddings, and visually similar photos.", required: false, infra: false, capabilities: ["ai.image-embedding", "ai.text-embedding"] },
+  { id: "com.memorylane.people", name: "People", description: "Face detection, clustering, and person organization.", required: false, infra: false, capabilities: ["people.faces"] },
 ] as const;
 
 export class PluginManager {
@@ -82,7 +82,14 @@ export class PluginManager {
     const state = this.state.snapshot();
     const known = new Map<string, (typeof FIRST_PARTY_PLUGINS)[number]>(FIRST_PARTY_PLUGINS.map((item) => [item.id, item]));
     const ids = new Set([...known.keys(), ...Object.keys(state.plugins), ...(this.catalog?.releases.map((item) => item.manifest.id) ?? [])]);
-    return [...ids].sort().map((id) => {
+    // Dependencies are stored as ids on the manifest - resolve them to the
+    // display name the UI already shows for that plugin, so "Requires: AI
+    // Runtime" reads naturally instead of exposing the raw package id.
+    const nameFor = (dependencyId: string): string =>
+      known.get(dependencyId)?.name
+      ?? this.catalog?.releases.find((item) => item.manifest.id === dependencyId)?.manifest.name
+      ?? dependencyId;
+    return [...ids].sort().flatMap((id) => {
       const installed = state.plugins[id];
       const fallback = known.get(id);
       const releases = this.catalog?.releases.filter((item) => item.manifest.id === id && item.manifest.platform === this.options.platform && !this.catalog?.revoked.some((revoked)=>revoked.id===id&&revoked.version===item.manifest.version)) ?? [];
@@ -102,15 +109,26 @@ export class PluginManager {
         : installed?.enabled ? "installed"
         : installed ? "disabled"
         : "available";
-      return {
+      // infra plugins (pure dependencies with no user-facing capability of
+      // their own, e.g. AI Runtime) are never offered as a standalone install
+      // choice - installing a feature that needs one still pulls it in
+      // transparently via installFromCatalog/installFromDirectory's own
+      // dependency walk, which reads the catalog directly rather than going
+      // through inventory(). Once actually installed (as a side effect of
+      // that), it's a normal plugin like any other - visible, manageable,
+      // with the same controls - so the exclusion only applies pre-install.
+      if (stateName === "available" && (display?.infra ?? fallback?.infra ?? false)) return [];
+      return [{
         id,
         name: display?.name ?? fallback?.name ?? id,
+        description: display?.description ?? fallback?.description ?? "",
         version: newer ? latestRelease.manifest.version : installed?.activeVersion ?? display?.version ?? null,
         state: stateName,
         required: display?.required ?? fallback?.required ?? false,
         capabilities: display?.capabilities ?? [...(fallback?.capabilities ?? [])],
+        dependsOn: (display?.dependencies ?? []).map((dependency) => nameFor(dependency.id)),
         error: installed?.lastError ?? (!installed && releases.length === 0 ? (this.catalog ? "No compatible release is available" : "Plugin catalog is not configured") : null),
-      };
+      }];
     });
   }
 
@@ -129,7 +147,17 @@ export class PluginManager {
     } finally { this.operations.delete(release.manifest.id); }
   }
 
-  async installFromCatalog(pluginId: string, version: string, catalogUrl: string, extra: Partial<PluginInstallOptions> = {}): Promise<void> {
+  // Shared by installFromCatalog (remote HTTPS) and installFromDirectory
+  // (local disk, used for the bundled required plugins at boot and for the
+  // dev-mode local-catalog install/update flow - see plugin-routes.ts). Both
+  // resolve dependencies identically against the already-loaded catalog;
+  // they only differ in how the leaf release's artifact bytes get located,
+  // which `resolveInstallOptions` decides.
+  private async installReleaseWithDependencies(
+    pluginId: string,
+    version: string,
+    resolveInstallOptions: (release: PluginCatalogRelease) => { artifactBaseUrl: string; extra?: Partial<PluginInstallOptions> },
+  ): Promise<void> {
     const release = this.catalog?.releases.find((item) => item.manifest.id === pluginId && item.manifest.version === version && item.manifest.platform === this.options.platform);
     if (!release) throw new Error("Plugin release is not present in the loaded catalog");
     for (const dependency of release.manifest.dependencies) {
@@ -139,10 +167,30 @@ export class PluginManager {
         .filter((item) => item.manifest.id === dependency.id && item.manifest.platform === this.options.platform && coreVersionSatisfies(item.manifest.version, dependency.version))
         .sort((a, b) => b.manifest.version.localeCompare(a.manifest.version))[0];
       if (!dependencyRelease) throw new Error(`Required dependency is unavailable: ${dependency.id} ${dependency.version}`);
-      if (!state?.installedVersions.includes(dependencyRelease.manifest.version)) await this.installFromCatalog(dependency.id, dependencyRelease.manifest.version, catalogUrl, extra);
+      if (!state?.installedVersions.includes(dependencyRelease.manifest.version)) {
+        await this.installReleaseWithDependencies(dependency.id, dependencyRelease.manifest.version, resolveInstallOptions);
+      }
       await this.enable(dependency.id, dependencyRelease.manifest.version);
     }
-    await this.install(release, catalogUrl, extra);
+    const { artifactBaseUrl, extra } = resolveInstallOptions(release);
+    await this.install(release, artifactBaseUrl, extra);
+  }
+
+  async installFromCatalog(pluginId: string, version: string, catalogUrl: string, extra: Partial<PluginInstallOptions> = {}): Promise<void> {
+    await this.installReleaseWithDependencies(pluginId, version, () => ({ artifactBaseUrl: catalogUrl, extra }));
+  }
+
+  // Local-disk counterpart to installFromCatalog, for a catalog that was
+  // loaded via PluginCatalogLoader.loadDirectory (MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY)
+  // rather than fetched over HTTPS - same artifact-path resolution and
+  // traversal guard as installRequiredFromDirectory below, generalized to
+  // any single release (with its dependencies) instead of only required ones.
+  async installFromDirectory(pluginId: string, version: string, directory: string): Promise<void> {
+    await this.installReleaseWithDependencies(pluginId, version, (release) => {
+      const artifactPath = path.resolve(directory, ...release.artifact.url.split("/"));
+      if (!artifactPath.startsWith(path.resolve(directory) + path.sep)) throw new Error("Bundled artifact escapes its repository");
+      return { artifactBaseUrl: "https://bundled.invalid/", extra: { artifactPath } };
+    });
   }
 
   async updateFromCatalog(pluginId: string, version: string, catalogUrl: string, extra: Partial<PluginInstallOptions> = {}): Promise<void> {
@@ -150,6 +198,14 @@ export class PluginManager {
     const previousVersion = previous?.activeVersion ?? null;
     if (previousVersion && compareVersions(version, previousVersion) <= 0) throw new Error("Plugin updates must use a newer version");
     if (!previous?.installedVersions.includes(version)) await this.installFromCatalog(pluginId, version, catalogUrl, extra);
+    await this.activateInstalledUpdate(pluginId, version);
+  }
+
+  async updateFromDirectory(pluginId: string, version: string, directory: string): Promise<void> {
+    const previous = this.state.snapshot().plugins[pluginId];
+    const previousVersion = previous?.activeVersion ?? null;
+    if (previousVersion && compareVersions(version, previousVersion) <= 0) throw new Error("Plugin updates must use a newer version");
+    if (!previous?.installedVersions.includes(version)) await this.installFromDirectory(pluginId, version, directory);
     await this.activateInstalledUpdate(pluginId, version);
   }
 
@@ -208,9 +264,35 @@ export class PluginManager {
   }
 
   async uninstall(pluginId: string, version: string): Promise<void> {
+    let manifest: PluginManifest | undefined;
+    try { manifest = this.readManifest(pluginId, version); } catch { /* fall through to the dependents check below */ }
+    if (manifest?.required) throw new Error("Required plugins cannot be removed");
+    const dependents = this.installedDependents(pluginId);
+    if (dependents.length > 0) throw new Error(`Cannot remove - still needed by ${dependents.join(", ")}`);
     const active = this.state.snapshot().plugins[pluginId]?.activeVersion === version;
     if (active) await this.disable(pluginId);
     this.installer.uninstall(pluginId, version);
+  }
+
+  // Names of installed plugins that declare pluginId as a dependency -
+  // checked regardless of whether they're currently enabled, since enable()
+  // doesn't re-run dependency installation (only install/update do), so a
+  // disabled dependent re-enabled later would find nothing waiting for it.
+  // Deliberately no cascade in the other direction: nothing here auto-removes
+  // or auto-disables a dependency once its last dependent is gone - it just
+  // stays installed until a person decides to do something about it.
+  private installedDependents(pluginId: string): string[] {
+    const state = this.state.snapshot();
+    const dependents: string[] = [];
+    for (const [id, entry] of Object.entries(state.plugins)) {
+      if (id === pluginId) continue;
+      const version = entry.activeVersion ?? entry.installedVersions[entry.installedVersions.length - 1];
+      if (!version) continue;
+      let manifest: PluginManifest;
+      try { manifest = this.readManifest(id, version); } catch { continue; }
+      if (manifest.dependencies.some((dependency) => dependency.id === pluginId)) dependents.push(manifest.name);
+    }
+    return dependents;
   }
 
   async startEnabled(): Promise<void> {
@@ -228,9 +310,7 @@ export class PluginManager {
       if (!release.manifest.required || release.manifest.platform !== this.options.platform) continue;
       const state = this.state.snapshot().plugins[release.manifest.id];
       if (state?.installedVersions.includes(release.manifest.version)) continue;
-      const artifactPath = path.resolve(directory, ...release.artifact.url.split("/"));
-      if (!artifactPath.startsWith(path.resolve(directory) + path.sep)) throw new Error("Bundled artifact escapes its repository");
-      await this.install(release, "https://bundled.invalid/", { artifactPath });
+      await this.installFromDirectory(release.manifest.id, release.manifest.version, directory);
       await this.enable(release.manifest.id, release.manifest.version);
       installed++;
     }

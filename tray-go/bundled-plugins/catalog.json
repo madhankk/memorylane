@@ -1,0 +1,95 @@
+{
+  "formatVersion": 1,
+  "channel": "stable",
+  "generatedAt": "2026-09-18T18:42:24.332Z",
+  "revoked": [],
+  "releases": [
+    {
+      "manifest": {
+        "id": "com.memorylane.metadata-raw",
+        "name": "Metadata & RAW",
+        "description": "ExifTool metadata extraction, full EXIF capture, and RAW embedded previews.",
+        "version": "1.0.0",
+        "pluginApi": 1,
+        "requiresCore": ">=0.2.0 <1.0.0",
+        "platform": "win32-x64",
+        "required": true,
+        "infra": false,
+        "entry": {
+          "kind": "service",
+          "executable": "service.mjs",
+          "args": []
+        },
+        "capabilities": [
+          "media.metadata",
+          "media.raw-preview"
+        ],
+        "dependencies": [],
+        "health": {
+          "path": "/health",
+          "timeoutSeconds": 30
+        },
+        "restart": {
+          "policy": "on-failure",
+          "maxAttempts": 5
+        },
+        "licenseFiles": [
+          "licenses/LICENSE.txt"
+        ]
+      },
+      "artifact": {
+        "url": "artifacts/com.memorylane.metadata-raw/1.0.0/win32-x64.mlplugin",
+        "size": 12133785,
+        "installedSize": 38521709,
+        "sha256": "9ad4a4f3278a847cb1ccba334902d1e22dddfada79c89119be5ccdbab9cc159c",
+        "signature": "WmQAJM3eg9WHKKboMdOxiKCR+OkN8FMIUAdqEDjrkkE1i78V9B2+5iQSflRLzYHfSs/wxang8oyPrFO4Xz5vCA=="
+      },
+      "releaseNotes": "Repository lifecycle fixture.",
+      "mandatory": false
+    },
+    {
+      "manifest": {
+        "id": "com.memorylane.video-tools",
+        "name": "Video Tools",
+        "description": "FFmpeg video probing, poster extraction, and modernization transcoding.",
+        "version": "1.0.0",
+        "pluginApi": 1,
+        "requiresCore": ">=0.2.0 <1.0.0",
+        "platform": "win32-x64",
+        "required": true,
+        "infra": false,
+        "entry": {
+          "kind": "service",
+          "executable": "service.mjs",
+          "args": []
+        },
+        "capabilities": [
+          "video.probe",
+          "video.poster",
+          "video.transcode"
+        ],
+        "dependencies": [],
+        "health": {
+          "path": "/health",
+          "timeoutSeconds": 30
+        },
+        "restart": {
+          "policy": "on-failure",
+          "maxAttempts": 5
+        },
+        "licenseFiles": [
+          "licenses/LICENSE.txt"
+        ]
+      },
+      "artifact": {
+        "url": "artifacts/com.memorylane.video-tools/1.0.0/win32-x64.mlplugin",
+        "size": 52562821,
+        "installedSize": 147062608,
+        "sha256": "924abedc20579a9b9d244acd3fbc492832d9f4a3bf401df5d04150b026d82403",
+        "signature": "47hbJYfvO3yg8+OQNoLP098OBW9IwWfyCRZkhmOlRiTg/KJjykO+QNHJGzh4g+x/TLsrc5zYrl0tWcxss+YXAA=="
+      },
+      "releaseNotes": "Repository lifecycle fixture.",
+      "mandatory": false
+    }
+  ]
+}

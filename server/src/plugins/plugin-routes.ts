@@ -65,6 +65,14 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
     const id = (request.params as { id: string }).id;
     const parsed = z.object({ enabled: z.boolean(), version: z.string().optional() }).strict().safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "Invalid input" });
+    // Required plugins can still be disabled internally as part of an update
+    // (activateInstalledUpdate disables the old version before enabling the
+    // new one) - that's not a user turning a core feature off, so the guard
+    // belongs here, on the explicit user-facing request, not inside
+    // PluginManager.disable() itself.
+    if (!parsed.data.enabled && ctx.pluginManager.inventory().find((plugin) => plugin.id === id)?.required) {
+      return reply.code(409).send({ error: "Required plugins cannot be disabled" });
+    }
     try {
       if (parsed.data.enabled) {
         const version = parsed.data.version ?? ctx.pluginManager.state.snapshot().plugins[id]?.activeVersion;
@@ -87,15 +95,23 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
     catch (error) { return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) }); }
   });
 
+  // The dev/local-catalog fallback (MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY) lets
+  // install/update be exercised from Settings against a directory built with
+  // `npm run plugins:build -- stable development`, without standing up a real
+  // HTTPS catalog - see docs/plugin-repository-deployment.md. It only kicks
+  // in when no real catalog URL is configured, so a production deployment
+  // with MEMORYLANE_PLUGIN_CATALOG_URL set is unaffected.
   app.post("/api/plugin-platform/:id/install", { preHandler: app.requireAuth }, async (request, reply) => {
     if (!ctx.pluginManager) return reply.code(503).send({ error: "Plugin platform is unavailable on this system" });
     const id = (request.params as { id: string }).id;
     const parsed = z.object({ version: z.string() }).strict().safeParse(request.body);
     const catalogUrl = process.env.MEMORYLANE_PLUGIN_CATALOG_URL;
+    const bundledDirectory = process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY;
     if (!parsed.success) return reply.code(400).send({ error: "Invalid input" });
-    if (!catalogUrl) return reply.code(503).send({ error: "Plugin catalog is not configured" });
+    if (!catalogUrl && !bundledDirectory) return reply.code(503).send({ error: "Plugin catalog is not configured" });
     try {
-      await ctx.pluginManager.installFromCatalog(id, parsed.data.version, catalogUrl);
+      if (catalogUrl) await ctx.pluginManager.installFromCatalog(id, parsed.data.version, catalogUrl);
+      else await ctx.pluginManager.installFromDirectory(id, parsed.data.version, bundledDirectory!);
       return reply.code(201).send(ctx.pluginManager.inventory().find((plugin) => plugin.id === id));
     } catch (error) {
       return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) });
@@ -104,9 +120,14 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
 
   app.post("/api/plugin-platform/:id/update", { preHandler: app.requireAuth }, async (request, reply) => {
     if (!ctx.pluginManager) return reply.code(503).send({ error: "Plugin platform is unavailable on this system" });
-    const id=(request.params as {id:string}).id, parsed=z.object({version:z.string()}).strict().safeParse(request.body), catalogUrl=process.env.MEMORYLANE_PLUGIN_CATALOG_URL;
-    if(!parsed.success||!catalogUrl)return reply.code(400).send({error:"Plugin version or catalog is unavailable"});
-    try{await ctx.pluginManager.updateFromCatalog(id,parsed.data.version,catalogUrl);return reply.send(ctx.pluginManager.inventory().find(p=>p.id===id));}
+    const id=(request.params as {id:string}).id, parsed=z.object({version:z.string()}).strict().safeParse(request.body);
+    const catalogUrl=process.env.MEMORYLANE_PLUGIN_CATALOG_URL, bundledDirectory=process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY;
+    if(!parsed.success||(!catalogUrl&&!bundledDirectory))return reply.code(400).send({error:"Plugin version or catalog is unavailable"});
+    try{
+      if(catalogUrl)await ctx.pluginManager.updateFromCatalog(id,parsed.data.version,catalogUrl);
+      else await ctx.pluginManager.updateFromDirectory(id,parsed.data.version,bundledDirectory!);
+      return reply.send(ctx.pluginManager.inventory().find(p=>p.id===id));
+    }
     catch(error){return reply.code(409).send({error:error instanceof Error?error.message:String(error)});}
   });
 

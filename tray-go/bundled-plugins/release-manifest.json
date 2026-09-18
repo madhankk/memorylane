@@ -1,0 +1,26 @@
+{
+  "formatVersion": 1,
+  "channel": "stable",
+  "files": [
+    {
+      "path": "artifacts/com.memorylane.metadata-raw/1.0.0/win32-x64.mlplugin",
+      "bytes": 12133785,
+      "sha256": "9ad4a4f3278a847cb1ccba334902d1e22dddfada79c89119be5ccdbab9cc159c"
+    },
+    {
+      "path": "artifacts/com.memorylane.video-tools/1.0.0/win32-x64.mlplugin",
+      "bytes": 52562821,
+      "sha256": "924abedc20579a9b9d244acd3fbc492832d9f4a3bf401df5d04150b026d82403"
+    },
+    {
+      "path": "catalog.json",
+      "bytes": 2831,
+      "sha256": "cbab14aaa6b0298af18ff7fb14f4fba607d3a0d0ef77f75960ab17d10cbcb1d1"
+    },
+    {
+      "path": "catalog.json.sig",
+      "bytes": 89,
+      "sha256": "8cecb9b47dd6fa7f6d485c1d509d5967714d4ad8719ed8763e9b71b752a81d45"
+    }
+  ]
+}

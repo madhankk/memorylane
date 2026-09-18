@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 import { BarChart3, ChevronDown, FolderOpen, LibraryBig, LogOut, MapPinned, Search, Settings as SettingsIcon, Star, Tags, Trash2, Users, type LucideIcon } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../api/client";
+import { isPluginActive } from "../utils/plugins";
 
 // Mirrors life-archive-app's ArchiveNav.tsx: sticky glass header, serif
 // wordmark, pill-shaped nav with icon + label links, active item filled
@@ -31,7 +32,7 @@ export default function Layout() {
   const libraryButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => { setLibraryOpen(false); }, [location.pathname]);
-  useEffect(() => { void api.pluginPlatform.list().then(items => setPeopleAvailable(items.some(item => item.id === "com.memorylane.people" && item.state === "ready"))).catch(() => {}); }, []);
+  useEffect(() => { void api.pluginPlatform.list().then(items => setPeopleAvailable(items.some(item => item.id === "com.memorylane.people" && isPluginActive(item)))).catch(() => {}); }, []);
   useEffect(() => {
     if (!libraryOpen) return;
     const onPointer = (event: PointerEvent) => {

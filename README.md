@@ -95,7 +95,7 @@ MemoryLane is configured entirely through environment variables (no config file)
 | `MEMORYLANE_BIND_ADDRESS` | `0.0.0.0` | Bind address - `0.0.0.0` (the default) listens on every network interface, so other devices on your LAN (phone, tablet, another computer) can reach it at `http://<this-machine's-LAN-IP>:4280`. Set to `127.0.0.1` to restrict it to this machine only. |
 | `MEMORYLANE_ALLOW_REMOTE_SETUP` | unset (disabled) | Initial admin account setup is restricted to the machine hosting MemoryLane by default - since the server is reachable on your LAN as soon as it starts, this stops someone else on the network from claiming the one admin account before you do. Set to `1` to allow completing setup from another device. |
 | `MEMORYLANE_PLUGIN_DIR` | OS-standard local application support | Fixed location for installed plugin code and activation state. This does not move with the media data directory. |
-| `MEMORYLANE_PLUGIN_CATALOG_URL` | unset | HTTPS URL of the signed first-party `catalog.json`. Plugin installation remains unavailable until configured. |
+| `MEMORYLANE_PLUGIN_CATALOG_URL` | unset when running from source (`npm run dev`/`npm start`) | HTTPS URL of the signed first-party `catalog.json`. Plugin installation remains unavailable until configured. Packaged desktop builds compile in `https://memorylaneapp.org/plugins/v1/stable/catalog.json` as the default (see `tray-go/scripts/package-*`) - set this to override it, e.g. for a beta channel or a self-hosted mirror. |
 | `MEMORYLANE_PLUGIN_PUBLIC_KEY` | unset | Ed25519 public key PEM or path to a PEM file used to verify the catalog and plugin artifacts. |
 | `MEMORYLANE_PLUGIN_ALLOW_HTTP` | unset (disabled) | Development only: permits an HTTP catalog. Artifact HTTP remains restricted to loopback. |
 
@@ -137,7 +137,7 @@ npm run desktop:installer
 bash tray-go/scripts/package-macos.sh
 ```
 
-The desktop scripts assemble `tray-go/runtime`, compile the native tray, and stage the runtime beside it. The installer command requires Inno Setup 6 on Windows. The macOS script creates a native `.app` and DMG.
+The desktop scripts assemble `tray-go/runtime`, compile the native tray, and stage the runtime beside it. The installer command requires Inno Setup 7 or later on Windows (`installer.iss` uses `SetupArchitecture=x64`, a 7.x-only directive, to build a native 64-bit `Setup.exe` matching this app's x64-only runtime). The macOS script creates a native `.app` and DMG.
 
 Output lands in `tray-go/release/<version>/`: a staged application and ZIP on Windows, with `MemoryLane-Setup.exe` when building the installer, or a `.app` and DMG on macOS.
 
@@ -161,7 +161,7 @@ npm run desktop:installer
 
 `MemoryLane.exe`, `node-runtime.exe`, and `MemoryLane-Setup.exe` are signed through the Azure Trusted Signing scripts under `tray-go/scripts`. macOS signs the tray, Node runtime, native modules, and app bundle before creating, signing, notarizing, and stapling the DMG.
 
-Core update feeds are signed JSON manifests. Run `npm run desktop:update-keygen` once, then build a manifest with `MEMORYLANE_UPDATE_PRIVATE_KEY=<pem> npm run desktop:update-manifest -- <installer> <public-url> <output.json>`. Compile the printed public key and feed URL into the tray through `MEMORYLANE_UPDATE_PUBLIC_KEY` and `MEMORYLANE_UPDATE_FEED_URL` during packaging.
+Core update feeds are signed JSON manifests. Run `npm run desktop:update-keygen` once (not yet done for a real release - no signing key exists yet, so this isn't compiled in with a default the way the plugin catalog URL is), then build a manifest with `MEMORYLANE_UPDATE_PRIVATE_KEY=<pem> npm run desktop:update-manifest -- <installer> <public-url> <output.json>`. Compile the printed public key and feed URL into the tray through `MEMORYLANE_UPDATE_PUBLIC_KEY` and `MEMORYLANE_UPDATE_FEED_URL` during packaging - the update infrastructure is hosted at `https://memorylaneapp.org/updates/<platform>/` (`win32-x64`, `darwin-x64`, `darwin-arm64`), with `manifest.json` as the feed and the platform's installer alongside it, matching the plugin catalog's directory layout.
 
 ### Development
 

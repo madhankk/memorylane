@@ -7,7 +7,7 @@ const noop = () => {};
 describe("Apple Photos plugin controls", () => {
   it("shows unavailable on non-macOS without an enable control", () => {
     const html = renderToStaticMarkup(<ApplePhotosPluginPanel plugin={{ id: "apple-photos", name: "Apple Photos", enabled: false, available: false }}
-      roots={[]} statuses={{}} helperStatus={null} libraryPath="" busy={false} error={null}
+      roots={[]} statuses={{}} helperStatus={null} libraryPath="" busy={false}
       onToggle={noop} onPathChange={noop} onAdd={noop} onSync={noop} />);
     expect(html).toContain("Unavailable on this platform");
     expect(html).not.toContain("Enable Apple Photos");
@@ -18,7 +18,7 @@ describe("Apple Photos plugin controls", () => {
       roots={[{ id: 7, path: "/Pictures/Test.photoslibrary", kind: "apple-photos", enabled: true, sortOrder: 1,
         createdAt: "", updatedAt: "", stats: { mediaCount: 4, photoCount: 4, rawCount: 0, videoCount: 0,
           folderCount: 1, totalSizeBytes: 40, pendingThumbnails: 0, failedThumbnails: 0, transcodeCandidateCount: 0 } }]}
-      statuses={{ 7: { status: "running", processed: 2, total: 10, failed: 0, previewOnly: 1, unavailable: 1, error: null } }} helperStatus="ready" libraryPath="" busy={false} error={null}
+      statuses={{ 7: { status: "running", processed: 2, total: 10, failed: 0, previewOnly: 1, unavailable: 1, error: null } }} helperStatus="ready" libraryPath="" busy={false}
       onToggle={noop} onPathChange={noop} onAdd={noop} onSync={noop} />);
     expect(html).toContain("Plugin service: ready");
     expect(html).toContain("/Pictures/Test.photoslibrary");
@@ -34,7 +34,7 @@ describe("Apple Photos plugin controls", () => {
           folderCount: 0, totalSizeBytes: 0, pendingThumbnails: 0, failedThumbnails: 0, transcodeCandidateCount: 0 } }]}
       statuses={{ 8: { status: "running", processed: 0, total: 0, failed: 0, previewOnly: 0, unavailable: 0,
         error: null, startedAt: new Date(Date.now() - 65_000).toISOString() } }}
-      helperStatus="ready" libraryPath="" busy={false} error={null}
+      helperStatus="ready" libraryPath="" busy={false}
       onToggle={noop} onPathChange={noop} onAdd={noop} onSync={noop} />);
     expect(html).toContain("Preparing Photos catalog");
     expect(html).toContain("elapsed");
@@ -48,7 +48,7 @@ describe("Apple Photos plugin controls", () => {
           folderCount: 0, totalSizeBytes: 0, pendingThumbnails: 0, failedThumbnails: 0, transcodeCandidateCount: 0 } }]}
       statuses={{ 8: { status: "failed", processed: 0, total: 0, failed: 0, previewOnly: 0, unavailable: 0,
         error: "Apple Photos plugin is unavailable" } }}
-      helperStatus="ready" libraryPath="" busy={false} error={null}
+      helperStatus="ready" libraryPath="" busy={false}
       onToggle={noop} onPathChange={noop} onAdd={noop} onSync={noop} />);
     expect(html).toContain("Plugin service: ready");
     expect(html).toContain("Previous sync error:");

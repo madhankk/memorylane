@@ -25,6 +25,11 @@ CloseApplications=force
 RestartApplications=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+; Inno Setup 7+: builds a native 64-bit Setup.exe instead of the 32-bit
+; stub Inno 6 always produces, regardless of ArchitecturesInstallIn64BitMode -
+; matches this app being x64-only end to end (runtime, native modules,
+; everything). Requires Inno Setup 7 or later to compile.
+SetupArchitecture=x64
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

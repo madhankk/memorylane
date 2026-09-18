@@ -99,10 +99,18 @@ function listFiles(directory, result = []) {
   return result.sort();
 }
 
-function findPluginRoots(directory, result = []) {
+// `plugins/fixtures/` holds dev/test-only plugins (e.g. com.memorylane.fixture-module,
+// used to exercise the plugin platform's own install/release machinery) - they
+// have no business showing up as a real feature to an end user, so a real
+// (non-development) catalog build skips that directory entirely. Only checked
+// at the top level, so a plugin that happens to have its own subfolder named
+// "fixtures" for unrelated reasons is unaffected.
+function findPluginRoots(directory, result = [], includeFixtures = development, isRoot = true) {
   if (fs.existsSync(path.join(directory, "manifest.template.json"))) result.push(directory);
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    if (entry.isDirectory() && entry.name !== "node_modules") findPluginRoots(path.join(directory, entry.name), result);
+    if (!entry.isDirectory() || entry.name === "node_modules") continue;
+    if (isRoot && entry.name === "fixtures" && !includeFixtures) continue;
+    findPluginRoots(path.join(directory, entry.name), result, includeFixtures, false);
   }
   return result.sort();
 }

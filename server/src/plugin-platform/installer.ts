@@ -103,7 +103,13 @@ export class PluginInstaller {
   uninstall(pluginId: string, version: string): void {
     const target = pluginVersionDir(this.paths, pluginId, version);
     if (!path.resolve(target).startsWith(path.resolve(this.paths.versionsDir) + path.sep)) throw new Error("Invalid plugin path");
-    fs.rmSync(target, { recursive: true, force: true });
+    // For a service-kind plugin, this runs right after disable() confirms
+    // its process has exited - but Windows can hold the file lock on a
+    // just-exited executable (and any DLLs it loaded, e.g. numpy's for the
+    // AI runtime) open for a brief moment longer than the process itself
+    // survives. maxRetries/retryDelay is Node's own documented answer to
+    // exactly this race, not a custom workaround.
+    fs.rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     this.state.update((draft) => {
       const plugin = draft.plugins[pluginId];
       if (!plugin) return;
