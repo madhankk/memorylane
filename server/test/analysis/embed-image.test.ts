@@ -9,7 +9,7 @@ import { createEmbedImageAnalyzer } from "../../src/analysis/analyzers/embed-ima
 import { AnalysisWorker } from "../../src/analysis/analysis-worker.js";
 import { SidecarProvider } from "../../src/providers/sidecar-provider.js";
 import { ProviderUnavailableError } from "../../src/providers/types.js";
-import { LanceVectorIndex } from "../../src/vectors/lance-vector-index.js";
+import { MemoryVectorIndex } from "../../src/vectors/memory-vector-index.js";
 import { EmbeddingRepo } from "../../src/vectors/embedding-repo.js";
 import { spaceFor } from "../../src/vectors/vector-index.js";
 import { thumbnailPathForMediaId, type AppPaths } from "../../src/config/paths.js";
@@ -41,7 +41,7 @@ async function setup() {
   }
   const noThumb = seedMedia(db, folder, root);
   const provider = new SidecarProvider(fake.url, { expectedModel: fake.model, healthTtlMs: 0 });
-  const index = new LanceVectorIndex(paths.vectorsDir);
+  const index = new MemoryVectorIndex();
   const analyzer = createEmbedImageAnalyzer(db, paths, provider, index, () => true);
   return { db, folder, ids, noThumb, provider, index, analyzer };
 }

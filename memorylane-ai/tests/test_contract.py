@@ -51,3 +51,15 @@ def test_text_matches_image(client):
 def test_rejects_bad_image_and_empty_batch(client):
     assert client.post("/v1/embed/image", files=[("files", ("x.jpg", b"not an image", "image/jpeg"))]).status_code == 422
     assert client.post("/v1/embed/text", json={"texts": []}).status_code == 422
+
+
+def test_vector_store_lifecycle(client):
+    space = "test:contract"
+    rows = [{"id": 1, "vector": [1.0, 0.0]}, {"id": 2, "vector": [0.0, 1.0]}]
+    assert client.post("/v1/vectors/clear", json={"space": space}).status_code == 200
+    assert client.post("/v1/vectors/upsert", json={"space": space, "rows": rows}).status_code == 200
+    assert client.get("/v1/vectors/count", params={"space": space}).json() == {"count": 2}
+    hits = client.post("/v1/vectors/search", json={"space": space, "vector": [0.9, 0.1], "limit": 2, "exclude_ids": []}).json()["hits"]
+    assert [hit["id"] for hit in hits] == [1, 2]
+    assert client.post("/v1/vectors/remove", json={"space": space, "ids": [1]}).status_code == 200
+    assert client.get("/v1/vectors/count", params={"space": space}).json() == {"count": 1}

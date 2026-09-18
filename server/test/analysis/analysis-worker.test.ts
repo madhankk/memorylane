@@ -3,6 +3,7 @@ import { createTestDb, seedScanRoot, seedFolder, seedMedia } from "../helpers/db
 import { AnalysisWorker } from "../../src/analysis/analysis-worker.js";
 import { AnalysisRepo } from "../../src/analysis/analysis-repo.js";
 import type { Analyzer, AnalysisMediaRow } from "../../src/analysis/types.js";
+import { CapabilityUnavailableError } from "../../src/capabilities/errors.js";
 
 const logger = { info() {}, warn() {}, error() {}, debug() {} } as unknown as import("pino").Logger;
 
@@ -59,6 +60,15 @@ describe("AnalysisWorker", () => {
     expect(row.error).toContain("provider down");
   });
 
+  it("returns work to pending without consuming an attempt when a capability is stopped", async () => {
+    const { db } = await setup(1);
+    const a = fakeAnalyzer({ run: async () => { throw new CapabilityUnavailableError("people.faces"); } });
+    const w = new AnalysisWorker(db, logger, [a], () => false);
+    w.enqueueAll();
+    await w.runOnce();
+    expect(db.prepare("SELECT status, attempts FROM media_analysis").get()).toEqual({ status: "pending", attempts: 0 });
+  });
+
   it("start() reconciles interrupted rows and re-queues stale versions", async () => {
     const { db, ids, repo } = await setup(2);
     repo.markDone(ids[0], "fake", "v0"); // stale version
@@ -107,7 +117,7 @@ describe("AnalysisWorker", () => {
     expect(calls.every((seenBatches) => seenBatches === 1)).toBe(true); // analyzer drained first
   });
 
-  it("returns an in-flight Apple result to pending when the plugin is disabled", async () => {
+  it.skipIf(process.platform !== "darwin")("returns an in-flight Apple result to pending when the plugin is disabled", async () => {
     const { db, ids } = await setup(1);
     db.prepare("UPDATE media SET source_kind = 'apple-photos' WHERE id = ?").run(ids[0]);
     db.prepare("INSERT INTO plugin_settings (id, enabled) VALUES ('apple-photos', 1)").run();

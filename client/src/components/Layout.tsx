@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { BarChart3, ChevronDown, FolderOpen, LibraryBig, LogOut, MapPinned, Search, Settings as SettingsIcon, Star, Tags, Trash2, Users, type LucideIcon } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
+import { api } from "../api/client";
 
 // Mirrors life-archive-app's ArchiveNav.tsx: sticky glass header, serif
 // wordmark, pill-shaped nav with icon + label links, active item filled
@@ -25,10 +26,12 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [peopleAvailable, setPeopleAvailable] = useState(false);
   const libraryRef = useRef<HTMLDivElement>(null);
   const libraryButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => { setLibraryOpen(false); }, [location.pathname]);
+  useEffect(() => { void api.pluginPlatform.list().then(items => setPeopleAvailable(items.some(item => item.id === "com.memorylane.people" && item.state === "ready"))).catch(() => {}); }, []);
   useEffect(() => {
     if (!libraryOpen) return;
     const onPointer = (event: PointerEvent) => {
@@ -91,7 +94,7 @@ export default function Layout() {
               </button>
               {libraryOpen && <div id="library-menu" className="absolute right-0 top-full z-30 mt-2 w-52 rounded-xl border border-border bg-surface p-1.5 text-ink shadow-card"
                 aria-label="Library pages">
-                {libraryItems.map((item) => {
+                {libraryItems.filter(item => item.to !== "/people" || peopleAvailable).map((item) => {
                   const Icon = item.icon;
                   return <NavLink key={item.to} to={item.to} onClick={() => setLibraryOpen(false)}
                     className={({ isActive }) => `flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${isActive ? "bg-accent/15 text-accent" : "hover:bg-hover"}`}>

@@ -5,6 +5,7 @@ import { AnalysisRepo } from "./analysis-repo.js";
 import { isMediaSourceVisible } from "../plugins/registry.js";
 import type { Analyzer } from "./types.js";
 import { ProviderUnavailableError, type AiProvider } from "../providers/types.js";
+import { CapabilityUnavailableError } from "../capabilities/errors.js";
 
 const BACKOFF_MIN_MS = 5_000;
 const BACKOFF_MAX_MS = 300_000;
@@ -129,7 +130,7 @@ export class AnalysisWorker {
           this.logger.info({ analyzer: a.key }, "Provider reachable again - resuming");
         }
       } catch (err) {
-        if (err instanceof ProviderUnavailableError) {
+        if (err instanceof ProviderUnavailableError || err instanceof CapabilityUnavailableError) {
           // Not the rows' fault: release them untouched and wait before
           // trying this analyzer again (5s, 10s, ... capped at 5min).
           this.repo.unclaim(a.key, runnable.map((r) => r.id));

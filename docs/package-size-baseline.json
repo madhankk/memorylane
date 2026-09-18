@@ -1,0 +1,67 @@
+{
+  "measuredAt": "2026-09-17",
+  "platform": "win32-x64",
+  "installer": {
+    "path": "desktop/release/0.1.0/make/squirrel.windows/x64/MemoryLane-Setup.exe",
+    "bytes": 452753920,
+    "mib": 431.8
+  },
+  "preparedRuntime": {
+    "bytes": 977824056,
+    "mib": 932.5
+  },
+  "phase5PreparedRuntime": {
+    "bytes": 793223920,
+    "mib": 756.5,
+    "removedFromCore": ["exiftool-vendored", "ffmpeg-static", "ffprobe-static"]
+  },
+  "phase5RequiredPluginArtifactsMiB": {
+    "metadataRaw": 11.6,
+    "videoTools": 50.1
+  },
+  "phase6UnpackedCore": {
+    "path": "desktop/release-phase6-clean/MemoryLane-win32-x64",
+    "bytes": 530215625,
+    "mib": 505.7,
+    "preparedRuntimeBytes": 148151650,
+    "preparedRuntimeMiB": 141.3,
+    "appAsarBytes": 4032136,
+    "appAsarMiB": 3.8
+  },
+  "phase6OptionalAiRuntimeArtifact": {
+    "bytes": 62164914,
+    "mib": 59.3
+  },
+  "phase10DesktopShellComparison": {
+    "electronUnpackedBytes": 530255910,
+    "electronUnpackedMiB": 505.7,
+    "electronShellBytes": 382069732,
+    "goUnpackedBytes": 151672898,
+    "goUnpackedMiB": 144.6,
+    "goLauncherBytes": 3486720,
+    "goZipBytes": 55168789,
+    "goZipMiB": 52.6,
+    "goZipSha256": "C252ED4C9198AB64C0097735A0B6068B0731F5DFFD61858951DFFCCAF10D3138",
+    "unpackedSavingsPercent": 71.4
+  },
+  "goProductionPackage": {
+    "version": "0.2.0",
+    "unpackedBytes": 155470404,
+    "unpackedMiB": 148.3,
+    "runtimeBytes": 148192324,
+    "trayBytes": 7278080,
+    "zipBytes": 56737322,
+    "zipMiB": 54.1,
+    "zipSha256": "6301F2A36550BD17418C193F935AAD1DC0ED310B6E14C92C1ED9FF5F938BDD67"
+  },
+  "largestUnpackedPayloadsMiB": {
+    "lancedb": 274.1,
+    "electronExecutable": 228.3,
+    "nodeRuntime": 79.0,
+    "ffmpeg": 79.0,
+    "ffprobe": 60.1
+  },
+  "targetInstallerMiB": 200,
+  "warningInstallerMiB": 180,
+  "note": "Historical Electron measurements plus the production Go desktop package. The Go ZIP is the CI size-gate artifact; signed Inno Setup and notarized DMG measurements are produced on their release builders."
+}

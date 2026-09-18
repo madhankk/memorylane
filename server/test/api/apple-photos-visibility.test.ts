@@ -15,7 +15,7 @@ describe("disabled Apple Photos media visibility", () => {
       const get = () => t.app.inject({ method: "GET", url, headers: { cookie: t.cookie } });
       expect((await get()).statusCode).toBe(404);
       await t.app.inject({ method: "PUT", url: "/api/plugins/apple-photos", headers: { cookie: t.cookie }, payload: { enabled: true } });
-      expect((await get()).statusCode).toBe(200);
+      expect((await get()).statusCode).toBe(process.platform === "darwin" ? 200 : 404);
     } finally { await t.close(); }
   });
 

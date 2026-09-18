@@ -13,7 +13,7 @@ import type { TranscodeWorker } from "../../src/media/transcode-worker.js";
 import type { AppPaths } from "../../src/config/paths.js";
 import { StackService } from "../../src/stacks/stack-service.js";
 import { SettingsRepo } from "../../src/db/settings-repo.js";
-import { LanceVectorIndex } from "../../src/vectors/lance-vector-index.js";
+import { MemoryVectorIndex } from "../../src/vectors/memory-vector-index.js";
 import { EmbeddingRepo } from "../../src/vectors/embedding-repo.js";
 import type { AiProvider } from "../../src/providers/types.js";
 import { PersonService } from "../../src/persons/person-service.js";
@@ -50,7 +50,7 @@ export async function createTestApp(opts: { provider?: AiProvider | null } = {})
   const provider = opts.provider ?? null;
   const analysisWorker = new AnalysisWorker(db, logger, [], () => false, { provider });
   const settingsRepo = new SettingsRepo(db);
-  const vectorIndex = new LanceVectorIndex(paths.vectorsDir);
+  const vectorIndex = new MemoryVectorIndex();
   const ctx: AppContext = {
     db,
     paths,

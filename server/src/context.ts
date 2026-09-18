@@ -10,6 +10,8 @@ import type { AiProvider } from "./providers/types.js";
 import type { VectorIndex } from "./vectors/vector-index.js";
 import type { EmbeddingRepo } from "./vectors/embedding-repo.js";
 import type { PersonService } from "./persons/person-service.js";
+import type { PluginManager } from "./plugin-platform/manager.js";
+import type { PluginUpdateCoordinator } from "./plugin-platform/update-coordinator.js";
 
 // Central set of app-wide singletons, built once at startup and passed to every
 // route module. Keeps routes free of import-order/singleton-init footguns.
@@ -27,4 +29,6 @@ export interface AppContext {
   vectorIndex: VectorIndex;
   embeddings: EmbeddingRepo;
   persons: PersonService;
+  pluginManager?: PluginManager;
+  pluginUpdates?: PluginUpdateCoordinator;
 }

@@ -57,7 +57,7 @@ describe("ExifRepo", () => {
 
 describe("exifReadError", () => {
   it("recognises ExifTool's error-only results", async () => {
-    const { exifReadError } = await import("../../src/media/exiftool-client.js");
+    const { exifReadError } = await import("../../src/exif/read-error.js");
     expect(exifReadError({ ExifToolVersion: 13, Error: "Error opening file" } as unknown as Tags)).toBe("Error opening file");
     expect(exifReadError({ errors: ["boom"] } as unknown as Tags)).toBe("boom");
     expect(exifReadError({ Make: "Canon" } as unknown as Tags)).toBeNull();

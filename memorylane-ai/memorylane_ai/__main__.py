@@ -1,11 +1,12 @@
 import uvicorn
 
 from .config import Settings
+from .main import app
 
 
 def main() -> None:
     s = Settings()
-    uvicorn.run("memorylane_ai.main:app", host=s.host, port=s.port, log_level="info")
+    uvicorn.run(app, host=s.host, port=s.port, log_level="info")
 
 
 if __name__ == "__main__":

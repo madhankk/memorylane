@@ -1,0 +1,7 @@
+{
+  "id":"com.memorylane.metadata-raw","name":"Metadata & RAW","description":"ExifTool metadata extraction, full EXIF capture, and RAW embedded previews.",
+  "version":"1.0.0","pluginApi":1,"requiresCore":">=0.2.0 <1.0.0","required":true,"buildPlatforms":["host"],
+  "entry":{"kind":"service","executable":"service.mjs","args":[]},
+  "capabilities":["media.metadata","media.raw-preview"],"dependencies":[],
+  "health":{"path":"/health","timeoutSeconds":30},"restart":{"policy":"on-failure","maxAttempts":5},"licenseFiles":["licenses/LICENSE.txt"]
+}

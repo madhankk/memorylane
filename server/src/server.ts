@@ -5,20 +5,28 @@ import { SettingsRepo } from "./db/settings-repo.js";
 import { SessionStore } from "./auth/sessions.js";
 import { ScannerService } from "./scanner/scanner-service.js";
 import { SqliteRandomSelectionService } from "./media/random-selection-service.js";
-import { checkExifToolAvailable, shutdownExifTool } from "./media/exiftool-client.js";
-import { checkFfmpegAvailable } from "./media/video-client.js";
 import { TranscodeWorker } from "./media/transcode-worker.js";
 import { AnalysisWorker } from "./analysis/analysis-worker.js";
 import { createAnalyzers } from "./analysis/registry.js";
 import { StackService } from "./stacks/stack-service.js";
-import { createProvider } from "./providers/index.js";
-import { LanceVectorIndex } from "./vectors/lance-vector-index.js";
+import { PluginAiProvider } from "./providers/plugin-ai-provider.js";
+import { PluginVectorIndex } from "./vectors/plugin-vector-index.js";
 import { EmbeddingRepo } from "./vectors/embedding-repo.js";
 import { spaceFor } from "./vectors/vector-index.js";
 import { PersonService } from "./persons/person-service.js";
 import { FaceRepo } from "./persons/face-repo.js";
 import { buildApp } from "./app.js";
 import type { AppContext } from "./context.js";
+import { APP_VERSION } from "./version.js";
+import { currentPluginPlatform } from "@memorylane/plugin-sdk";
+import { PluginManager } from "./plugin-platform/manager.js";
+import { resolvePluginPlatformPaths } from "./plugin-platform/paths.js";
+import { PluginCatalogLoader } from "./plugin-platform/catalog-loader.js";
+import fs from "node:fs";
+import { PLUGIN_RELEASE_PUBLIC_KEY } from "./plugin-platform/release-public-key.js";
+import { DeferredMediaToolCapabilities } from "./capabilities/media-tools.js";
+import { PluginMediaToolCapabilities } from "./capabilities/plugin-media-tools.js";
+import { PluginUpdateCoordinator } from "./plugin-platform/update-coordinator.js";
 
 async function main(): Promise<void> {
   const paths = resolveAppPaths();
@@ -33,8 +41,6 @@ async function main(): Promise<void> {
   } as unknown as import("pino").Logger;
 
   await runMigrations(db, paths.dbPath, bootstrapLogger);
-  await checkExifToolAvailable(bootstrapLogger);
-  await checkFfmpegAvailable(bootstrapLogger);
 
   const settingsRepo = new SettingsRepo(db);
   const settings = settingsRepo.getAll();
@@ -42,18 +48,49 @@ async function main(): Promise<void> {
   const sessions = new SessionStore(db);
   sessions.destroyAllExpired();
 
-  const scanner = new ScannerService(db, paths, bootstrapLogger);
+  const pluginPlatform = currentPluginPlatform();
+  const configuredPluginKey = process.env.MEMORYLANE_PLUGIN_PUBLIC_KEY;
+  let pluginPublicKey = PLUGIN_RELEASE_PUBLIC_KEY;
+  if (configuredPluginKey) {
+    try { pluginPublicKey = configuredPluginKey.includes("BEGIN PUBLIC KEY") ? configuredPluginKey : fs.readFileSync(configuredPluginKey, "utf8"); }
+    catch (error) { bootstrapLogger.warn({ err: error }, "Could not read the configured plugin public key"); }
+  }
+  const pluginManager = pluginPlatform ? new PluginManager({
+    paths: resolvePluginPlatformPaths(), dataDir: paths.dataDir, coreVersion: APP_VERSION, platform: pluginPlatform, publicKey: pluginPublicKey,
+    onOutput: (pluginId, stream, text) => bootstrapLogger.info({ pluginId, stream, text: text.trimEnd() }, "Plugin output"),
+  }) : undefined;
+  const pluginCatalogUrl = process.env.MEMORYLANE_PLUGIN_CATALOG_URL;
+  const bundledPluginRepository = process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY;
+  if (pluginManager && bundledPluginRepository && pluginPublicKey) {
+    try { const catalog = new PluginCatalogLoader({ publicKey: pluginPublicKey }).loadDirectory(bundledPluginRepository); pluginManager.setCatalog(catalog); await pluginManager.installRequiredFromDirectory(bundledPluginRepository, catalog); }
+    catch (error) { bootstrapLogger.warn({ err: error }, "Bundled plugin repository could not be installed"); }
+  }
+  if (pluginManager && pluginCatalogUrl && pluginPublicKey) {
+    try { pluginManager.setCatalog(await new PluginCatalogLoader({ publicKey: pluginPublicKey, allowHttp: process.env.MEMORYLANE_PLUGIN_ALLOW_HTTP === "1" }).load(pluginCatalogUrl)); }
+    catch (error) { bootstrapLogger.warn({ err: error }, "Plugin catalog is unavailable; installed plugins can still start"); }
+  }
+  await pluginManager?.startEnabled();
+
+  const mediaTools = new DeferredMediaToolCapabilities();
+  const scanner = new ScannerService(db, paths, bootstrapLogger, mediaTools);
   const randomSelection = new SqliteRandomSelectionService(db);
-  const transcodeWorker = new TranscodeWorker(db, paths, bootstrapLogger, scanner);
+  const transcodeWorker = new TranscodeWorker(db, paths, bootstrapLogger, scanner, mediaTools);
+  const pluginUpdates = pluginManager && pluginCatalogUrl ? new PluginUpdateCoordinator(pluginManager, {
+    catalogUrl: pluginCatalogUrl, publicKey: pluginPublicKey,
+    allowHttp: process.env.MEMORYLANE_PLUGIN_ALLOW_HTTP === "1",
+    rootDir: resolvePluginPlatformPaths().rootDir,
+    canActivate: () => !scanner.isRunning() && !(db.prepare("SELECT 1 FROM video_transcode_jobs WHERE status IN ('pending','transcoding') LIMIT 1").get()),
+  }) : undefined;
 
   // The AI sidecar is optional: without it (or with it down) every feature
   // that needs vectors reports "unavailable" and the rest of the app is unchanged.
-  const provider = createProvider();
-  const vectorIndex = new LanceVectorIndex(paths.vectorsDir);
+  const provider = pluginManager ? new PluginAiProvider(pluginManager, process.env.MEMORYLANE_AI_MODEL) : null;
+  if (!pluginManager) throw new Error("Plugin platform is unavailable on this system");
+  const vectorIndex = new PluginVectorIndex(pluginManager);
   const embeddings = new EmbeddingRepo(db);
   const stacks = new StackService(db, bootstrapLogger, settingsRepo, () => provider?.expectedModel ?? null);
   const persons = new PersonService(db, bootstrapLogger, settingsRepo, () => provider, vectorIndex, paths.facesDir);
-  const analyzers = createAnalyzers(db, bootstrapLogger, { paths, settings: settingsRepo, provider, vectorIndex, persons });
+  const analyzers = createAnalyzers(db, bootstrapLogger, { paths, settings: settingsRepo, provider, vectorIndex, persons, mediaTools });
   const analysisWorker = new AnalysisWorker(db, bootstrapLogger, analyzers, () => scanner.isRunning(), {
     // Idle work runs only once every analyzer is drained and no scan is
     // running: stack recompute (hashes/embeddings first), then person discovery.
@@ -61,8 +98,10 @@ async function main(): Promise<void> {
     provider,
   });
 
+  if (pluginManager) mediaTools.setDelegate(new PluginMediaToolCapabilities(pluginManager));
+
   const ctx: AppContext = {
-    db, paths, sessions, scanner, randomSelection, transcodeWorker, analysisWorker, stacks, provider, vectorIndex, embeddings, persons,
+    db, paths, sessions, scanner, randomSelection, transcodeWorker, analysisWorker, stacks, provider, vectorIndex, embeddings, persons, pluginManager, pluginUpdates,
   };
   const app = await buildApp(ctx);
 
@@ -115,6 +154,8 @@ async function main(): Promise<void> {
   const port = Number(process.env.MEMORYLANE_PORT ?? settings.port);
 
   await app.listen({ host: bindAddress, port });
+  pluginUpdates?.start();
+  if (pluginUpdates) setTimeout(() => void pluginUpdates.checkNow().catch((error)=>bootstrapLogger.warn({err:error},"Plugin update check failed")), 30_000).unref();
   app.log.info({ bindAddress, port, dataDir: paths.dataDir }, "MemoryLane server started");
 
   // 0.0.0.0 (listen on every interface) always includes loopback too, so
@@ -145,9 +186,10 @@ async function main(): Promise<void> {
 
   const shutdown = async (signal: string) => {
     app.log.info({ signal }, "Shutting down");
+    pluginUpdates?.stop();
+    await pluginManager?.shutdown();
     await analysisWorker.stop();
     await app.close();
-    await shutdownExifTool();
     db.close();
     process.exit(0);
   };

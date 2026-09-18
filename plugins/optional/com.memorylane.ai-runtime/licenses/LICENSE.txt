@@ -1,0 +1,1 @@
+MemoryLane first-party plugin. Bundled third-party notices are produced during the native build.

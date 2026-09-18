@@ -10,7 +10,7 @@ The one deliberate exception to "never touch originals" is the opt-in video mode
 
 ## Commands
 
-npm workspaces monorepo: `shared`, `server`, `client`, `desktop`. Run from the repo root unless noted.
+npm workspaces monorepo: `shared`, `server`, `client`. The native desktop shell is the Go module in `tray-go/`. Run from the repo root unless noted.
 
 ```bash
 npm install
@@ -29,12 +29,13 @@ npm run reset-password -- <args>   # server/scripts/reset-password.ts
 - Migrations are copied to `server/dist/migrations` at build time; `migrate.ts` resolves whichever of `server/migrations` (dev) or `dist/migrations` (built) exists.
 - Set `MEMORYLANE_NO_OPEN=1` to stop the server auto-opening a browser tab (already suppressed under `npm run dev`). `MEMORYLANE_DATA_DIR` relocates the DB/thumbnail cache — useful for a throwaway dev library. Without it, `resolveAppDataDir` honours a `data-location.txt` pointer in the platform default dir, written by Settings › Storage › Move (`config/data-dir-move.ts`: SQLite online backup + recursive copy, restart to switch, old copy left in place).
 
-Desktop (Electron tray app) — run from `desktop/`, and only after a root `npm run build`:
+Desktop (native Go tray app) — run after a root `npm run build`:
 
 ```bash
-npm run prepare-runtime   # assembles desktop/runtime/ (node binary + server/dist + prod deps); fails loudly if root build is missing
-npm run dev               # rebuilds tray app only, NOT the runtime — re-run prepare-runtime after server/shared changes
-npm run make              # build + prepare-runtime + electron-forge make → desktop/release/<version>/
+npm run desktop:runtime    # assembles tray-go/runtime/ (Node + server/dist + production dependencies)
+npm run desktop:package    # Windows native tray + runtime ZIP
+npm run desktop:installer  # Windows Inno Setup installer
+# macOS: bash tray-go/scripts/package-macos.sh
 ```
 
 ## Architecture
@@ -117,4 +118,4 @@ React 18 + React Router 6 + Tailwind 4 (Vite plugin). `App.tsx` routes: `/setup`
 
 - README.md and several code comments reference `PLAN.md` (spec section numbers); that file is not in the repo. The media-intelligence design lives at `docs/architecture/2026-09-14-media-intelligence-design.md`.
 - ExifTool must be on PATH for RAW/metadata; ffmpeg/ffprobe are bundled via `ffmpeg-static`/`ffprobe-static`. Both are detected at startup and degrade gracefully (thumbnail_status `unsupported`) when missing.
-- macOS signing/notarization in `desktop/forge.config.ts` is incomplete (runtime binaries need an explicit codesign pass — see the TODO there).
+- Release signing lives in `tray-go/scripts/`: Azure Trusted Signing on Windows and recursive Developer ID signing plus notarization on macOS.

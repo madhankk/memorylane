@@ -13,7 +13,7 @@
 | **Testing / reviewing** (most people) | **Production-style**: `npm run build` → `npm start`, plus `npm run ai` in a second terminal | Exactly what end users run; one server on `:4280` serving API + UI. |
 | **Developing the server** | `npm run dev` (tsx watch) + `npm run ai` | Restarts on every server file save. UI is the last built one. |
 | **Developing the UI** | `npm run dev` + `npm run dev:client` (Vite on `:5173`) + `npm run ai` | Hot reload; Vite proxies `/api` to `:4280`. Open `http://127.0.0.1:5173`. |
-| **Testing the Windows/macOS installer** | Desktop tray app (`desktop/`), see §8 | Only when the packaged experience itself is under test. |
+| **Testing the Windows/macOS installer** | Native tray app (`tray-go/`), see §8 | Only when the packaged experience itself is under test. |
 
 Two processes in every AI-enabled setup: the **MemoryLane server** (Node) and the **`memorylane-ai` sidecar** (Python). The sidecar is optional — without it the app works fully; Find similar, Describe-it search, stacks-v2 refinement and People just report "AI not available".
 
@@ -204,14 +204,12 @@ Only after a successful root build:
 
 ```bash
 npm run build
-cd desktop && npm install
-npm run prepare-runtime     # copies node + server/dist + prod deps into desktop/runtime/
-npm run package             # quick: packaged app folder only
-npm run make                # full: .dmg (macOS) / Squirrel .exe (Windows) in desktop/release/<version>/
+npm run desktop:package     # Windows staged folder + ZIP
+npm run desktop:installer   # Windows Inno Setup installer
+bash tray-go/scripts/package-macos.sh  # macOS .app + DMG
 ```
 
-- The runtime folder now includes `@lancedb/lancedb`; the Phase 3 verification of vector search **from inside `desktop/runtime/`** is still an open checklist item (see §10).
-- The sidecar is **not** bundled in the installer. Users who want AI features run it separately (§4) — the tray app simply shows *Not connected* until then.
+- Required and optional feature runtimes are installed through the plugin repository.
 - Unsigned builds: macOS blocks launch (right-click → Open, or sign), Windows shows SmartScreen. Signing requires the code-signing setup described in the README.
 
 ---
@@ -241,6 +239,5 @@ Logs: both processes log to their own terminal.
 
 - Merge order: PR #1 (EXIF/Reports) → #2 (Stacks) → #3 (AI) → #4 (People). Each retargets to `main` automatically as the previous one merges.
 - Run the §7 checklist on a Windows machine and record results.
-- Verify LanceDB loads from `desktop/runtime/` (packaged tray app) on both OSes.
-- Decide whether/how to ship the sidecar with the installer (PyInstaller `onedir` next to the tray app) — not planned for Phases 1–4.
+- Validate the native tray, signed installer, update handoff, and plugin onboarding on both operating systems.
 - The optional Phase 5 (LLM captions/keywords) is not started — see the design doc §11.

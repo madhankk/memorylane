@@ -20,7 +20,7 @@ describe("Apple Photos plugin controls", () => {
           folderCount: 1, totalSizeBytes: 40, pendingThumbnails: 0, failedThumbnails: 0, transcodeCandidateCount: 0 } }]}
       statuses={{ 7: { status: "running", processed: 2, total: 10, failed: 0, previewOnly: 1, unavailable: 1, error: null } }} helperStatus="ready" libraryPath="" busy={false} error={null}
       onToggle={noop} onPathChange={noop} onAdd={noop} onSync={noop} />);
-    expect(html).toContain("npm run photos-helper");
+    expect(html).toContain("Plugin service: ready");
     expect(html).toContain("/Pictures/Test.photoslibrary");
     expect(html).toContain("2 / 10");
     expect(html).toContain("1 preview-only");
@@ -38,7 +38,7 @@ describe("Apple Photos plugin controls", () => {
       onToggle={noop} onPathChange={noop} onAdd={noop} onSync={noop} />);
     expect(html).toContain("Preparing Photos catalog");
     expect(html).toContain("elapsed");
-    expect(html).toContain("Dedicated helper: ready");
+    expect(html).toContain("Plugin service: ready");
   });
 
   it("labels a stored failure as previous when the helper is currently ready", () => {
@@ -47,10 +47,10 @@ describe("Apple Photos plugin controls", () => {
         createdAt: "", updatedAt: "", stats: { mediaCount: 0, photoCount: 0, rawCount: 0, videoCount: 0,
           folderCount: 0, totalSizeBytes: 0, pendingThumbnails: 0, failedThumbnails: 0, transcodeCandidateCount: 0 } }]}
       statuses={{ 8: { status: "failed", processed: 0, total: 0, failed: 0, previewOnly: 0, unavailable: 0,
-        error: "Photos helper is not reachable; run npm run photos-helper" } }}
+        error: "Apple Photos plugin is unavailable" } }}
       helperStatus="ready" libraryPath="" busy={false} error={null}
       onToggle={noop} onPathChange={noop} onAdd={noop} onSync={noop} />);
-    expect(html).toContain("Dedicated helper: ready");
+    expect(html).toContain("Plugin service: ready");
     expect(html).toContain("Previous sync error:");
   });
 });

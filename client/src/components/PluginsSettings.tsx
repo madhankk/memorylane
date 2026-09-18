@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import type { ApplePhotosSyncStatusDto, PluginDto, ScanRootDto } from "@memorylane/shared";
+import type { ApplePhotosSyncStatusDto, PluginDto, PluginPlatformDto, ScanRootDto } from "@memorylane/shared";
 import { api, ApiError } from "../api/client";
 import { useConfirm } from "./ConfirmDialog";
 
@@ -23,7 +23,7 @@ interface PanelProps {
   libraryPath: string;
   busy: boolean;
   error: string | null;
-  onToggle: () => void;
+  onToggle?: () => void;
   onPathChange: (path: string) => void;
   onAdd: (event: FormEvent) => void;
   onSync: (rootId: number) => void;
@@ -40,19 +40,18 @@ export function ApplePhotosPluginPanel(props: PanelProps) {
           <h2 className="text-xl font-semibold text-ink">Apple Photos</h2>
           <p className="text-sm text-muted">Read-only import from a local macOS Photos library. Off by default.</p>
         </div>
-        {!plugin.available ? <span className="text-sm text-muted">Unavailable on this platform</span> : (
+        {!plugin.available ? <span className="text-sm text-muted">Unavailable on this platform</span> : props.onToggle ? (
           <button type="button" className={buttonClass} disabled={busy} onClick={onToggle}>
             {plugin.enabled ? "Disable Apple Photos" : "Enable Apple Photos"}
           </button>
-        )}
+        ) : null}
       </div>
       {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
       {plugin.enabled && (
         <div className="space-y-5 border-t border-border pt-5">
           <div className="space-y-1 text-sm text-muted">
-            <p>Dedicated helper: {helperStatus ?? "Checking…"}. Start it in a separate terminal with <code className="text-ink">npm run photos-helper</code>.</p>
-            <p>To stop the helper, press Ctrl+C in that terminal. MemoryLane never starts the AI sidecar for this plugin.</p>
-            <p>If the library cannot be read, grant Full Disk Access to the terminal or app running both MemoryLane and the helper, then retry.</p>
+            <p>Plugin service: {helperStatus ?? "Checking…"}. MemoryLane starts and monitors it automatically.</p>
+            <p>If the library cannot be read, grant Full Disk Access to MemoryLane in System Settings, then retry.</p>
           </div>
           <form onSubmit={onAdd} className="flex flex-wrap gap-2">
             <label className="sr-only" htmlFor="apple-photos-library-path">Photos library path</label>
@@ -98,9 +97,16 @@ export default function PluginsSettings() {
   const [libraryPath, setLibraryPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [platformPlugins, setPlatformPlugins] = useState<PluginPlatformDto[]>([]);
+  const [pluginLogs, setPluginLogs] = useState<{id:string;lines:string[]}|null>(null);
+  const [updateHistory,setUpdateHistory]=useState<Array<{pluginId:string;toVersion:string;status:string;at:string;error?:string}>>([]);
+  const [coreVersion, setCoreVersion] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const plugins = await api.plugins.list();
+    const [plugins, generic, updates, versionInfo] = await Promise.all([api.plugins.list(), api.pluginPlatform.list(), api.pluginPlatform.updates(), api.settings.version()]);
+    setUpdateHistory(updates.history.slice(-10).reverse());
+    setPlatformPlugins(generic.filter((item) => item.id !== "com.memorylane.apple-photos"));
+    setCoreVersion(versionInfo.version);
     const next = plugins.find((item) => item.id === "apple-photos") ?? null;
     setPlugin(next);
     if (!next?.enabled) { setRoots([]); setStatuses({}); setHelperStatus(null); setDetected([]); return; }
@@ -122,21 +128,6 @@ export default function PluginsSettings() {
     return () => window.clearInterval(timer);
   }, [refresh, plugin?.enabled]);
 
-  const toggle = async () => {
-    if (!plugin) return;
-    if (plugin.enabled) {
-      const approved = await confirm({ title: "Disable Apple Photos?", message: "Imported Apple Photos will disappear from MemoryLane until you re-enable the plugin. The index and original Photos library are kept.", confirmLabel: "Disable plugin" });
-      if (!approved) return;
-    }
-    setBusy(true); setError(null);
-    try {
-      await api.plugins.setApplePhotosEnabled(!plugin.enabled);
-      if (plugin.enabled) window.location.reload();
-      else await refresh();
-    } catch (cause) { setError(cause instanceof ApiError ? cause.message : "Could not change plugin state"); }
-    finally { setBusy(false); }
-  };
-
   const add = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true); setError(null);
@@ -152,8 +143,49 @@ export default function PluginsSettings() {
     finally { setBusy(false); }
   };
 
+  const changePlatformPlugin = async (item: PluginPlatformDto) => {
+    if (!item.version) return;
+    setBusy(true); setError(null);
+    try {
+      if (item.state === "update-available") await api.pluginPlatform.update(item.id, item.version);
+      else if (item.state === "available") {
+        await api.pluginPlatform.install(item.id, item.version);
+        await api.pluginPlatform.setEnabled(item.id, true, item.version);
+      } else await api.pluginPlatform.setEnabled(item.id, item.state !== "ready", item.version);
+      await refresh();
+    } catch (cause) { setError(cause instanceof ApiError ? cause.message : "Could not change plugin state"); }
+    finally { setBusy(false); }
+  };
+
+  const removePlatformPlugin = async (item: PluginPlatformDto) => {
+    if (!item.version || item.required) return;
+    const approved = await confirm({ title: `Remove ${item.name}?`, message: "The plugin can be downloaded again later. Indexed core data is preserved.", confirmLabel: "Remove plugin" });
+    if (!approved) return;
+    setBusy(true); setError(null);
+    try { await api.pluginPlatform.remove(item.id, item.version); await refresh(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Could not remove plugin"); }
+    finally { setBusy(false); }
+  };
+
   if (!plugin) return <p className="text-sm text-muted">Loading plugins…</p>;
-  return <ApplePhotosPluginPanel plugin={plugin} roots={roots} statuses={statuses} helperStatus={helperStatus}
-    libraryPath={libraryPath} busy={busy} error={error} onToggle={() => { void toggle(); }} onPathChange={setLibraryPath}
-    onAdd={(event) => { void add(event); }} onSync={(id) => { void sync(id); }} detected={detected} onChooseDetected={setLibraryPath} />;
+  const requiredPlugins = platformPlugins.filter((item) => item.required);
+  const optionalPlugins = platformPlugins.filter((item) => !item.required);
+  const renderPlugin = (item: PluginPlatformDto) => <section key={item.id} className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border p-5">
+    <div className="min-w-0"><h3 className="font-semibold text-ink">{item.name}</h3><p className="text-sm text-muted">{item.required ? "Required" : "Optional"} · {item.version ? `v${item.version} · ` : ""}{item.state}</p>{item.error && <p className="mt-1 text-xs text-amber-600">{item.error}</p>}</div>
+    <div className="flex gap-2"><button type="button" className={buttonClass} onClick={() => void api.pluginPlatform.logs(item.id).then(result=>setPluginLogs({id:item.id,lines:result.lines})).catch(()=>setPluginLogs({id:item.id,lines:["Logs unavailable"]}))}>Logs</button><button type="button" className={buttonClass} disabled={busy || item.state === "incompatible" || !item.version} onClick={() => void changePlatformPlugin(item)}>
+      {item.state === "available" ? "Install" : item.state === "update-available" ? "Update" : item.state === "ready" ? "Disable" : "Enable"}
+    </button>{!item.required && item.state === "disabled" && <button type="button" className={buttonClass} disabled={busy} onClick={() => void removePlatformPlugin(item)}>Remove</button>}</div>
+  </section>;
+  return <div className="space-y-6">
+    <div className="flex items-center justify-between gap-4"><p className="text-sm text-muted">Updates are checked daily and rolled back when startup health checks fail.</p><button type="button" className={buttonClass} disabled={busy} onClick={()=>{setBusy(true);void api.pluginPlatform.checkUpdates().then(()=>refresh()).catch(cause=>setError(cause instanceof Error?cause.message:"Update check failed")).finally(()=>setBusy(false));}}>Check for updates</button></div>
+    {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
+    <section className="space-y-3"><h2 className="font-serif text-lg font-semibold text-ink">Core</h2><div className="rounded-xl border border-border p-5"><h3 className="font-semibold text-ink">MemoryLane Core</h3><p className="text-sm text-muted">Built in · v{coreVersion ?? "…"} · running</p></div></section>
+    <section className="space-y-3"><div><h2 className="font-serif text-lg font-semibold text-ink">Required plugins</h2><p className="text-sm text-muted">Needed for complete metadata, RAW, and video support.</p></div>{requiredPlugins.map(renderPlugin)}</section>
+    <section className="space-y-3"><div><h2 className="font-serif text-lg font-semibold text-ink">Optional plugins</h2><p className="text-sm text-muted">Install only the features you want.</p></div>{optionalPlugins.map(renderPlugin)}</section>
+    {pluginLogs&&<section className="rounded-xl border border-border p-4"><div className="mb-2 flex justify-between"><h3 className="font-medium">Recent plugin output</h3><button className={buttonClass} onClick={()=>setPluginLogs(null)}>Close</button></div><pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs text-muted">{pluginLogs.lines.join("\n")||"No output recorded."}</pre></section>}
+    {updateHistory.length>0&&<details className="rounded-xl border border-border p-4"><summary className="cursor-pointer font-medium">Update history</summary><div className="mt-3 space-y-2 text-xs text-muted">{updateHistory.map((item,index)=><p key={`${item.at}-${index}`}>{new Date(item.at).toLocaleString()} · {item.pluginId} → {item.toVersion} · {item.status}{item.error?` · ${item.error}`:""}</p>)}</div></details>}
+    <ApplePhotosPluginPanel plugin={plugin} roots={roots} statuses={statuses} helperStatus={helperStatus}
+      libraryPath={libraryPath} busy={busy} error={error} onPathChange={setLibraryPath}
+      onAdd={(event) => { void add(event); }} onSync={(id) => { void sync(id); }} detected={detected} onChooseDetected={setLibraryPath} />
+  </div>;
 }

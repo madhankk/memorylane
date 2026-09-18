@@ -73,6 +73,16 @@ export interface PluginDto {
   enabled: boolean;
 }
 
+export interface PluginPlatformDto {
+  id: string;
+  name: string;
+  version: string | null;
+  state: "available" | "downloading" | "installed" | "starting" | "ready" | "failed" | "update-available" | "disabled" | "incompatible";
+  required: boolean;
+  capabilities: string[];
+  error: string | null;
+}
+
 export interface ApplePhotosSyncStatusDto {
   status: "idle" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
   processed: number;

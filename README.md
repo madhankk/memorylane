@@ -64,6 +64,8 @@ This works whether the server is running or stopped, and signs out every existin
 
 ## Development
 
+For browser/server development, use two terminals:
+
 ```bash
 npm install
 npm run dev          # starts the Fastify server on :4280
@@ -71,6 +73,16 @@ npm run dev:client   # in a second terminal - Vite dev server on :5173 with API 
 ```
 
 Open `http://localhost:5173` during development (the client dev server proxies `/api` to the backend).
+
+To develop through the native tray instead, build the web/server output and prepare its isolated runtime first:
+
+```bash
+npm run build
+npm run desktop:runtime
+go -C tray-go run .
+```
+
+After server, shared, or client changes, repeat `npm run build` and `npm run desktop:runtime`. Changes confined to `tray-go/` only require restarting `go -C tray-go run .`.
 
 ## Configuration
 
@@ -82,6 +94,10 @@ MemoryLane is configured entirely through environment variables (no config file)
 | `MEMORYLANE_PORT` | `4280` | Port the server listens on |
 | `MEMORYLANE_BIND_ADDRESS` | `0.0.0.0` | Bind address - `0.0.0.0` (the default) listens on every network interface, so other devices on your LAN (phone, tablet, another computer) can reach it at `http://<this-machine's-LAN-IP>:4280`. Set to `127.0.0.1` to restrict it to this machine only. |
 | `MEMORYLANE_ALLOW_REMOTE_SETUP` | unset (disabled) | Initial admin account setup is restricted to the machine hosting MemoryLane by default - since the server is reachable on your LAN as soon as it starts, this stops someone else on the network from claiming the one admin account before you do. Set to `1` to allow completing setup from another device. |
+| `MEMORYLANE_PLUGIN_DIR` | OS-standard local application support | Fixed location for installed plugin code and activation state. This does not move with the media data directory. |
+| `MEMORYLANE_PLUGIN_CATALOG_URL` | unset | HTTPS URL of the signed first-party `catalog.json`. Plugin installation remains unavailable until configured. |
+| `MEMORYLANE_PLUGIN_PUBLIC_KEY` | unset | Ed25519 public key PEM or path to a PEM file used to verify the catalog and plugin artifacts. |
+| `MEMORYLANE_PLUGIN_ALLOW_HTTP` | unset (disabled) | Development only: permits an HTTP catalog. Artifact HTTP remains restricted to loopback. |
 
 MemoryLane has no HTTPS/TLS support, so traffic (including your session cookie and the photos themselves) is unencrypted on the network - fine on a trusted home LAN, but don't expose the default `0.0.0.0` bind directly to the internet (e.g. via router port-forwarding) without putting a reverse proxy with real TLS in front of it.
 
@@ -104,7 +120,7 @@ Occasionally a migration needs to invalidate existing thumbnails (e.g. to fix a 
 
 ## Desktop app (Windows/macOS tray installer)
 
-`desktop/` packages MemoryLane as a tray app for non-developers: it manages the server as a background process (start/stop, launch-at-login, a small status window) and needs no separate Node.js install, since it bundles its own copy of the Node runtime rather than requiring one on the target machine.
+`tray-go/` packages MemoryLane as a small native tray app for non-developers. It manages the server process, launch-at-login, browser opening, and signed updates without an embedded browser engine. It bundles Node so target machines need no separate Node.js installation.
 
 ### Build sequence
 
@@ -113,43 +129,48 @@ Occasionally a migration needs to invalidate existing thumbnails (e.g. to fix a 
 npm install
 npm run build
 
-# 2. From desktop/ - bundles the tray app, assembles the runtime folder
-#    (a copy of node.exe + step 1's server build + its production
-#    dependencies - see scripts/prepare-runtime.mjs), and produces a
-#    platform installer
-cd desktop
-npm install
-npm run make
+# 2. Native Windows package or installer
+npm run desktop:package
+npm run desktop:installer
+
+# macOS package (run on macOS)
+bash tray-go/scripts/package-macos.sh
 ```
 
-`npm run make` chains `npm run build` (desktop's own tray app code), `npm run prepare-runtime`, then `electron-forge make`. Step 1 must already have run - `prepare-runtime` fails loudly if `server/dist`, `server/public`, or `shared/dist` don't exist yet, rather than silently packaging a stale or empty runtime.
+The desktop scripts assemble `tray-go/runtime`, compile the native tray, and stage the runtime beside it. The installer command requires Inno Setup 6 on Windows. The macOS script creates a native `.app` and DMG.
 
-Output lands in `desktop/release/<version>/`:
-- Packaged app: `MemoryLane-win32-x64/` (Windows) or the `.app` (macOS)
-- Installer: `make/squirrel.windows/x64/MemoryLane-Setup.exe` (Windows) or `MemoryLane-<arch>.dmg` (macOS)
+Output lands in `tray-go/release/<version>/`: a staged application and ZIP on Windows, with `MemoryLane-Setup.exe` when building the installer, or a `.app` and DMG on macOS.
 
-Use `npm run package` instead of `make` to produce just the packaged app folder without an installer (useful for a quick sanity check without waiting on Squirrel/DMG packaging).
+The desktop installer is deliberately the small core. Build the separately downloadable plugin repository when preparing a complete release:
+
+```bash
+npm run plugins:prepare-required
+npm run plugins:prepare-ai-runtime
+npm run plugins:prepare-apple-photos
+npm run plugins:build -- --channel stable --platforms win32-x64
+```
+
+Use `darwin-x64` or `darwin-arm64` for macOS. Release repositories require `MEMORYLANE_PLUGIN_SIGNING_KEY`; add `--development` for an unsigned local repository. See [plugin repository deployment](docs/plugin-repository-deployment.md) for signing and publishing.
 
 ### Signing a real release
 
 ```powershell
 $env:SIGN_RELEASE = "1"
-npm run make
+npm run desktop:installer
 ```
 
-Both `memorylane-desktop.exe` **and** `node-runtime.exe` get signed (the latter is spawned as its own process, not a library loaded by the already-signed app, so it needs an independent signature or Windows SmartScreen flags it on its own), plus the `MemoryLane-Setup.exe` installer itself - see `desktop/forge.config.ts` and `desktop/scripts/sign-*.ps1`. This requires Windows code-signing infrastructure already set up on the build machine (Azure Trusted Signing via `signtool`, pointed at `C:\codesigning\metadata.json`). Without `SIGN_RELEASE=1`, `make` still produces a working installer, just unsigned - fine for local testing, but Windows will show a SmartScreen warning and macOS will block launch outright without a signed, notarized build.
+`MemoryLane.exe`, `node-runtime.exe`, and `MemoryLane-Setup.exe` are signed through the Azure Trusted Signing scripts under `tray-go/scripts`. macOS signs the tray, Node runtime, native modules, and app bundle before creating, signing, notarizing, and stapling the DMG.
 
-macOS signing/notarization is wired up in `forge.config.ts` too, but is **not yet complete**: the automatic `osxSign` pass signs the `.app` bundle's own code, but `runtime/`'s own binaries (`node-runtime.exe`, and the native `.node`/`dylib` files inside `runtime/node_modules` for `better-sqlite3`/`sharp`) still need an explicit `codesign` pass added before notarization will actually pass - see the `TODO` comment in `forge.config.ts`.
+Core update feeds are signed JSON manifests. Run `npm run desktop:update-keygen` once, then build a manifest with `MEMORYLANE_UPDATE_PRIVATE_KEY=<pem> npm run desktop:update-manifest -- <installer> <public-url> <output.json>`. Compile the printed public key and feed URL into the tray through `MEMORYLANE_UPDATE_PUBLIC_KEY` and `MEMORYLANE_UPDATE_FEED_URL` during packaging.
 
 ### Development
 
 ```bash
-cd desktop
-npm run prepare-runtime   # first time only, or after a server/shared code change
-npm run dev
+npm run desktop:runtime
+go -C tray-go run .
 ```
 
-`npm run dev` only rebuilds the tray app itself, not the runtime folder - it doesn't call `prepare-runtime`, so a fresh clone (or a change to server/shared code) needs an explicit `prepare-runtime` run first. Re-run it whenever server or shared code changes; the tray app's own code (`desktop/src`, `desktop/ui`) is picked up by `npm run dev` alone.
+These commands are also listed in the main Development section above. For an isolated supervisor check, run `go -C tray-go run . --smoke-test` after preparing the runtime.
 
 ## Repository layout
 
@@ -157,7 +178,7 @@ npm run dev
 server/   Fastify + TypeScript backend: auth, scanning, thumbnails, SQLite, REST API
 client/   React + TypeScript + Vite frontend
 shared/   Shared DTOs, enums, and zod validation schemas used by both
-desktop/  Electron tray app that packages the server as a Windows/macOS installer
+tray-go/  Native Windows/macOS tray, process supervisor, updater, and packaging
 ```
 
 ## License

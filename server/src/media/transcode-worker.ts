@@ -5,10 +5,10 @@ import type { Logger } from "pino";
 import pLimit from "p-limit";
 import type { VideoTranscodeQuality, ArchiveTranscodedResultDto } from "@memorylane/shared";
 import { transcodingPathForMediaId, transcodingThumbnailPathForMediaId, type AppPaths } from "../config/paths.js";
-import { transcodeVideo, probeVideo, extractPosterFrame, isFfmpegAvailable } from "./video-client.js";
 import { generateThumbnailFromBuffer } from "./thumbnail-generator.js";
 import type { TranscodeJobRow } from "../api/mappers.js";
 import type { ScannerService } from "../scanner/scanner-service.js";
+import { DeferredMediaToolCapabilities, type MediaToolCapabilities } from "../capabilities/media-tools.js";
 
 interface MediaRowForTranscode {
   id: number;
@@ -55,6 +55,7 @@ export class TranscodeWorker {
     private paths: AppPaths,
     private logger: Logger,
     private scanner: ScannerService,
+    private mediaTools: MediaToolCapabilities = new DeferredMediaToolCapabilities(),
   ) {}
 
   // Called once at server startup. A job stuck at 'transcoding' means the
@@ -144,12 +145,12 @@ export class TranscodeWorker {
       await fs.rm(cachePath, { force: true });
       await fs.rm(thumbPath, { force: true });
 
-      if (!isFfmpegAvailable()) throw new Error("ffmpeg is not available");
-      const ok = await transcodeVideo(media.absolute_path, cachePath, quality);
+      if (!this.mediaTools.video.available()) throw new Error("video tools capability is unavailable");
+      const ok = await this.mediaTools.video.transcode(media.absolute_path, cachePath, quality);
       if (!ok) throw new Error("ffmpeg exited with an error");
 
       const outStat = await fs.stat(cachePath);
-      const probe = await probeVideo(cachePath);
+      const probe = await this.mediaTools.video.probe(cachePath);
 
       const tolerance =
         media.duration_seconds != null
@@ -166,7 +167,7 @@ export class TranscodeWorker {
       // an otherwise-good transcode over.
       if (verified) {
         try {
-          const frame = await extractPosterFrame(cachePath);
+          const frame = await this.mediaTools.video.poster(cachePath);
           if (frame) await generateThumbnailFromBuffer(frame, thumbPath, null);
         } catch (err) {
           this.logger.warn({ err, mediaId }, "Could not generate a preview thumbnail for the transcoded video");

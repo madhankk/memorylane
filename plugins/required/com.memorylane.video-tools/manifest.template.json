@@ -1,0 +1,7 @@
+{
+  "id":"com.memorylane.video-tools","name":"Video Tools","description":"FFmpeg video probing, poster extraction, and modernization transcoding.",
+  "version":"1.0.0","pluginApi":1,"requiresCore":">=0.2.0 <1.0.0","required":true,"buildPlatforms":["host"],
+  "entry":{"kind":"service","executable":"service.mjs","args":[]},
+  "capabilities":["video.probe","video.poster","video.transcode"],"dependencies":[],
+  "health":{"path":"/health","timeoutSeconds":30},"restart":{"policy":"on-failure","maxAttempts":5},"licenseFiles":["licenses/LICENSE.txt"]
+}

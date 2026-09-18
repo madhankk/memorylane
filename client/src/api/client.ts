@@ -40,6 +40,7 @@ import type {
   PersonDetailDto,
   FaceDto,
   PluginDto,
+  PluginPlatformDto,
   ApplePhotosSyncStatusDto,
   AppleBrowseDto,
   CleanupMarkDto,
@@ -265,6 +266,18 @@ export const api = {
     status: () => request<AnalysisStatusDto>("/api/analysis/status"),
     retryFailed: (analyzer?: string) =>
       request<{ requeued: number }>("/api/analysis/retry", { method: "POST", body: JSON.stringify(analyzer ? { analyzer } : {}) }),
+  },
+  pluginPlatform: {
+    list: () => request<PluginPlatformDto[]>("/api/plugin-platform"),
+    onboarding: () => request<{ complete: boolean; plugins: PluginPlatformDto[] }>("/api/plugin-platform/onboarding"),
+    updates: () => request<{available:Array<{id:string;version:string}>;history:Array<{pluginId:string;fromVersion:string|null;toVersion:string;status:string;at:string;error?:string}>}>("/api/plugin-platform/updates"),
+    checkUpdates: () => request<{updated:number;available:number}>("/api/plugin-platform/updates/check", {method:"POST"}),
+    completeOnboarding: () => request<{ complete: true }>("/api/plugin-platform/onboarding/complete", { method: "POST" }),
+    install: (id: string, version: string) => request<PluginPlatformDto>(`/api/plugin-platform/${encodeURIComponent(id)}/install`, { method: "POST", body: JSON.stringify({ version }) }),
+    update: (id: string, version: string) => request<PluginPlatformDto>(`/api/plugin-platform/${encodeURIComponent(id)}/update`, { method: "POST", body: JSON.stringify({ version }) }),
+    logs: (id: string) => request<{lines:string[]}>(`/api/plugin-platform/${encodeURIComponent(id)}/logs`),
+    setEnabled: (id: string, enabled: boolean, version?: string) => request<PluginPlatformDto>(`/api/plugin-platform/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ enabled, ...(version ? { version } : {}) }) }),
+    remove: (id: string, version: string) => request<void>(`/api/plugin-platform/${encodeURIComponent(id)}/${encodeURIComponent(version)}`, { method: "DELETE" }),
   },
   favorites: {
     list: (offset = 0, limit = 200, type: MediaTypeFilter = "all") =>

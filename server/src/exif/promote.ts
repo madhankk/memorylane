@@ -1,5 +1,5 @@
-import type { Tags } from "exiftool-vendored";
-import { ExifDateTime } from "exiftool-vendored";
+type Tags = Record<string, unknown>;
+interface ExifDateValue { year: number; month: number; day: number; hour: number; minute: number; second: number; millisecond?: number; tzoffsetMinutes?: number }
 
 // Bump whenever the mapping below changes in a way that should re-run over
 // already-processed media - the analysis worker re-queues every media_exif
@@ -106,13 +106,13 @@ export function parseFlashFired(v: unknown): 0 | 1 | null {
 const pad = (n: number, w = 2) => String(n).padStart(w, "0");
 
 // Wall-clock string without an offset - see media_exif.captured_at_precise.
-export function formatWallClock(dt: ExifDateTime): string {
+export function formatWallClock(dt: ExifDateValue): string {
   return `${pad(dt.year, 4)}-${pad(dt.month)}-${pad(dt.day)}T${pad(dt.hour)}:${pad(dt.minute)}:${pad(dt.second)}.${pad(dt.millisecond ?? 0, 3)}`;
 }
 
 // "+02:00" / "-05:30" from the parsed offset, so the column is a plain ISO
 // offset regardless of how ExifTool spelled the zone.
-export function formatTzOffset(dt: ExifDateTime): string | null {
+export function formatTzOffset(dt: ExifDateValue): string | null {
   const m = dt.tzoffsetMinutes;
   if (typeof m !== "number" || !Number.isFinite(m)) return null;
   const sign = m < 0 ? "-" : "+";
@@ -120,9 +120,13 @@ export function formatTzOffset(dt: ExifDateTime): string | null {
   return `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
 
-function firstDateTime(...candidates: unknown[]): ExifDateTime | null {
+function firstDateTime(...candidates: unknown[]): ExifDateValue | null {
   for (const c of candidates) {
-    if (c instanceof ExifDateTime) return c;
+    if (c && typeof c === "object" && ["year", "month", "day", "hour", "minute", "second"].every((key) => Number.isFinite((c as Record<string, unknown>)[key]))) return c as ExifDateValue;
+    if (typeof c === "string") {
+      const match = /^(\d{4})[-:](\d{2})[-:](\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:([+-])(\d{2}):?(\d{2}))?/.exec(c);
+      if (match) return { year:+match[1], month:+match[2], day:+match[3], hour:+match[4], minute:+match[5], second:+match[6], millisecond: +(match[7] ?? 0), tzoffsetMinutes: match[8] ? (match[8] === "-" ? -1 : 1) * (+match[9] * 60 + +match[10]) : undefined };
+    }
   }
   return null;
 }
