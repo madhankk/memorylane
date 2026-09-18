@@ -14,7 +14,13 @@ mkdir -p "$TRAY_ROOT/dist"
 # docs/plugin-repository-deployment.md. Override for a build that should
 # point at a different catalog (e.g. a beta channel or a self-hosted mirror).
 PLUGIN_CATALOG_URL="${MEMORYLANE_PLUGIN_CATALOG_URL:-https://memorylaneapp.org/plugins/v1/stable/catalog.json}"
-(cd "$TRAY_ROOT" && go build -trimpath -ldflags "-s -w -X main.version=$VERSION -X main.updateFeedURL=${MEMORYLANE_UPDATE_FEED_URL:-} -X main.updatePublicKey=${MEMORYLANE_UPDATE_PUBLIC_KEY:-} -X main.pluginCatalogURL=$PLUGIN_CATALOG_URL" -o dist/MemoryLane .)
+# The real core-update keypair (generated via `npm run desktop:update-keygen`,
+# private half in the gitignored .keys/) - public half only, safe to bake in.
+# MEMORYLANE_UPDATE_FEED_URL still has no default: updater.go treats updates
+# as "not configured" unless both the feed URL and this key are set, and no
+# feed is hosted yet - see docs/plugin-repository-deployment.md.
+UPDATE_PUBLIC_KEY="${MEMORYLANE_UPDATE_PUBLIC_KEY:-zMbIhcnUMlucTxa0tOMI6gtciLN3X6rN3uZj7Q+j7Tc=}"
+(cd "$TRAY_ROOT" && go build -trimpath -ldflags "-s -w -X main.version=$VERSION -X main.updateFeedURL=${MEMORYLANE_UPDATE_FEED_URL:-} -X main.updatePublicKey=$UPDATE_PUBLIC_KEY -X main.pluginCatalogURL=$PLUGIN_CATALOG_URL" -o dist/MemoryLane .)
 rm -rf "$APP"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 cp "$TRAY_ROOT/dist/MemoryLane" "$CONTENTS/MacOS/MemoryLane"

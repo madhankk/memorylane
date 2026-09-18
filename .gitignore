@@ -26,6 +26,7 @@ plugins/optional/com.memorylane.apple-photos/bin/
 # native desktop tray generated runtime and release artifacts
 tray-go/runtime/
 tray-go/release/
+tray-go/bundled-plugins/
 tray-go/.cache/
 tray-go/release-phase*/
 tray-go/probe*/

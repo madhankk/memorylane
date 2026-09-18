@@ -34,10 +34,17 @@ if (!outputDir.startsWith(root + path.sep) || outputDir === root) throw new Erro
 fs.rmSync(outputDir, { recursive: true, force: true });
 fs.mkdirSync(outputDir, { recursive: true });
 
+// Same default-location pattern as tray-go/scripts/prepare-runtime.mjs's
+// bundled-required-plugins step: MEMORYLANE_PLUGIN_SIGNING_KEY always wins if
+// set, otherwise fall back to the real key at its default repo location
+// before finally requiring --development's throwaway keypair.
+const defaultSigningKeyPath = path.join(root, ".keys", "plugin-release-private.pem");
+
 function readSigningKey() {
   const configured = process.env.MEMORYLANE_PLUGIN_SIGNING_KEY;
   if (configured) return configured.includes("BEGIN PRIVATE KEY") ? configured : fs.readFileSync(configured, "utf8");
-  if (!development) throw new Error("MEMORYLANE_PLUGIN_SIGNING_KEY is required outside --development builds");
+  if (fs.existsSync(defaultSigningKeyPath)) return fs.readFileSync(defaultSigningKeyPath, "utf8");
+  if (!development) throw new Error(`MEMORYLANE_PLUGIN_SIGNING_KEY is required outside --development builds (no key found at ${defaultSigningKeyPath} either)`);
   const pair = generateKeyPairSync("ed25519");
   fs.writeFileSync(path.join(outputDir, "development-public-key.pem"), pair.publicKey.export({ type: "spki", format: "pem" }), { mode: 0o600 });
   return pair.privateKey;

@@ -11,9 +11,15 @@ node (Join-Path $PSScriptRoot "prepare-runtime.mjs")
 # docs/plugin-repository-deployment.md. Override for a build that should
 # point at a different catalog (e.g. a beta channel or a self-hosted mirror).
 $PluginCatalogUrl = if ($env:MEMORYLANE_PLUGIN_CATALOG_URL) { $env:MEMORYLANE_PLUGIN_CATALOG_URL } else { "https://memorylaneapp.org/plugins/v1/stable/catalog.json" }
+# The real core-update keypair (generated via `npm run desktop:update-keygen`,
+# private half in the gitignored .keys/) - public half only, safe to bake in.
+# MEMORYLANE_UPDATE_FEED_URL still has no default: updater.go treats updates
+# as "not configured" unless both the feed URL and this key are set, and no
+# feed is hosted yet - see docs/plugin-repository-deployment.md.
+$UpdatePublicKey = if ($env:MEMORYLANE_UPDATE_PUBLIC_KEY) { $env:MEMORYLANE_UPDATE_PUBLIC_KEY } else { "zMbIhcnUMlucTxa0tOMI6gtciLN3X6rN3uZj7Q+j7Tc=" }
 Push-Location $TrayRoot
 try {
-  go build -trimpath -ldflags "-s -w -H windowsgui -X main.version=$Version -X main.updateFeedURL=$env:MEMORYLANE_UPDATE_FEED_URL -X main.updatePublicKey=$env:MEMORYLANE_UPDATE_PUBLIC_KEY -X main.pluginCatalogURL=$PluginCatalogUrl" -o "dist\MemoryLane.exe" .
+  go build -trimpath -ldflags "-s -w -H windowsgui -X main.version=$Version -X main.updateFeedURL=$env:MEMORYLANE_UPDATE_FEED_URL -X main.updatePublicKey=$UpdatePublicKey -X main.pluginCatalogURL=$PluginCatalogUrl" -o "dist\MemoryLane.exe" .
 } finally { Pop-Location }
 
 if (Test-Path -LiteralPath $Stage) { Remove-Item -LiteralPath $Stage -Recurse -Force }

@@ -67,8 +67,16 @@ func acquireSingleInstance() error {
 	if err != nil {
 		return err
 	}
+	// golang.org/x/sys/windows's CreateMutex wrapper sets err whenever the
+	// named mutex already existed, even though that's a successful "attached
+	// to an existing mutex" outcome, not a failure - the real failure signal
+	// is a zero handle. Checking err != nil here (as this used to) meant the
+	// friendly "already running" message below could never be reached; any
+	// second launch attempt crashed instead with the raw, unhelpful Windows
+	// error text for ERROR_ALREADY_EXISTS ("Cannot create a file when that
+	// file already exists").
 	instanceMutex, err = windows.CreateMutex(nil, false, name)
-	if err != nil {
+	if instanceMutex == 0 {
 		return err
 	}
 	if windows.GetLastError() == windows.ERROR_ALREADY_EXISTS {

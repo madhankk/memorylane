@@ -64,7 +64,9 @@ This works whether the server is running or stopped, and signs out every existin
 
 ## Development
 
-For browser/server development, use two terminals:
+### Without the desktop tray (day-to-day work)
+
+Use two terminals:
 
 ```bash
 npm install
@@ -72,9 +74,32 @@ npm run dev          # starts the Fastify server on :4280
 npm run dev:client   # in a second terminal - Vite dev server on :5173 with API proxy
 ```
 
-Open `http://localhost:5173` during development (the client dev server proxies `/api` to the backend).
+Open `http://localhost:5173` (the client dev server proxies `/api` to the backend). This is the fastest inner loop - no Go build, no runtime staging - and is what you want for almost all server/client work.
 
-To develop through the native tray instead, build the web/server output and prepare its isolated runtime first:
+### Building and running a plugin
+
+Plugins live under `plugins/` (`required/`, `optional/`, or a new folder of your own) as a `manifest.template.json` plus source; `plugins/fixtures/com.memorylane.fixture-module` is a minimal example. Against a server already running from `npm run dev`, exercise your plugin with a local catalog instead of a real signing key or a hosted feed:
+
+```bash
+npm run build --workspace=plugin-sdk
+npm run plugins:build -- stable development
+```
+
+`development` (skip it if you have the real key - see below) generates a throwaway signing keypair and writes its public half to `dist/plugin-repository/v1/stable/development-public-key.pem`. Point the server at both, using absolute paths since `npm run dev` runs with its cwd inside `server/`:
+
+```bash
+MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY=/absolute/path/to/dist/plugin-repository/v1/stable \
+MEMORYLANE_PLUGIN_PUBLIC_KEY=/absolute/path/to/dist/plugin-repository/v1/stable/development-public-key.pem \
+npm run dev
+```
+
+Restart the server with the same two variables set. Then in Settings → Plugins, install and enable your plugin by id/version - the server serves install/update requests from that local directory instead of a real HTTPS catalog whenever `MEMORYLANE_PLUGIN_CATALOG_URL` isn't set. After changing plugin source, re-run `npm run plugins:build -- stable development` and hit **Install** again (bump `version` in `manifest.template.json` first if you want **Update** instead, which requires a strictly newer version).
+
+If `.keys/plugin-release-private.pem` exists locally (see "Building for production" below), drop `development` and `MEMORYLANE_PLUGIN_PUBLIC_KEY` entirely - the build signs with the real key, which the server trusts by default.
+
+### With the desktop tray
+
+Only needed when working on `tray-go/` itself (the system tray, process supervision, launch-at-login, the updater) or verifying the packaged experience. Build the web/server output and stage its isolated runtime first:
 
 ```bash
 npm run build
@@ -82,7 +107,11 @@ npm run desktop:runtime
 go -C tray-go run .
 ```
 
-After server, shared, or client changes, repeat `npm run build` and `npm run desktop:runtime`. Changes confined to `tray-go/` only require restarting `go -C tray-go run .`.
+Run `go -C tray-go run .` from the repo root (as shown) or from inside `tray-go/` - both are auto-detected with no extra configuration. After server, shared, or client changes, repeat `npm run build && npm run desktop:runtime`. Changes confined to `tray-go/` only need `go -C tray-go run .` restarted.
+
+By default `npm run desktop:runtime` doesn't include required plugins (metadata-raw, video-tools) unless `.keys/plugin-release-private.pem` exists locally (see "Building for production" below) - without it, the tray installs them from the network catalog on first launch instead, same as an end user's machine would.
+
+For an isolated supervisor check without the full tray UI, run `go -C tray-go run . --smoke-test` after preparing the runtime.
 
 ## Configuration
 
@@ -120,57 +149,70 @@ Occasionally a migration needs to invalidate existing thumbnails (e.g. to fix a 
 
 ## Desktop app (Windows/macOS tray installer)
 
-`tray-go/` packages MemoryLane as a small native tray app for non-developers. It manages the server process, launch-at-login, browser opening, and signed updates without an embedded browser engine. It bundles Node so target machines need no separate Node.js installation.
+`tray-go/` packages MemoryLane as a small native tray app for non-developers. It manages the server process, launch-at-login, browser opening, and signed updates without an embedded browser engine. It bundles Node so target machines need no separate Node.js installation. See "Development" above for running it locally - this section is the production build sequence.
 
-### Build sequence
+### Building for production
+
+Every command below runs from the repo root, in order. Three keys already exist at their default repo locations and are picked up automatically with **no configuration needed** - override only if you want something different:
+
+| Key | Default location | Override |
+| --- | --- | --- |
+| Plugin signing key | `.keys/plugin-release-private.pem` | `MEMORYLANE_PLUGIN_SIGNING_KEY` |
+| Plugin catalog URL (compiled into the tray) | `https://memorylaneapp.org/plugins/v1/stable/catalog.json` | `MEMORYLANE_PLUGIN_CATALOG_URL` |
+| Update manifest public key (compiled into the tray) | the real key from `desktop:update-keygen` | `MEMORYLANE_UPDATE_PUBLIC_KEY` |
+
+**1. Build the core**
 
 ```bash
-# 1. From the repo root - builds shared, client, and server
 npm install
 npm run build
-
-# 2. Native Windows package or installer
-npm run desktop:package
-npm run desktop:installer
-
-# macOS package (run on macOS)
-bash tray-go/scripts/package-macos.sh
 ```
 
-The desktop scripts assemble `tray-go/runtime`, compile the native tray, and stage the runtime beside it. The installer command requires Inno Setup 7 or later on Windows (`installer.iss` uses `SetupArchitecture=x64`, a 7.x-only directive, to build a native 64-bit `Setup.exe` matching this app's x64-only runtime). The macOS script creates a native `.app` and DMG.
-
-Output lands in `tray-go/release/<version>/`: a staged application and ZIP on Windows, with `MemoryLane-Setup.exe` when building the installer, or a `.app` and DMG on macOS.
-
-The desktop installer is deliberately the small core. Build the separately downloadable plugin repository when preparing a complete release:
+**2. Package the installer**
 
 ```bash
-npm run plugins:prepare-required
-npm run plugins:prepare-ai-runtime
-npm run plugins:prepare-apple-photos
-npm run plugins:build -- --channel stable --platforms win32-x64
+npm run desktop:package     # Windows: staged app + ZIP
+npm run desktop:installer   # Windows: also builds MemoryLane-Setup.exe (needs Inno Setup 7+)
+bash tray-go/scripts/package-macos.sh   # macOS: run on macOS - builds .app + DMG
 ```
 
-Use `darwin-x64` or `darwin-arm64` for macOS. Release repositories require `MEMORYLANE_PLUGIN_SIGNING_KEY`; add `--development` for an unsigned local repository. See [plugin repository deployment](docs/plugin-repository-deployment.md) for signing and publishing.
+This assembles `tray-go/runtime`, compiles the tray, and bundles the two **required** plugins (metadata-raw, video-tools) directly into the package using the signing key above, so a fresh install works with zero network access on first launch. If that key isn't present on the build machine, this step is skipped and the package falls back to the small downloader build instead - it installs required plugins from the network catalog on first launch, same as step 4 provides for optional ones.
 
-### Signing a real release
+`MEMORYLANE_UPDATE_FEED_URL` has **no default** - leave it unset until step 5 has actually published a feed, otherwise the tray just reports "Updates not configured" and does nothing.
+
+Output lands in `tray-go/release/<version>/`: the staged app + ZIP, `MemoryLane-Setup.exe` if you ran `desktop:installer` (a native 64-bit installer - `installer.iss` uses Inno Setup 7's `SetupArchitecture=x64`), or a `.app` + DMG on macOS.
+
+**3. Code-sign (optional)**
 
 ```powershell
 $env:SIGN_RELEASE = "1"
 npm run desktop:installer
 ```
 
-`MemoryLane.exe`, `node-runtime.exe`, and `MemoryLane-Setup.exe` are signed through the Azure Trusted Signing scripts under `tray-go/scripts`. macOS signs the tray, Node runtime, native modules, and app bundle before creating, signing, notarizing, and stapling the DMG.
+Signs `MemoryLane.exe`, `node-runtime.exe`, and `MemoryLane-Setup.exe` through the Azure Trusted Signing scripts under `tray-go/scripts`. On macOS, `SIGN_RELEASE=1` also signs the tray, Node runtime, native modules, and app bundle, then notarizes and staples the DMG (needs `MACOS_SIGNING_IDENTITY` and `APPLE_NOTARY_KEYCHAIN_PROFILE`).
 
-Core update feeds are signed JSON manifests. Run `npm run desktop:update-keygen` once (not yet done for a real release - no signing key exists yet, so this isn't compiled in with a default the way the plugin catalog URL is), then build a manifest with `MEMORYLANE_UPDATE_PRIVATE_KEY=<pem> npm run desktop:update-manifest -- <installer> <public-url> <output.json>`. Compile the printed public key and feed URL into the tray through `MEMORYLANE_UPDATE_PUBLIC_KEY` and `MEMORYLANE_UPDATE_FEED_URL` during packaging - the update infrastructure is hosted at `https://memorylaneapp.org/updates/<platform>/` (`win32-x64`, `darwin-x64`, `darwin-arm64`), with `manifest.json` as the feed and the platform's installer alongside it, matching the plugin catalog's directory layout.
+**4. Publish the full plugin catalog (optional plugins included)**
 
-### Development
+Step 2 only bundles the two *required* plugins. Optional ones (AI Runtime, AI Search, People, Apple Photos) are installed on demand from the hosted catalog instead - publishing that catalog is separate:
 
 ```bash
-npm run desktop:runtime
-go -C tray-go run .
+npm run plugins:prepare-required
+npm run plugins:prepare-ai-runtime
+npm run plugins:prepare-apple-photos   # macOS only
+npm run plugins:build -- stable        # signs with .keys/plugin-release-private.pem automatically
+npm run plugins:verify -- dist/plugin-repository/v1/stable
 ```
 
-These commands are also listed in the main Development section above. For an isolated supervisor check, run `go -C tray-go run . --smoke-test` after preparing the runtime.
+Then upload `dist/plugin-repository/v1/stable/` to `https://memorylaneapp.org/plugins/v1/stable/` (the URL step 2 already points at by default) - see [plugin repository deployment](docs/plugin-repository-deployment.md) for the atomic-upload procedure and hosting details.
+
+**5. Publish a core update (optional, once you're ready to ship an update to existing installs)**
+
+```bash
+MEMORYLANE_UPDATE_PRIVATE_KEY=.keys/core-update-private.pem \
+  npm run desktop:update-manifest -- <installer-path> <public-installer-url> <output-manifest.json>
+```
+
+Upload the signed installer and the manifest it produced to `https://memorylaneapp.org/updates/<platform>/` (`win32-x64`, `darwin-x64`, `darwin-arm64`), then set `MEMORYLANE_UPDATE_FEED_URL` to that manifest's URL for future packaging runs (step 2) - from then on, every new package points existing installs at the update.
 
 ## Repository layout
 

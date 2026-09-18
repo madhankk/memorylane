@@ -8,9 +8,14 @@ const root = process.cwd();
 const repository = path.resolve(root, process.argv[2] ?? "dist/plugin-repository/v1/stable");
 const configuredKey = process.env.MEMORYLANE_PLUGIN_PUBLIC_KEY;
 const developmentKey = path.join(repository, "development-public-key.pem");
+// Same literal value as server/src/plugin-platform/release-public-key.ts's
+// PLUGIN_RELEASE_PUBLIC_KEY - duplicated rather than imported cross-workspace
+// since it's public information anyway, not a secret. Falls back to it for a
+// real (non-development) build, which never writes development-public-key.pem.
+const realPublicKey = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA6fSlBqpHIuoB26XKwmc1lKkk4ouFJh381CrWIaQhgRM=\n-----END PUBLIC KEY-----\n";
 const publicKey = configuredKey
   ? (configuredKey.includes("BEGIN PUBLIC KEY") ? configuredKey : fs.readFileSync(configuredKey, "utf8"))
-  : fs.readFileSync(developmentKey, "utf8");
+  : fs.existsSync(developmentKey) ? fs.readFileSync(developmentKey, "utf8") : realPublicKey;
 const catalogBytes = fs.readFileSync(path.join(repository, "catalog.json"));
 const catalogSignature = fs.readFileSync(path.join(repository, "catalog.json.sig"), "utf8").trim();
 if (!verify(null, catalogBytes, publicKey, Buffer.from(catalogSignature, "base64"))) throw new Error("Invalid catalog signature");
