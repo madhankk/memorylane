@@ -117,6 +117,22 @@ describe("AnalysisWorker", () => {
     expect(calls.every((seenBatches) => seenBatches === 1)).toBe(true); // analyzer drained first
   });
 
+  it("kick() clears backoff so a just-enabled provider retries immediately instead of waiting out the window", async () => {
+    const { db } = await setup(1);
+    let fail = true;
+    const a = fakeAnalyzer({ run: async (rows) => {
+      if (fail) throw new CapabilityUnavailableError("ai.image-embedding");
+      return rows.map((r) => ({ mediaId: r.id, status: "done" as const }));
+    } });
+    const w = new AnalysisWorker(db, logger, [a], () => false);
+    w.enqueueAll();
+    await w.runOnce(); // fails, enters backoff
+    expect(await w.runOnce()).toBe(0); // still backed off - skipped, not retried
+    fail = false;
+    w.kick(); // e.g. the provider's plugin was just enabled
+    expect(await w.runOnce()).toBe(1); // retried immediately, backoff didn't block it
+  });
+
   it.skipIf(process.platform !== "darwin")("returns an in-flight Apple result to pending when the plugin is disabled", async () => {
     const { db, ids } = await setup(1);
     db.prepare("UPDATE media SET source_kind = 'apple-photos' WHERE id = ?").run(ids[0]);

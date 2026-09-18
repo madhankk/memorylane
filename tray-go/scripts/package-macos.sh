@@ -26,16 +26,17 @@ mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 cp "$TRAY_ROOT/dist/MemoryLane" "$CONTENTS/MacOS/MemoryLane"
 cp "$TRAY_ROOT/assets/icon.icns" "$CONTENTS/Resources/MemoryLane.icns"
 cp -R "$TRAY_ROOT/runtime" "$CONTENTS/Resources/runtime"
-if [[ -d "$TRAY_ROOT/bundled-plugins" ]]; then
-  cp -R "$TRAY_ROOT/bundled-plugins" "$CONTENTS/Resources/bundled-plugins"
-fi
 cat > "$CONTENTS/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.memorylane.desktop</string><key>CFBundleName</key><string>MemoryLane</string><key>CFBundleDisplayName</key><string>MemoryLane</string><key>CFBundleExecutable</key><string>MemoryLane</string><key>CFBundleIconFile</key><string>MemoryLane.icns</string><key>CFBundleShortVersionString</key><string>$VERSION</string><key>CFBundleVersion</key><string>$VERSION</string><key>LSUIElement</key><true/></dict></plist>
 EOF
 
 if [[ "${SIGN_RELEASE:-}" == "1" ]]; then
   IDENTITY="${MACOS_SIGNING_IDENTITY:-Developer ID Application: Humanly Incorporated (RNTVBNC62M)}"
-  while IFS= read -r file; do codesign --force --options runtime --timestamp --sign "$IDENTITY" "$file"; done < <(find "$CONTENTS/Resources/runtime" -type f \( -name '*.node' -o -name '*.dylib' -o -name 'node-runtime' \))
+  # -perm -u+x picks up exiftool-vendored/ffmpeg-static/ffprobe-static's own
+  # extensionless executables too - core dependencies now (see
+  # server/src/media/exiftool-client.ts, video-client.ts), not a
+  # separately-signed plugin anymore, so their binaries need coverage here.
+  while IFS= read -r file; do codesign --force --options runtime --timestamp --sign "$IDENTITY" "$file"; done < <(find "$CONTENTS/Resources/runtime" -type f \( -name '*.node' -o -name '*.dylib' -o -name 'node-runtime' -o -perm -u+x \))
   codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" "$APP"
   codesign --verify --deep --strict "$APP"
 fi

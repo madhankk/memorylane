@@ -17,7 +17,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { createPrivateKey, createPublicKey } from "node:crypto";
 
 const repoRoot = path.join(import.meta.dirname, "..", "..");
 const runtimeDir = path.resolve(import.meta.dirname, "..", "runtime");
@@ -56,6 +55,26 @@ fs.writeFileSync(
 
 console.log("Installing production dependencies...");
 execFileSync("npm", ["install", "--omit=dev", "--no-audit", "--no-fund"], { cwd: runtimeDir, stdio: "inherit", shell: true });
+
+// ffprobe-static ships a prebuilt binary for every platform/arch it supports
+// (336 MB unpruned as of this writing) - only the one this runtime actually
+// needs belongs in the packaged output. Same pruning that used to live in
+// the now-removed prepare-required-plugins.mjs, back when video-tools was a
+// separate plugin with its own node_modules.
+const ffprobeBinDir = path.join(runtimeDir, "node_modules", "ffprobe-static", "bin");
+if (fs.existsSync(ffprobeBinDir)) {
+  const keep = path.join(ffprobeBinDir, process.platform, process.arch);
+  if (!fs.existsSync(keep)) throw new Error(`ffprobe-static has no binary for ${process.platform}/${process.arch}`);
+  for (const platformEntry of fs.readdirSync(ffprobeBinDir, { withFileTypes: true })) {
+    if (!platformEntry.isDirectory()) continue;
+    const platformPath = path.join(ffprobeBinDir, platformEntry.name);
+    if (platformEntry.name !== process.platform) { fs.rmSync(platformPath, { recursive: true, force: true }); continue; }
+    for (const archEntry of fs.readdirSync(platformPath, { withFileTypes: true })) {
+      if (archEntry.isDirectory() && archEntry.name !== process.arch) fs.rmSync(path.join(platformPath, archEntry.name), { recursive: true, force: true });
+    }
+  }
+  console.log(`Pruned ffprobe-static to ${process.platform}/${process.arch}`);
+}
 
 // Native addons in this tree (better-sqlite3, argon2, sharp) are
 // prebuilt against the Visual C++ runtime (the MSVC toolchain - see the
@@ -137,56 +156,6 @@ console.log(`Copying node binary as ${nodeBinName}...`);
 fs.copyFileSync(process.execPath, path.join(runtimeDir, nodeBinName));
 if (process.platform !== "win32") {
   fs.chmodSync(path.join(runtimeDir, nodeBinName), 0o755);
-}
-
-// Bundles the required plugins (metadata-raw, video-tools) as a signed
-// catalog+artifacts tree at tray-go/bundled-plugins/ - a sibling of
-// runtime/, exactly what main.go's bundledPluginsDir() already auto-detects
-// with no Go changes needed, both for a plain `go run .` (pointed straight
-// at tray-go/runtime) and for a packaged build (once package-windows.ps1 /
-// package-macos.sh copy this folder alongside runtime/ into the staged
-// output, same as they already do for runtime/ itself). This is what lets
-// metadata/RAW and video support work immediately on first launch, without
-// depending on the network catalog being reachable at all - see
-// docs/plugin-repository-deployment.md.
-//
-// Requires the real production plugin-signing key. Without it, this step is
-// skipped entirely (not an error) - that's the documented "small downloader
-// build" variant, which installs required plugins from the network catalog
-// on first launch instead.
-const signingKeyPath = process.env.MEMORYLANE_PLUGIN_SIGNING_KEY
-  ?? (fs.existsSync(path.join(repoRoot, ".keys", "plugin-release-private.pem"))
-    ? path.join(repoRoot, ".keys", "plugin-release-private.pem")
-    : null);
-
-if (!signingKeyPath) {
-  console.log("No plugin signing key found (MEMORYLANE_PLUGIN_SIGNING_KEY unset, .keys/plugin-release-private.pem missing) - skipping bundled required plugins. This build will fetch them from the network catalog on first launch instead.");
-} else {
-  console.log("Preparing required plugins (metadata-raw, video-tools)...");
-  execFileSync("npm", ["run", "plugins:prepare-required"], { cwd: repoRoot, stdio: "inherit", shell: true });
-
-  const bundledPluginsDir = path.resolve(runtimeDir, "..", "bundled-plugins");
-  fs.rmSync(bundledPluginsDir, { recursive: true, force: true });
-  console.log(`Building signed required-plugins catalog into ${bundledPluginsDir}...`);
-  execFileSync("node", [
-    path.join(repoRoot, "scripts", "build-plugin-repository.mjs"),
-    "stable",
-    "--source", path.join(repoRoot, "plugins", "required"),
-    "--output", bundledPluginsDir,
-  ], { cwd: repoRoot, stdio: "inherit", env: { ...process.env, MEMORYLANE_PLUGIN_SIGNING_KEY: signingKeyPath } });
-
-  // Derived from the same private key rather than hardcoded/duplicated
-  // elsewhere, so this can never drift out of sync if the signing key is
-  // ever rotated - verifies with whatever key actually signed this build.
-  const privateKeyPem = signingKeyPath.includes("BEGIN PRIVATE KEY") ? signingKeyPath : fs.readFileSync(signingKeyPath, "utf8");
-  const publicKeyPem = createPublicKey(createPrivateKey(privateKeyPem)).export({ type: "spki", format: "pem" });
-  console.log("Verifying bundled required-plugins catalog...");
-  execFileSync("node", [
-    path.join(repoRoot, "scripts", "verify-plugin-repository.mjs"),
-    bundledPluginsDir,
-  ], { cwd: repoRoot, stdio: "inherit", env: { ...process.env, MEMORYLANE_PLUGIN_PUBLIC_KEY: publicKeyPem } });
-
-  console.log(`Bundled required plugins at ${bundledPluginsDir}`);
 }
 
 console.log(`Runtime assembled at ${runtimeDir}`);

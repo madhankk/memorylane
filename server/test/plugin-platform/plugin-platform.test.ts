@@ -75,20 +75,56 @@ describe("PluginStateStore", () => {
 });
 
 describe("plugin update policy", () => {
-  it("lists first-party required and optional plugins before a catalog is configured", async () => {
+  it("lists first-party optional plugins before a catalog is configured", async () => {
     const paths = resolvePluginPlatformPaths(scratch()), { publicKey } = generateKeyPairSync("ed25519");
     const manager = new PluginManager({ paths, dataDir: scratch(), coreVersion: "0.2.0", platform: serviceManifest("node").platform, publicKey });
     const inventory = manager.inventory();
+    // Metadata/RAW and video are core dependencies now, not plugins - no
+    // first-party plugin is required anymore, only the optional AI ones.
     expect(inventory).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "com.memorylane.metadata-raw", name: "Metadata & RAW", required: true, version: null }),
-      expect.objectContaining({ id: "com.memorylane.video-tools", name: "Video Tools", required: true, version: null }),
       expect.objectContaining({ id: "com.memorylane.people", name: "People", required: false, version: null }),
     ]));
+    expect(inventory.every((item) => !item.required)).toBe(true);
     // AI Runtime is infra (pure dependency, no capability a user benefits
     // from directly) - it never appears on its own, even though other
     // plugins depend on it and installing one still pulls it in transparently.
     expect(inventory.some((item) => item.id === "com.memorylane.ai-runtime")).toBe(false);
     await manager.shutdown();
+  });
+
+  it("isEnabled() reflects a dev-catalog plugin's real enabled state, not the (always-empty) persisted state store", async () => {
+    const paths = resolvePluginPlatformPaths(scratch()), { publicKey } = generateKeyPairSync("ed25519");
+    // A real, minimal health server on a fixed port - the noop dev-service
+    // lifecycle (manifest.entry.devPort) health-checks it instead of
+    // spawning anything, so this is enough to exercise a real enable()
+    // without a module-host child process (which module-host.js can't
+    // resolve when running from unbuilt TS, a separate pre-existing gap).
+    const devPort = 41780 + Math.floor(Math.random() * 500);
+    const health = http.createServer((req, res) => {
+      if (req.headers.authorization !== "Bearer memorylane-dev") { res.writeHead(401); return res.end(); }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ status: "ready", pluginId: "com.memorylane.dev-fixture", version: "1.0.0", pluginApi: 1 }));
+    }).listen(devPort, "127.0.0.1");
+    try {
+      const manifest: PluginManifest = {
+        ...serviceManifest("unused"),
+        id: "com.memorylane.dev-fixture",
+        name: "Dev Fixture",
+        entry: { kind: "service", executable: "unused", args: [], devPort },
+      };
+      const devPlugins = new Map([[manifest.id, { manifest, sourceDir: "" }]]);
+      const manager = new PluginManager({ paths, dataDir: scratch(), coreVersion: "0.2.0", platform: manifest.platform, publicKey, devPlugins });
+      // This is the exact bug PluginAiProvider.requireFeature() hit for
+      // AI Search/People: isEnabled() only ever checked the persisted state
+      // store, which a dev-catalog plugin never writes to - so it always
+      // reported "not enabled" regardless of the real (devEnabled) state.
+      expect(manager.isEnabled(manifest.id)).toBe(false);
+      await manager.enable(manifest.id, manifest.version);
+      expect(manager.isEnabled(manifest.id)).toBe(true);
+      await manager.disable(manifest.id);
+      expect(manager.isEnabled(manifest.id)).toBe(false);
+      await manager.shutdown();
+    } finally { health.close(); }
   });
 
   it("hides an infra release from inventory but resolves it as a human-readable dependency name on its dependent", async () => {
@@ -146,6 +182,35 @@ describe("plugin update policy", () => {
 
     await manager.uninstall(dependent.id, dependent.version);
     await expect(manager.uninstall(infra.id, infra.version)).resolves.toBeUndefined();
+    await manager.shutdown();
+  });
+
+  it("enabledDependents() only counts a dependent that's actually enabled, not merely installed", async () => {
+    const paths = resolvePluginPlatformPaths(scratch()), { publicKey } = generateKeyPairSync("ed25519");
+    const infra: PluginManifest = { ...serviceManifest("bin/infra.exe"), id: "com.memorylane.test-infra", name: "Test Infra", infra: true };
+    const dependent: PluginManifest = {
+      ...serviceManifest("bin/dependent.exe"),
+      id: "com.memorylane.test-dependent",
+      name: "Test Dependent",
+      dependencies: [{ id: infra.id, version: ">=1.0.0 <2.0.0" }],
+    };
+    for (const manifest of [infra, dependent]) {
+      const dir = path.join(paths.versionsDir, manifest.id, manifest.version);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(manifest));
+    }
+    const manager = new PluginManager({ paths, dataDir: scratch(), coreVersion: "0.2.0", platform: infra.platform, publicKey });
+    manager.state.update((draft) => {
+      draft.plugins[infra.id] = { activeVersion: infra.version, enabled: true, installedVersions: [infra.version], lastError: null };
+      draft.plugins[dependent.id] = { activeVersion: dependent.version, enabled: false, installedVersions: [dependent.version], lastError: null };
+    });
+    // Dependent is installed but not enabled - safe to disable the dependency.
+    expect(manager.enabledDependents(infra.id)).toEqual([]);
+    manager.state.update((draft) => { draft.plugins[dependent.id].enabled = true; });
+    // Now it's actively in use - this is the check plugin-routes.ts's PUT
+    // handler uses to refuse a disable request with a 409, the same
+    // situation as disabling AI Runtime while AI Search is still enabled.
+    expect(manager.enabledDependents(infra.id)).toEqual(["Test Dependent"]);
     await manager.shutdown();
   });
 

@@ -26,12 +26,18 @@ if (Test-Path -LiteralPath $Stage) { Remove-Item -LiteralPath $Stage -Recurse -F
 New-Item -ItemType Directory -Force $Stage | Out-Null
 Copy-Item (Join-Path $TrayRoot "dist\MemoryLane.exe") (Join-Path $Stage "MemoryLane.exe")
 Copy-Item (Join-Path $TrayRoot "runtime") (Join-Path $Stage "runtime") -Recurse
-$BundledPlugins = Join-Path $TrayRoot "bundled-plugins"
-if (Test-Path -LiteralPath $BundledPlugins) { Copy-Item $BundledPlugins (Join-Path $Stage "bundled-plugins") -Recurse }
 
 if ($env:SIGN_RELEASE -eq "1") {
   & (Join-Path $PSScriptRoot "sign-app-windows.ps1") (Join-Path $Stage "MemoryLane.exe")
   & (Join-Path $PSScriptRoot "sign-app-windows.ps1") (Join-Path $Stage "runtime\node-runtime.exe")
+  # exiftool-vendored/ffmpeg-static/ffprobe-static's own executables - core
+  # dependencies now (see server/src/media/exiftool-client.ts,
+  # video-client.ts), not a separately-signed plugin anymore, so their
+  # binaries need explicit coverage here instead.
+  $VendoredExecutables = Get-ChildItem (Join-Path $Stage "runtime\node_modules") -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue
+  foreach ($executable in $VendoredExecutables) {
+    & (Join-Path $PSScriptRoot "sign-app-windows.ps1") $executable.FullName
+  }
 }
 
 $Zip = Join-Path $ReleaseRoot "MemoryLane-win32-x64.zip"

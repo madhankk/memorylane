@@ -42,7 +42,12 @@ export class PluginStateStore {
     return this.snapshot();
   }
 
-  reconcile(): Map<string, Map<string, PluginManifest>> {
+  // protectedIds: ids that never have an installed/<id>/<version>/ directory
+  // by design (dev-catalog plugins, loaded straight from source - see
+  // PluginManager's devPlugins) and so would otherwise look exactly like a
+  // stale/removed install to the pruning below and get silently deleted on
+  // every boot, right before startEnabled() gets a chance to read them back.
+  reconcile(protectedIds: ReadonlySet<string> = new Set()): Map<string, Map<string, PluginManifest>> {
     const discovered = new Map<string, Map<string, PluginManifest>>();
     for (const pluginEntry of safeDirectories(this.paths.versionsDir)) {
       const versions = new Map<string, PluginManifest>();
@@ -66,7 +71,7 @@ export class PluginStateStore {
           lastError: existing?.lastError ?? null,
         };
       }
-      for (const id of Object.keys(draft.plugins)) if (!discovered.has(id)) delete draft.plugins[id];
+      for (const id of Object.keys(draft.plugins)) if (!discovered.has(id) && !protectedIds.has(id)) delete draft.plugins[id];
     });
     return discovered;
   }

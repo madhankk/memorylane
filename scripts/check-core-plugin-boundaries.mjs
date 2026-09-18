@@ -3,10 +3,13 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
 const source = path.join(root, "server", "src");
+// exiftool-vendored/ffmpeg-static/ffprobe-static used to be forbidden here
+// too, back when metadata-raw/video-tools were separate required plugins -
+// now they're plain core dependencies (server/media/exiftool-client.ts,
+// video-client.ts), same as sharp already is. @lancedb/lancedb stays
+// restricted: it's exclusive to the AI Runtime plugin, which is genuinely
+// optional and stays out of core.
 const rules = new Map([
-  ["exiftool-vendored", new Set()],
-  ["ffmpeg-static", new Set()],
-  ["ffprobe-static", new Set()],
   ["@lancedb/lancedb", new Set()],
 ]);
 

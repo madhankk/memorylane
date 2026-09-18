@@ -81,9 +81,17 @@ export class AnalysisWorker {
     this.loopPromise = null;
   }
 
-  // Called after a scan: new media needs queue rows, and the loop may be idle.
+  // Called after a scan, and after a plugin install/enable/sync (see
+  // plugin-routes.ts) - new media needs queue rows, the loop may be idle,
+  // and (the plugin case) a provider an analyzer had backed off on may have
+  // just become reachable. Clearing backoff here means "enable AI Runtime"
+  // retries right away instead of waiting out a stale window (up to 5min)
+  // from before it was available - a no-op if nothing was actually backed off,
+  // and if the provider is still down the very next attempt just re-enters
+  // backoff at the base delay.
   kick(): void {
     this.needsEnqueue = true;
+    this.backoff.clear();
     this.wake?.();
   }
 

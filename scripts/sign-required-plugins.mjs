@@ -5,7 +5,10 @@ import { execFileSync } from "node:child_process";
 if (process.env.SIGN_RELEASE !== "1") throw new Error("SIGN_RELEASE=1 is required to sign plugin executables");
 const root = path.resolve(import.meta.dirname, "..");
 const plugins = path.join(root, "plugins");
-const nativeRoots = [path.join(plugins, "required"), path.join(plugins, "optional", "com.memorylane.ai-runtime"), path.join(plugins, "optional", "com.memorylane.apple-photos")]
+// metadata-raw/video-tools used to be signed here too, back when they were
+// separate required plugins - they're plain core dependencies now
+// (server/node_modules), covered by the app's own code-signing step instead.
+const nativeRoots = [path.join(plugins, "optional", "com.memorylane.ai-runtime"), path.join(plugins, "optional", "com.memorylane.apple-photos")]
   .filter((directory) => fs.existsSync(directory));
 const files = nativeRoots.flatMap((directory) => walk(directory));
 if (process.platform === "win32") {

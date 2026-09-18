@@ -74,6 +74,13 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
     if (!parsed.data.enabled && ctx.pluginManager.inventory().find((plugin) => plugin.id === id)?.required) {
       return reply.code(409).send({ error: "Required plugins cannot be disabled" });
     }
+    // Same reasoning as the required-plugins guard above - enforced here,
+    // not inside PluginManager.disable(), so activateInstalledUpdate()'s own
+    // internal disable+enable cycle during a version update is unaffected.
+    if (!parsed.data.enabled) {
+      const dependents = ctx.pluginManager.enabledDependents(id);
+      if (dependents.length > 0) return reply.code(409).send({ error: `Cannot disable - still needed by ${dependents.join(", ")}` });
+    }
     try {
       if (parsed.data.enabled) {
         const version = parsed.data.version ?? ctx.pluginManager.state.snapshot().plugins[id]?.activeVersion;

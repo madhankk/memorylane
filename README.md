@@ -38,8 +38,7 @@ Find similar, describe-it search, image-similarity stacking and People use small
 ## Requirements
 
 - Node.js 20+
-- [ExifTool](https://exiftool.org/) available on PATH (RAW metadata/preview extraction; standard image browsing still works without it)
-- ffmpeg/ffprobe - bundled automatically (via ffmpeg-static/ffprobe-static), no separate install needed; used only to extract a video's poster-frame thumbnail and duration, never to transcode
+- ExifTool, ffmpeg, and ffprobe are all bundled automatically (via `exiftool-vendored`, `ffmpeg-static`, `ffprobe-static`) - nothing extra to install; ffmpeg/ffprobe are used only to extract a video's poster-frame thumbnail and duration, never to transcode
 
 ## Setup
 
@@ -83,9 +82,11 @@ Open `http://localhost:5173` (the client dev server proxies `/api` to the backen
 
 ### Building and running a plugin
 
-Plugins live under `plugins/` (`required/`, `optional/`, or a new folder of your own) as a `manifest.template.json` plus source; `plugins/fixtures/com.memorylane.fixture-module` is a minimal example.
+Plugins live under `plugins/` (`optional/`, or a new folder of your own) as a `manifest.template.json` plus source; `plugins/fixtures/com.memorylane.fixture-module` is a minimal example. There's no `plugins/required/` - metadata/RAW and video support are core dependencies, not plugins (see below).
 
-**Dev-catalog mode is automatic and needs no setup.** Whenever `npm run dev`/`npm start` finds neither `MEMORYLANE_PLUGIN_CATALOG_URL` nor `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY` set (the default, with a stock `.env`), it loads plugins straight from `plugins/required/` and `plugins/optional/` on disk - no build step, no signing key, no network. Required plugins (`metadata-raw`, `video-tools`) just start; drop a new folder with its own `manifest.template.json` under `plugins/optional/` and it shows up in Settings → Plugins to install and enable, same as any other plugin. After changing a module or command-kind plugin's source, re-enable it (or restart the server) to pick up the change - there's no artifact to rebuild.
+**Dev-catalog mode is automatic and needs no setup.** Whenever `npm run dev`/`npm start` finds neither `MEMORYLANE_PLUGIN_CATALOG_URL` nor `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY` set (the default, with a stock `.env`), it loads plugins straight from `plugins/optional/` on disk - no build step, no signing key, no network. Drop a new folder with its own `manifest.template.json` under `plugins/optional/` and it shows up in Settings → Plugins to install and enable. After changing a module or command-kind plugin's source, re-enable it (or restart the server) to pick up the change - there's no artifact to rebuild.
+
+(Metadata/EXIF/RAW-preview and video probing/thumbnails/transcoding aren't plugins - they're core dependencies (`exiftool-vendored`, `ffmpeg-static`, `ffprobe-static`), same as `sharp` is, since every install needs them regardless. Only the genuinely optional AI features - AI Runtime, AI Search, People, Apple Photos - go through the plugin platform.)
 
 A service-kind dev plugin (one whose `entry.kind` is `"service"`) can also be run and restarted independently of core: declare a fixed `devPort` on its manifest entry and run it yourself (your own `npm run dev`, watch-and-restart, whatever) instead of letting the server spawn it. Core then only health-checks that port - it never starts, stops, or restarts a process with a `devPort` set, so your own dev loop is in full control. The plugin still needs to answer the same `/health` contract every service plugin does; authenticate with the fixed `DEV_SERVICE_TOKEN` exported from `@memorylane/plugin-sdk` instead of the per-launch token core would normally inject.
 
@@ -113,8 +114,6 @@ go -C tray-go run .
 ```
 
 Run `go -C tray-go run .` from the repo root (as shown) or from inside `tray-go/` - both are auto-detected with no extra configuration. After server, shared, or client changes, repeat `npm run build && npm run desktop:runtime`. Changes confined to `tray-go/` only need `go -C tray-go run .` restarted.
-
-By default `npm run desktop:runtime` doesn't include required plugins (metadata-raw, video-tools) unless `.keys/plugin-release-private.pem` exists locally (see "Building for production" below) - without it, the tray installs them from the network catalog on first launch instead, same as an end user's machine would.
 
 For an isolated supervisor check without the full tray UI, run `go -C tray-go run . --smoke-test` after preparing the runtime.
 
@@ -182,7 +181,7 @@ npm run desktop:installer   # Windows: also builds MemoryLane-Setup.exe (needs I
 bash tray-go/scripts/package-macos.sh   # macOS: run on macOS - builds .app + DMG
 ```
 
-This assembles `tray-go/runtime`, compiles the tray, and bundles the two **required** plugins (metadata-raw, video-tools) directly into the package using the signing key above, so a fresh install works with zero network access on first launch. If that key isn't present on the build machine, this step is skipped and the package falls back to the small downloader build instead - it installs required plugins from the network catalog on first launch, same as step 4 provides for optional ones.
+This assembles `tray-go/runtime` (including `exiftool-vendored`/`ffmpeg-static`/`ffprobe-static` as ordinary server dependencies - metadata/RAW/video support just works, no plugin catalog or network access needed for it) and compiles the tray.
 
 `MEMORYLANE_UPDATE_FEED_URL` has **no default** - leave it unset until step 5 has actually published a feed, otherwise the tray just reports "Updates not configured" and does nothing.
 
@@ -195,14 +194,13 @@ $env:SIGN_RELEASE = "1"
 npm run desktop:installer
 ```
 
-Signs `MemoryLane.exe`, `node-runtime.exe`, and `MemoryLane-Setup.exe` through the Azure Trusted Signing scripts under `tray-go/scripts`. On macOS, `SIGN_RELEASE=1` also signs the tray, Node runtime, native modules, and app bundle, then notarizes and staples the DMG (needs `MACOS_SIGNING_IDENTITY` and `APPLE_NOTARY_KEYCHAIN_PROFILE`).
+Signs `MemoryLane.exe`, `node-runtime.exe`, `MemoryLane-Setup.exe`, and every vendored native executable under the runtime (`exiftool.exe`, `ffmpeg.exe`, `ffprobe.exe`, etc.) through the Azure Trusted Signing scripts under `tray-go/scripts`. On macOS, `SIGN_RELEASE=1` also signs the tray, Node runtime, native modules and executables, and app bundle, then notarizes and staples the DMG (needs `MACOS_SIGNING_IDENTITY` and `APPLE_NOTARY_KEYCHAIN_PROFILE`).
 
-**4. Publish the full plugin catalog (optional plugins included)**
+**4. Publish the plugin catalog (AI Runtime, AI Search, People, Apple Photos)**
 
-Step 2 only bundles the two *required* plugins. Optional ones (AI Runtime, AI Search, People, Apple Photos) are installed on demand from the hosted catalog instead - publishing that catalog is separate:
+These are the only genuinely optional, plugin-platform-backed features left - installed on demand from the hosted catalog, not bundled into step 2's package:
 
 ```bash
-npm run plugins:prepare-required
 npm run plugins:prepare-ai-runtime
 npm run plugins:prepare-apple-photos   # macOS only
 npm run plugins:build -- stable        # signs with .keys/plugin-release-private.pem automatically

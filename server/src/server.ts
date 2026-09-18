@@ -34,8 +34,9 @@ import { resolvePluginPlatformPaths } from "./plugin-platform/paths.js";
 import { PluginCatalogLoader } from "./plugin-platform/catalog-loader.js";
 import fs from "node:fs";
 import { PLUGIN_RELEASE_PUBLIC_KEY } from "./plugin-platform/release-public-key.js";
-import { DeferredMediaToolCapabilities } from "./capabilities/media-tools.js";
-import { PluginMediaToolCapabilities } from "./capabilities/plugin-media-tools.js";
+import { NativeMediaToolCapabilities } from "./capabilities/native-media-tools.js";
+import { checkExifToolAvailable, shutdownExifTool } from "./media/exiftool-client.js";
+import { checkFfmpegAvailable } from "./media/video-client.js";
 import { PluginUpdateCoordinator } from "./plugin-platform/update-coordinator.js";
 
 async function main(): Promise<void> {
@@ -92,7 +93,8 @@ async function main(): Promise<void> {
   }
   await pluginManager?.startEnabled();
 
-  const mediaTools = new DeferredMediaToolCapabilities();
+  await Promise.all([checkExifToolAvailable(bootstrapLogger), checkFfmpegAvailable(bootstrapLogger)]);
+  const mediaTools = new NativeMediaToolCapabilities();
   const scanner = new ScannerService(db, paths, bootstrapLogger, mediaTools);
   const randomSelection = new SqliteRandomSelectionService(db);
   const transcodeWorker = new TranscodeWorker(db, paths, bootstrapLogger, scanner, mediaTools);
@@ -118,8 +120,6 @@ async function main(): Promise<void> {
     onIdle: async () => (scanner.isRunning() ? 0 : stacks.recomputeDirty(5) + (await persons.discoverIfNeeded())),
     provider,
   });
-
-  if (pluginManager) mediaTools.setDelegate(new PluginMediaToolCapabilities(pluginManager));
 
   const ctx: AppContext = {
     db, paths, sessions, scanner, randomSelection, transcodeWorker, analysisWorker, stacks, provider, vectorIndex, embeddings, persons, pluginManager, pluginUpdates,
@@ -211,6 +211,7 @@ async function main(): Promise<void> {
     await pluginManager?.shutdown();
     await analysisWorker.stop();
     await app.close();
+    await shutdownExifTool();
     db.close();
     process.exit(0);
   };

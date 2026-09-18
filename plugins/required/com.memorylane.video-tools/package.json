@@ -1,1 +1,0 @@
-{"name":"com.memorylane.video-tools","private":true,"type":"module","dependencies":{"ffmpeg-static":"^5.3.0","ffprobe-static":"^3.1.0"}}

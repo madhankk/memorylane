@@ -664,10 +664,10 @@ export default function SettingsPage() {
       </section>
 
       <section>
-        <h2 className="mb-1 font-serif text-lg font-semibold text-ink">Reports &amp; Metadata</h2>
+        <h2 className="mb-1 font-serif text-lg font-semibold text-ink">Running Analysis</h2>
         <p className="mb-3 text-sm text-muted">
-          Background processing that runs after scans - full EXIF capture for Reports. Pauses automatically while a scan
-          is running.
+          Background processing that runs after scans - EXIF capture, keywords, stacking, and (when the AI sidecar is
+          running) embeddings, photo tags, and faces. Pauses automatically while a scan is running.
         </p>
         {activeTab === "analysis" && <AnalysisProgress key={analysisKey} onStatus={setAnalysis} />}
         {analysis && analysis.analyzers.some((a) => a.counts.failed + a.counts.unsupported > 0) && (

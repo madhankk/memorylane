@@ -32,12 +32,21 @@ export interface PluginManagerOptions {
 }
 
 const FIRST_PARTY_PLUGINS = [
-  { id: "com.memorylane.metadata-raw", name: "Metadata & RAW", description: "ExifTool metadata extraction, full EXIF capture, and RAW embedded previews.", required: true, infra: false, capabilities: ["media.metadata", "media.raw-preview"] },
-  { id: "com.memorylane.video-tools", name: "Video Tools", description: "FFmpeg video probing, poster extraction, and modernization transcoding.", required: true, infra: false, capabilities: ["video.probe", "video.poster", "video.transcode"] },
   { id: "com.memorylane.ai-runtime", name: "AI Runtime", description: "Shared local inference and vector runtime for MemoryLane AI features.", required: false, infra: true, capabilities: ["ai.image-embedding", "ai.text-embedding", "people.faces", "vector.store"] },
   { id: "com.memorylane.ai-search", name: "AI Search & Similar", description: "Semantic search, image embeddings, and visually similar photos.", required: false, infra: false, capabilities: ["ai.image-embedding", "ai.text-embedding"] },
   { id: "com.memorylane.people", name: "People", description: "Face detection, clustering, and person organization.", required: false, infra: false, capabilities: ["people.faces"] },
 ] as const;
+
+// Folded directly into core (see server/src/media/exiftool-client.ts,
+// video-client.ts) - no longer part of the plugin platform at all. An
+// existing install's plugins-state.json can still have these recorded as
+// installed/enabled from before that migration; left alone, startEnabled()
+// would keep spawning their old service.mjs as a redundant subprocess
+// alongside the new in-process implementation, and inventory() would keep
+// showing them as phantom "Required" entries with no source to reinstall
+// from. retireLegacyPlugins() cleans that up once, the first time this
+// runs against an install that still has them.
+const RETIRED_PLUGIN_IDS = ["com.memorylane.metadata-raw", "com.memorylane.video-tools"];
 
 export class PluginManager {
   readonly state: PluginStateStore;
@@ -63,7 +72,7 @@ export class PluginManager {
     });
     this.moduleHost = new PluginModuleHost((id) => ensureDirectory(path.join(options.dataDir, "plugin-data", id)));
     this.devPlugins = options.devPlugins ?? new Map();
-    this.state.reconcile();
+    this.state.reconcile(new Set(this.devPlugins.keys()));
   }
 
   isDevPlugin(pluginId: string): boolean { return this.devPlugins.has(pluginId); }
@@ -87,7 +96,15 @@ export class PluginManager {
     }
     return updates;
   }
-  isEnabled(pluginId: string): boolean { const item=this.state.snapshot().plugins[pluginId]; return !!item?.enabled && !!item.activeVersion; }
+  // Dev-catalog plugins never write to the persisted state store (see
+  // devPlugins/devEnabled above) - checked first so callers like
+  // PluginAiProvider.requireFeature() see them as enabled correctly instead
+  // of always reporting "not installed or enabled" regardless of real state.
+  isEnabled(pluginId: string): boolean {
+    if (this.devPlugins.has(pluginId)) return this.devEnabled.has(pluginId);
+    const item = this.state.snapshot().plugins[pluginId];
+    return !!item?.enabled && !!item.activeVersion;
+  }
 
   inventory(): PluginInventoryItem[] {
     const state = this.state.snapshot();
@@ -107,14 +124,24 @@ export class PluginManager {
         // Same pre-install exclusion as the catalog path below - a pure
         // dependency like AI Runtime isn't a standalone install choice, it
         // just gets pulled in transparently (now via enable()'s own
-        // dev-dependency auto-enable) by whatever actually needs it.
-        if (!this.devEnabled.has(id) && dev.manifest.infra) return [];
+        // dev-dependency auto-enable) by whatever actually needs it. Checked
+        // against "ever installed" (state.plugins has an entry), not
+        // "currently enabled" - the exclusion is meant to apply only
+        // pre-install, same as the catalog path's own comment says; using
+        // devEnabled here instead would make AI Runtime vanish from the list
+        // every time you disable it, with no way to see or re-enable it
+        // directly again.
+        if (!state.plugins[id] && dev.manifest.infra) return [];
         return [{
           id,
           name: dev.manifest.name,
           description: dev.manifest.description,
           version: dev.manifest.version,
-          state: this.devEnabled.has(id) ? "ready" : "available",
+          // "disabled" (installed, currently off) vs "available" (never
+          // installed) - same distinction the catalog path below makes, so
+          // the UI shows "Enable" rather than "Install" for something you've
+          // already used once and just toggled off.
+          state: this.devEnabled.has(id) ? "ready" : state.plugins[id] ? "disabled" : "available",
           required: dev.manifest.required,
           capabilities: dev.manifest.capabilities,
           dependsOn: dev.manifest.dependencies.map((dependency) => nameFor(dependency.id)),
@@ -286,6 +313,17 @@ export class PluginManager {
         if (dev.manifest.entry.kind === "module") await this.moduleHost.load(dev.manifest, dev.sourceDir);
         this.devEnabled.add(pluginId);
         this.devErrors.delete(pluginId);
+        // Persisted through the same store a real install uses (with no
+        // actual installed/<id>/<version>/ directory behind it - enable()'s
+        // dev branch above is what makes that harmless) purely so
+        // startEnabled()'s existing state.plugins loop re-enables this dev
+        // plugin on the next boot too. Without this, restarting the dev
+        // server silently dropped every optional dev plugin back to
+        // "available" - fine for something you install once in production,
+        // not for a dev inner loop that restarts constantly.
+        this.state.update((draft) => {
+          draft.plugins[pluginId] = { activeVersion: version, enabled: true, installedVersions: [version], lastError: null };
+        });
       } catch (error) {
         this.devErrors.set(pluginId, error instanceof Error ? error.message : String(error));
         throw error;
@@ -323,6 +361,16 @@ export class PluginManager {
       await this.supervisor.stop(pluginId);
       try { await this.moduleHost.unload(pluginId); } catch { /* plugin may not be a loaded module */ }
       this.devEnabled.delete(pluginId);
+      // Marked disabled, not deleted - mirrors the catalog branch below
+      // exactly. Deleting the entry made a disabled dev plugin
+      // indistinguishable from one that was never installed, which (via the
+      // infra pre-install exclusion in inventory() above) made AI Runtime
+      // vanish from the Plugins list the moment you turned it off, with no
+      // way to see or re-enable it directly again.
+      this.state.update((draft) => {
+        const plugin = draft.plugins[pluginId];
+        if (plugin) { plugin.enabled = false; plugin.lastError = null; }
+      });
       return;
     }
     await this.supervisor.stop(pluginId);
@@ -365,7 +413,47 @@ export class PluginManager {
     return dependents;
   }
 
+  // Names of *enabled* plugins that declare pluginId as a dependency - unlike
+  // installedDependents() above (used by uninstall(), which cares about any
+  // installed dependent regardless of enabled state, since removing files a
+  // disabled-but-installed dependent would need if re-enabled later is still
+  // unsafe), disable() only needs to worry about something actively using
+  // pluginId right now. Deliberately not enforced inside disable() itself -
+  // activateInstalledUpdate() disables a plugin internally as part of a
+  // normal version update, which must not be blocked by this; the check
+  // belongs at the user-facing HTTP layer, same reasoning as the existing
+  // "required plugins cannot be disabled" guard in plugin-routes.ts.
+  enabledDependents(pluginId: string): string[] {
+    const dependents: string[] = [];
+    for (const id of new Set([...Object.keys(this.state.snapshot().plugins), ...this.devPlugins.keys()])) {
+      if (id === pluginId || !this.isEnabled(id)) continue;
+      const manifest = this.readActiveManifest(id);
+      if (manifest?.dependencies.some((dependency) => dependency.id === pluginId)) dependents.push(manifest.name);
+    }
+    return dependents;
+  }
+
+  // Stops and uninstalls any RETIRED_PLUGIN_IDS still recorded as installed
+  // from before they were folded into core. Bypasses the normal uninstall()
+  // path deliberately - it refuses to remove a plugin whose manifest says
+  // required: true, which theirs still does (the leftover manifest.json on
+  // disk predates this migration and was never rewritten).
+  private async retireLegacyPlugins(): Promise<void> {
+    for (const id of RETIRED_PLUGIN_IDS) {
+      const installed = this.state.snapshot().plugins[id];
+      if (!installed) continue;
+      if (installed.enabled) {
+        await this.supervisor.stop(id);
+        try { await this.moduleHost.unload(id); } catch { /* not a loaded module */ }
+      }
+      // installer.uninstall() already drops the state entry once its last
+      // installedVersion is gone - no separate state cleanup needed here.
+      for (const version of installed.installedVersions) this.installer.uninstall(id, version);
+    }
+  }
+
   async startEnabled(): Promise<void> {
+    await this.retireLegacyPlugins();
     // Mirrors installRequiredFromDirectory's auto-enable for the signed
     // bundled-directory path - required dev plugins should just work the
     // moment the server boots, same as a packaged install's required plugins do.
@@ -410,6 +498,13 @@ export class PluginManager {
   }
 
   private readManifest(pluginId: string, version: string): PluginManifest {
+    // A dev-catalog plugin has no installed/<id>/<version>/manifest.json on
+    // disk at all (see devPlugins) - without this, every caller here
+    // (installedDependents, readActiveManifest) would silently fail to see
+    // one, e.g. missing it as a real dependent when deciding whether
+    // something else is safe to disable.
+    const dev = this.devPlugins.get(pluginId);
+    if (dev && dev.manifest.version === version) return dev.manifest;
     return PluginManifestSchema.parse(JSON.parse(fs.readFileSync(path.join(pluginVersionDir(this.options.paths, pluginId, version), "manifest.json"), "utf8")));
   }
 }

@@ -8,10 +8,9 @@ CI supplies the Ed25519 private key through `MEMORYLANE_PLUGIN_SIGNING_KEY`. The
 
 Generate the release pair once with `npm run plugins:keygen`. The private PEM is written under the gitignored `.keys/` directory; copy it into the CI secret store and retain an offline backup. Commit the generated public PEM and TypeScript public-key module.
 
-Native plugins are prepared and signed on their target operating system before packaging:
+Native plugins are prepared and signed on their target operating system before packaging (AI Runtime and Apple Photos only - metadata/RAW and video support are core dependencies now, not plugins, signed as part of the app build itself):
 
 ```bash
-npm run plugins:prepare-required
 npm run plugins:prepare-ai-runtime
 npm run plugins:prepare-apple-photos
 SIGN_RELEASE=1 npm run plugins:sign-required
@@ -32,7 +31,7 @@ For local lifecycle testing, insert `development` after the channel name. This c
 
 The shippable directory is `dist/plugin-repository/v1/<channel>/`. `release-manifest.json` records the length and SHA-256 digest of every published file.
 
-Set `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY` to that channel directory during a desktop build to embed the same signed repository. On first startup, core verifies its catalog and artifacts, installs missing required plugins, and then continues to use normal plugin updates. Leave it unset for the small downloader build.
+Set `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY` to that channel directory during a desktop build to embed the same signed repository, letting a build install from it instead of the network catalog. Since no first-party plugin is `required` anymore (metadata/RAW/video are core dependencies), this only matters for pre-staging the optional AI plugins; leave it unset otherwise.
 
 ## Live infrastructure
 

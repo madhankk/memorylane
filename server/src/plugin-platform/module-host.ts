@@ -33,7 +33,14 @@ process.on("message", async (message: unknown) => {
         warn: (message, ...args) => console.warn(`[${pluginId}]`, message, ...args),
         error: (message, ...args) => console.error(`[${pluginId}]`, message, ...args),
       };
-      const plugin = await import(pathToFileURL(request.entry).href) as PluginModule;
+      // Node's ESM loader caches by exact URL for the lifetime of this
+      // process - re-importing the same plugin (e.g. disable then enable
+      // again from Settings, without a full server restart) would otherwise
+      // silently keep running the code from the first load, even after the
+      // file on disk changed. A cache-busting query string forces a genuine
+      // re-read every time; harmless for a real install too, since an
+      // installed version's files never change after the fact anyway.
+      const plugin = await import(`${pathToFileURL(request.entry).href}?t=${Date.now()}`) as PluginModule;
       const instance = await plugin.activate?.({ pluginId, dataDir: request.dataDir, logger, plugin: { id: pluginId, version: request.version } }) ?? {};
       loaded.set(pluginId, instance);
       return respond({ ok: true });
