@@ -24,6 +24,13 @@ class FakePhoto:
 
 
 class CatalogTests(unittest.TestCase):
+    def test_catalog_exposes_photos_screenshot_classification(self):
+        class ScreenCapture(FakePhoto):
+            screenshot = True
+
+        self.assertTrue(map_photo(ScreenCapture())["screenshot"])
+        self.assertFalse(map_photo(FakePhoto())["screenshot"])
+
     def test_catalog_camera_summary_is_available_when_original_is_missing(self):
         class Exif:
             camera_make = "Canon"

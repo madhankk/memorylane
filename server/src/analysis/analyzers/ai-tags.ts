@@ -6,12 +6,12 @@ import { isMediaSourceVisible } from "../../plugins/registry.js";
 import type { Analyzer, AnalysisMediaRow, AnalyzerOutcome } from "../types.js";
 
 export const AI_TAG_KEY = "ai_tags";
-const VOCAB_VERSION = "scene-v1";
+const VOCAB_VERSION = "scene-v2";
 const LABELS = [
   "animal", "architecture", "art", "beach", "bird", "boat", "building", "car", "city", "concert",
   "dance", "desert", "document", "dog", "family", "flower", "food", "forest", "garden", "lake",
   "landscape", "mountain", "museum", "night", "ocean", "park", "party", "person", "pet", "portrait",
-  "receipt", "river", "screenshot", "snow", "sports", "street", "sunset", "travel", "tree", "wildlife",
+  "receipt", "river", "snow", "sports", "street", "sunset", "travel", "tree", "wildlife",
 ] as const;
 
 function selectTags(image: Float32Array, labels: Float32Array[]): { name: string; score: number }[] {
