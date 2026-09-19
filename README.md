@@ -2,7 +2,7 @@
 
 Self-hosted photo and video browser for rediscovering the memories already sitting in your photo archive.
 
-MemoryLane indexes existing photo folders in place, generates thumbnails, and helps you rediscover old photos through browsing, search, and "Surprise Me" style random rediscovery - all on your own hardware, over your own files. It never renames, moves, or modifies your originals, with one narrow, explicit exception: the opt-in video modernization tool in Settings, which only ever *moves* an original (never deletes it) into a plain, visible folder right next to it, and only after you've reviewed and confirmed the replacement. See [docs/deployment-playbook.md](docs/deployment-playbook.md) to set it up on a Mac or Windows machine, and [docs/architecture/](docs/architecture/) for the design behind the photographer features.
+MemoryLane indexes existing photo folders in place, generates thumbnails, and helps you rediscover old photos through browsing, search, and "Surprise Me" style random rediscovery - all on your own hardware, over your own files. It never renames, moves, or modifies your originals, with one narrow, explicit exception: the opt-in video modernization tool in Settings, which only ever _moves_ an original (never deletes it) into a plain, visible folder right next to it, and only after you've reviewed and confirmed the replacement. See [docs/deployment-playbook.md](docs/deployment-playbook.md) to set it up on a Mac or Windows machine, and [docs/architecture/](docs/architecture/) for the design behind the photographer features.
 
 Photos, RAW, video, and Apple Live Photos are all indexed and browsable.
 
@@ -26,7 +26,7 @@ Photos, RAW, video, and Apple Live Photos are all indexed and browsable.
 - **Full EXIF capture and reports** - every tag ExifTool can read is stored per photo; the important ones (lens, body and serial, aperture, shutter, ISO, focal length, drive mode, rating, keywords, GPS) are indexed. The **Reports** page shows facets for lens / camera / aperture / focal length / ISO / year: click any value to narrow the grid and every other facet, add a date range, and **Export CSV** of the selection. Filters live in the URL, so a report is bookmarkable.
 - **Stacks** - bursts collapse to a single tile with a ⧉ count badge. Grouping uses capture time (with sub-second precision), camera body, a perceptual hash of each frame and, when the AI sidecar is running, image similarity - so it also handles tripod and long-exposure series where frames are a minute apart but near-identical. Expand a stack to view it, pick the cover, split it, remove frames or delete it; use **Select** in any folder to stack photos by hand. Anything you edit is never regrouped automatically; thresholds are in Settings › Stacks.
 - **Find similar** - open any photo and press ✨ for a ranked grid of the photos that look most like it, across your whole library.
-- **Describe-it search** - switch Search to *Describe it (AI)* and type what you're after ("a bird taking off from water", "snow on mountains at dusk") instead of remembering filenames.
+- **Describe-it search** - switch Search to _Describe it (AI)_ and type what you're after ("a bird taking off from water", "snow on mountains at dusk") instead of remembering filenames.
 - **People (opt-in)** - faces are detected and grouped into people you can name; the **People** page lists them, and a person's page shows their photos (with a date range - "photos of Maya, summer 2019"), plus the faces behind the grouping so you can confirm (✓) or say "not them" (✗). Merge duplicates, hide people you don't care about, and delete all face data in one click. Two face models are available: a default with an open license, and a stronger option for personal libraries where siblings and children are hard to tell apart.
 - **Background analysis with progress** - all of the above runs as a resumable queue after each scan (Settings › Analysis shows progress bars, ETAs and any files that couldn't be read). Stop the app mid-way and it carries on where it left off.
 - **Storage control** - Settings › Storage shows where the cache and index live and how big each part is, and can move all of it to another disk.
@@ -92,7 +92,7 @@ A service-kind dev plugin (one whose `entry.kind` is `"service"`) can also be ru
 
 Dropping into Settings and clicking Install/Update on a dev-catalog plugin is a no-op beyond enabling it - there's no artifact to download, since it's already sitting on disk.
 
-**Testing the real signed pipeline** (the one a packaged installer actually uses) is a separate, less common case - use it if you're working on plugin *signing/distribution* itself, not on a plugin's own code:
+**Testing the real signed pipeline** (the one a packaged installer actually uses) is a separate, less common case - use it if you're working on plugin _signing/distribution_ itself, not on a plugin's own code:
 
 ```bash
 npm run build --workspace=plugin-sdk
@@ -121,17 +121,17 @@ For an isolated supervisor check without the full tray UI, run `go -C tray-go ru
 
 MemoryLane is configured entirely through environment variables. `npm run dev`/`npm start` load `<repo-root>/.env` automatically if present (see `.env.example`); a packaged desktop build has no `.env` and relies solely on variables compiled in or set in its own environment.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `MEMORYLANE_DATA_DIR` | OS-standard app-data dir | Where the SQLite database, thumbnail cache, and logs are stored |
-| `MEMORYLANE_PORT` | `4280` | Port the server listens on |
-| `MEMORYLANE_BIND_ADDRESS` | `0.0.0.0` | Bind address - `0.0.0.0` (the default) listens on every network interface, so other devices on your LAN (phone, tablet, another computer) can reach it at `http://<this-machine's-LAN-IP>:4280`. Set to `127.0.0.1` to restrict it to this machine only. |
-| `MEMORYLANE_ALLOW_REMOTE_SETUP` | unset (disabled) | Initial admin account setup is restricted to the machine hosting MemoryLane by default - since the server is reachable on your LAN as soon as it starts, this stops someone else on the network from claiming the one admin account before you do. Set to `1` to allow completing setup from another device. |
-| `MEMORYLANE_PLUGIN_DIR` | OS-standard local application support | Fixed location for installed plugin code and activation state. This does not move with the media data directory. |
-| `MEMORYLANE_PLUGIN_CATALOG_URL` | unset when running from source (`npm run dev`/`npm start`) | HTTPS URL of the signed first-party `catalog.json`. Plugin installation remains unavailable until configured (unless `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY` is set - see below). Packaged desktop builds compile in `https://memorylaneapp.org/plugins/v1/stable/catalog.json` as the default (see `tray-go/scripts/package-*`) - set this to override it, e.g. for a beta channel or a self-hosted mirror. |
-| `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY` | unset | Dev/local-catalog fallback: a directory built by `npm run plugins:build` (see "Building and running a plugin" above), served for install/update instead of a real HTTPS catalog. Only used when `MEMORYLANE_PLUGIN_CATALOG_URL` isn't set. A relative path is resolved against the repo root, not the working directory. |
-| `MEMORYLANE_PLUGIN_PUBLIC_KEY` | the real committed release key | Ed25519 public key PEM, or a path to one, used to verify the catalog and plugin artifacts (relative paths resolve against the repo root). Point this at a `development-public-key.pem` to trust a `plugins:build -- stable development` output. |
-| `MEMORYLANE_PLUGIN_ALLOW_HTTP` | unset (disabled) | Development only: permits an HTTP catalog. Artifact HTTP remains restricted to loopback. |
+| Variable                               | Default                                                    | Purpose                                                                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MEMORYLANE_DATA_DIR`                  | OS-standard app-data dir                                   | Where the SQLite database, thumbnail cache, and logs are stored                                                                                                                                                                                                                                                                                                                                             |
+| `MEMORYLANE_PORT`                      | `4280`                                                     | Port the server listens on                                                                                                                                                                                                                                                                                                                                                                                  |
+| `MEMORYLANE_BIND_ADDRESS`              | `0.0.0.0`                                                  | Bind address - `0.0.0.0` (the default) listens on every network interface, so other devices on your LAN (phone, tablet, another computer) can reach it at `http://<this-machine's-LAN-IP>:4280`. Set to `127.0.0.1` to restrict it to this machine only.                                                                                                                                                    |
+| `MEMORYLANE_ALLOW_REMOTE_SETUP`        | unset (disabled)                                           | Initial admin account setup is restricted to the machine hosting MemoryLane by default - since the server is reachable on your LAN as soon as it starts, this stops someone else on the network from claiming the one admin account before you do. Set to `1` to allow completing setup from another device.                                                                                                |
+| `MEMORYLANE_PLUGIN_DIR`                | OS-standard local application support                      | Fixed location for installed plugin code and activation state. This does not move with the media data directory.                                                                                                                                                                                                                                                                                            |
+| `MEMORYLANE_PLUGIN_CATALOG_URL`        | unset when running from source (`npm run dev`/`npm start`) | HTTPS URL of the signed first-party `catalog.json`. Plugin installation remains unavailable until configured (unless `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY` is set - see below). Packaged desktop builds compile in `https://memorylaneapp.org/plugins/v1/stable/catalog.json` as the default (see `tray-go/scripts/package-*`) - set this to override it, e.g. for a beta channel or a self-hosted mirror. |
+| `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY` | unset                                                      | Dev/local-catalog fallback: a directory built by `npm run plugins:build` (see "Building and running a plugin" above), served for install/update instead of a real HTTPS catalog. Only used when `MEMORYLANE_PLUGIN_CATALOG_URL` isn't set. A relative path is resolved against the repo root, not the working directory.                                                                                    |
+| `MEMORYLANE_PLUGIN_PUBLIC_KEY`         | the real committed release key                             | Ed25519 public key PEM, or a path to one, used to verify the catalog and plugin artifacts (relative paths resolve against the repo root). Point this at a `development-public-key.pem` to trust a `plugins:build -- stable development` output.                                                                                                                                                             |
+| `MEMORYLANE_PLUGIN_ALLOW_HTTP`         | unset (disabled)                                           | Development only: permits an HTTP catalog. Artifact HTTP remains restricted to loopback.                                                                                                                                                                                                                                                                                                                    |
 
 MemoryLane has no HTTPS/TLS support, so traffic (including your session cookie and the photos themselves) is unencrypted on the network - fine on a trusted home LAN, but don't expose the default `0.0.0.0` bind directly to the internet (e.g. via router port-forwarding) without putting a reverse proxy with real TLS in front of it.
 
@@ -160,11 +160,11 @@ Occasionally a migration needs to invalidate existing thumbnails (e.g. to fix a 
 
 Every command below runs from the repo root, in order. One first-party signing key covers both the plugin catalog and core update manifests - it already exists at its default repo location and is picked up automatically with **no configuration needed** - override only if you want something different:
 
-| Key | Default location | Override |
-| --- | --- | --- |
-| Signing key (plugin catalog + core update manifests) | `.keys/plugin-release-private.pem` | `MEMORYLANE_PLUGIN_SIGNING_KEY` |
-| Plugin catalog URL (compiled into the tray) | `.../plugins/v1/stable/win32-x64/catalog.json` (Windows) or `.../darwin-arm64/catalog.json` (macOS) | `MEMORYLANE_PLUGIN_CATALOG_URL` |
-| Core update feed URL (compiled into the tray) | `.../updates/win32-x64/manifest.json` (Windows) or `.../updates/darwin-arm64/manifest.json` (macOS) | `MEMORYLANE_UPDATE_FEED_URL` |
+| Key                                                  | Default location                                                                                    | Override                        |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Signing key (plugin catalog + core update manifests) | `.keys/plugin-release-private.pem`                                                                  | `MEMORYLANE_PLUGIN_SIGNING_KEY` |
+| Plugin catalog URL (compiled into the tray)          | `.../plugins/v1/stable/win32-x64/catalog.json` (Windows) or `.../darwin-arm64/catalog.json` (macOS) | `MEMORYLANE_PLUGIN_CATALOG_URL` |
+| Core update feed URL (compiled into the tray)        | `.../updates/win32-x64/manifest.json` (Windows) or `.../updates/darwin-arm64/manifest.json` (macOS) | `MEMORYLANE_UPDATE_FEED_URL`    |
 
 **1. Build the core**
 
@@ -233,7 +233,7 @@ Publish with `node scripts/publish-release.mjs update <platform>` (defaults for 
 
 Steps 1-3 (plus preparing and signing the platform's own native plugin) collapse into a single script per platform - the day-to-day way to cut a build once you don't need to run each step by hand. Publishing (steps 4-5's uploads) stays a separate, deliberate command either way - neither script uploads anything on its own.
 
-*Windows:*
+_Windows:_
 
 ```powershell
 $env:SIGN_RELEASE = "1"   # omit entirely for a plain unsigned build
@@ -249,12 +249,12 @@ node scripts/publish-release.mjs catalog win32-x64
 node scripts/publish-release.mjs update win32-x64
 ```
 
-*macOS (Apple Silicon only):*
+_macOS (Apple Silicon only):_
 
 ```bash
 export SIGN_RELEASE=1   # omit entirely for a plain unsigned build
 export MACOS_SIGNING_IDENTITY="Developer ID Application: Humanly Incorporated (RNTVBNC62M)"
-export APPLE_NOTARY_KEYCHAIN_PROFILE="<the notarytool profile you stored - see docs/deployment-playbook.md>"
+export APPLE_NOTARY_KEYCHAIN_PROFILE="anydb-notary"
 npm run build:mac-install
 ```
 
