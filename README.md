@@ -229,6 +229,46 @@ Signs with `.keys/plugin-release-private.pem` automatically, same key as the plu
 
 Publish with `node scripts/publish-release.mjs update <platform>` (defaults for `--installer`/`--manifest` match the paths above, per platform) - it uploads the installer before the manifest and refuses to run if the installer's SHA-256 doesn't match what the manifest was signed against. Then set `MEMORYLANE_UPDATE_FEED_URL` to that manifest's URL for future packaging runs (step 2) if you ever need to point at something other than the default hosted feed - from then on, every new package for that platform points existing installs at the update.
 
+**6. One-command build (recommended)**
+
+Steps 1-3 (plus preparing and signing the platform's own native plugin) collapse into a single script per platform - the day-to-day way to cut a build once you don't need to run each step by hand. Publishing (steps 4-5's uploads) stays a separate, deliberate command either way - neither script uploads anything on its own.
+
+*Windows:*
+
+```powershell
+$env:SIGN_RELEASE = "1"   # omit entirely for a plain unsigned build
+npm run build:windows-install
+```
+
+Builds core, prepares and signs the AI Runtime plugin, builds and verifies the `win32-x64` catalog, builds and signs `MemoryLane-Setup.exe`, and signs a core update manifest against it. Output: `dist/installer/MemoryLane-Setup.exe`, `dist/plugin-repository/v1/stable/win32-x64/`, `dist/updates/win32-x64/manifest.json`.
+
+Then upload separately:
+
+```bash
+node scripts/publish-release.mjs catalog win32-x64
+node scripts/publish-release.mjs update win32-x64
+```
+
+*macOS (Apple Silicon only):*
+
+```bash
+export SIGN_RELEASE=1   # omit entirely for a plain unsigned build
+export MACOS_SIGNING_IDENTITY="Developer ID Application: Humanly Incorporated (RNTVBNC62M)"
+export APPLE_NOTARY_KEYCHAIN_PROFILE="<the notarytool profile you stored - see docs/deployment-playbook.md>"
+npm run build:mac-install
+```
+
+Builds core, prepares and signs the AI Runtime and Apple Photos plugins, builds and verifies the `darwin-arm64` catalog, builds, signs, and notarizes `MemoryLane-arm64.dmg`, and signs a core update manifest against it. Output: `dist/installer/MemoryLane-arm64.dmg`, `dist/plugin-repository/v1/stable/darwin-arm64/`, `dist/updates/darwin-arm64/manifest.json`.
+
+Then upload separately:
+
+```bash
+node scripts/publish-release.mjs catalog darwin-arm64
+node scripts/publish-release.mjs update darwin-arm64
+```
+
+Both platforms' `publish-release.mjs` calls need `MEMORYLANE_DEPLOY_SSH_KEY` set to your deploy `.pem` key - see [plugin repository deployment](docs/plugin-repository-deployment.md) for what it needs and how the atomic upload works.
+
 ## Repository layout
 
 ```
