@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { Tags } from "exiftool-vendored";
+type Tags = Record<string, unknown>;
 import { promoteTags, stripTagsForStorage, type PromotedExif } from "./promote.js";
 
 export interface MediaExifRow {

@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ChevronUp, ChevronDown, X } from "lucide-react";
-import type { ScanRootDto, SettingsDto, ScanStatusDto, ScanRunDto, StorageStatsDto, IgnoredPathDto, AnalysisStatusDto } from "@memorylane/shared";
+import { X } from "lucide-react";
+import type { SettingsDto, ScanStatusDto, StorageStatsDto, IgnoredPathDto, AnalysisStatusDto } from "@memorylane/shared";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../hooks/useAuth";
 import { useTheme, type Theme } from "../hooks/useTheme";
 import { formatBytes } from "../utils/format";
-import TranscodeCandidatesPanel from "../components/TranscodeCandidatesPanel";
 import AnalysisProgress from "../components/AnalysisProgress";
 import PluginsSettings from "../components/PluginsSettings";
+import ScanFoldersManager from "../components/ScanFoldersManager";
 import { useConfirm } from "../components/ConfirmDialog";
 
 const SETTINGS_TABS = [
@@ -19,23 +19,6 @@ const SETTINGS_TABS = [
   { id: "account", label: "Account" },
 ] as const;
 const THEME_ORDER: Theme[] = ["light", "dusk", "gallery", "dark"];
-
-function scanRootSummary(root: ScanRootDto): string {
-  const { stats } = root;
-  if (stats.mediaCount === 0) return "No media indexed yet";
-
-  const parts: string[] = [];
-  if (stats.photoCount) parts.push(`${stats.photoCount.toLocaleString()} photos`);
-  if (stats.rawCount) parts.push(`${stats.rawCount.toLocaleString()} RAW`);
-  if (stats.videoCount) parts.push(`${stats.videoCount.toLocaleString()} videos`);
-  parts.push(`${stats.folderCount.toLocaleString()} folders`);
-  parts.push(formatBytes(stats.totalSizeBytes));
-
-  let summary = parts.join(" · ");
-  if (stats.pendingThumbnails) summary += ` · ${stats.pendingThumbnails.toLocaleString()} pending`;
-  if (stats.failedThumbnails) summary += ` · ${stats.failedThumbnails.toLocaleString()} failed`;
-  return summary;
-}
 
 const THEME_LABELS: Record<Theme, string> = {
   light: "Light",
@@ -153,34 +136,6 @@ function ChangePasswordForm() {
   );
 }
 
-// Live progress for one scan run, shown directly under the folder it's
-// currently working on (see activeScanRootId in SettingsPage) rather than as
-// one undifferentiated block elsewhere on the page.
-function ScanProgress({ run }: { run: ScanRunDto }) {
-  return (
-    <div className="flex flex-col gap-1.5 border-t border-border pt-2.5 text-xs text-muted">
-      <p>
-        {run.filesScanned.toLocaleString()} files scanned, {run.filesNew.toLocaleString()} new,{" "}
-        {run.errorCount.toLocaleString()} errors so far.
-      </p>
-      {run.thumbnailsQueued > 0 && (
-        <div className="flex flex-col gap-1">
-          <p>
-            {run.thumbnailsProcessed < run.thumbnailsQueued ? "Generating thumbnails: " : "Thumbnails done: "}
-            {run.thumbnailsProcessed.toLocaleString()} of {run.thumbnailsQueued.toLocaleString()}
-          </p>
-          <div className="h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-border">
-            <div
-              className="h-full rounded-full bg-accent transition-[width] duration-500"
-              style={{ width: `${Math.min(100, (run.thumbnailsProcessed / run.thumbnailsQueued) * 100)}%` }}
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function SettingsPage() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -193,11 +148,8 @@ export default function SettingsPage() {
       return next;
     });
   };
-  const [scanRoots, setScanRoots] = useState<ScanRootDto[]>([]);
   const [settings, setSettings] = useState<SettingsDto | null>(null);
   const [status, setStatus] = useState<ScanStatusDto | null>(null);
-  const [newPath, setNewPath] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [storage, setStorage] = useState<StorageStatsDto | null>(null);
   const [storageLoading, setStorageLoading] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
@@ -236,7 +188,6 @@ export default function SettingsPage() {
   };
   const [ignoredPaths, setIgnoredPaths] = useState<IgnoredPathDto[]>([]);
   const [version, setVersion] = useState<string | null>(null);
-  const [openTranscodeRootId, setOpenTranscodeRootId] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisStatusDto | null>(null);
   const { theme, setTheme } = useTheme();
@@ -257,14 +208,12 @@ export default function SettingsPage() {
   };
 
   const loadAll = async () => {
-    const [roots, s, st, ip, v] = await Promise.all([
-      api.scanRoots.list(),
+    const [s, st, ip, v] = await Promise.all([
       api.settings.get(),
       api.scans.status(),
       api.ignoredPaths.list(),
       api.settings.version(),
     ]);
-    setScanRoots(roots);
     setSettings(s);
     setStatus(st);
     setIgnoredPaths(ip);
@@ -304,8 +253,6 @@ export default function SettingsPage() {
         if (!st.running && pollRef.current) {
           clearInterval(pollRef.current);
           pollRef.current = null;
-          // Scan just finished - refresh per-folder stats now that they've changed.
-          setScanRoots(await api.scanRoots.list());
         }
       }, 2000);
     }
@@ -317,60 +264,18 @@ export default function SettingsPage() {
     };
   }, [status?.running]);
 
-  const addScanRoot = async () => {
-    if (!newPath.trim()) return;
-    setError(null);
-    try {
-      const root = await api.scanRoots.create({ path: newPath.trim() });
-      setScanRoots((prev) => [...prev, root]);
-      setNewPath("");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not add folder");
-    }
-  };
-
-  const toggleRoot = async (root: ScanRootDto) => {
-    const updated = await api.scanRoots.update(root.id, { enabled: !root.enabled });
-    setScanRoots((prev) => prev.map((r) => (r.id === root.id ? updated : r)));
-  };
-
-  const removeRoot = async (root: ScanRootDto) => {
-    const ok = await confirm({
-      title: "Remove this folder from MemoryLane?",
-      message: (
-        <>
-          <code className="text-ink">{root.path}</code> is removed from the library. Original files are never touched - this only removes
-          MemoryLane's index for the folder.
-        </>
-      ),
-      confirmLabel: "Remove folder",
-      danger: true,
-    });
-    if (!ok) return;
-    await api.scanRoots.remove(root.id);
-    setScanRoots((prev) => prev.filter((r) => r.id !== root.id));
-  };
-
-  const moveRoot = async (id: number, direction: "up" | "down") => {
-    setScanRoots(await api.scanRoots.move(id, direction));
-  };
-
-  // Keeps the "N videos could be modernized" count in sync with the panel's
-  // own list (e.g. right after an Archive) without waiting on a full reload.
-  const updateTranscodeCount = (rootId: number, count: number) => {
-    setScanRoots((prev) =>
-      prev.map((r) => (r.id === rootId ? { ...r, stats: { ...r.stats, transcodeCandidateCount: count } } : r)),
-    );
-  };
+  // Scoped to the "Run Scan Now (all folders)" button below - per-folder add/
+  // remove/reorder and their own errors now live in ScanFoldersManager.
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
 
   const runScanNow = async (scanRootId?: number) => {
-    setError(null);
+    setScheduleError(null);
     try {
       await api.scans.run(scanRootId);
       const st = await api.scans.status();
       setStatus(st);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not start scan");
+      setScheduleError(err instanceof ApiError ? err.message : "Could not start scan");
     }
   };
 
@@ -448,98 +353,8 @@ export default function SettingsPage() {
         <p className="mb-3 text-sm text-muted">
           Add folders containing your photos and videos. MemoryLane never modifies, renames, or moves originals.
         </p>
-        <div className="mb-3 flex gap-2">
-          <input
-            value={newPath}
-            onChange={(e) => setNewPath(e.target.value)}
-            placeholder={"e.g. D:\\Photos or /mnt/photos"}
-            className={`flex-1 ${inputClass}`}
-          />
-          <button onClick={addScanRoot} className={accentButtonClass}>
-            Add Folder
-          </button>
-        </div>
-        {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
-        <p className="mb-2 text-xs text-muted">Order here also sets the order folders appear in on the Home page.</p>
-        <ul className="flex flex-col gap-2">
-          {scanRoots.map((root, i) => (
-            <li
-              key={root.id}
-              className="flex flex-col gap-2.5 rounded-lg border border-border bg-surface px-3.5 py-2.5"
-            >
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex shrink-0 flex-col">
-                  <button
-                    onClick={() => moveRoot(root.id, "up")}
-                    disabled={i === 0}
-                    aria-label="Move up"
-                    title="Move up"
-                    className="grid h-5 w-5 place-items-center rounded text-muted hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
-                  >
-                    <ChevronUp size={14} strokeWidth={2} />
-                  </button>
-                  <button
-                    onClick={() => moveRoot(root.id, "down")}
-                    disabled={i === scanRoots.length - 1}
-                    aria-label="Move down"
-                    title="Move down"
-                    className="grid h-5 w-5 place-items-center rounded text-muted hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
-                  >
-                    <ChevronDown size={14} strokeWidth={2} />
-                  </button>
-                </div>
-                <div className="mr-auto flex min-w-0 flex-col gap-0.5">
-                  <span className={`truncate ${root.enabled ? "text-ink" : "text-muted"}`}>{root.path}</span>
-                  <span className="text-xs text-muted">{scanRootSummary(root)}</span>
-                </div>
-                <span className="flex shrink-0 items-center gap-2">
-                  <button
-                    onClick={() => runScanNow(root.id)}
-                    disabled={!root.enabled || status?.running}
-                    title={!root.enabled ? "Enable this folder to scan it" : undefined}
-                    className={buttonClass}
-                  >
-                    {status?.running && status.currentRun?.scanRootId === root.id ? "Scanning..." : "Scan Now"}
-                  </button>
-                  <button onClick={() => toggleRoot(root)} className={buttonClass}>
-                    {root.enabled ? "Disable" : "Enable"}
-                  </button>
-                  <button onClick={() => removeRoot(root)} className={buttonClass}>
-                    Remove
-                  </button>
-                </span>
-              </div>
-              {/* Live progress for whichever run currently has this folder active -
-                  a single-folder "Scan Now" run's own scope, or (during an
-                  all-folders run) whichever root the scanner has reached so far -
-                  shown right under the folder it's actually working on. */}
-              {status?.running && status.currentRun && activeScanRootId === root.id && (
-                <ScanProgress run={status.currentRun} />
-              )}
-              {root.stats.transcodeCandidateCount > 0 && (
-                <div className="border-t border-border pt-2.5">
-                  <button
-                    onClick={() => setOpenTranscodeRootId(root.id)}
-                    className="text-xs font-medium text-accent hover:underline"
-                  >
-                    {root.stats.transcodeCandidateCount.toLocaleString()} video
-                    {root.stats.transcodeCandidateCount === 1 ? "" : "s"} could be modernized →
-                  </button>
-                </div>
-              )}
-            </li>
-          ))}
-          {scanRoots.length === 0 && <li className="text-sm text-muted">No folders added yet.</li>}
-        </ul>
+        <ScanFoldersManager />
       </section>
-
-      {openTranscodeRootId != null && (
-        <TranscodeCandidatesPanel
-          scanRootId={openTranscodeRootId}
-          onClose={() => setOpenTranscodeRootId(null)}
-          onCountChange={(count) => updateTranscodeCount(openTranscodeRootId, count)}
-        />
-      )}
 
       <section>
         <h2 className="mb-3 font-serif text-lg font-semibold text-ink">Ignored Folders</h2>
@@ -597,6 +412,7 @@ export default function SettingsPage() {
         <button onClick={() => runScanNow()} disabled={status?.running} className={accentButtonClass}>
           {status?.running ? "Scan running..." : "Run Scan Now (all folders)"}
         </button>
+        {scheduleError && <p className="mt-2 text-sm text-red-500">{scheduleError}</p>}
 
         {status && (
           <div className="mt-4 flex flex-col gap-3 text-sm text-muted">
@@ -654,7 +470,7 @@ export default function SettingsPage() {
                   {analysis.provider.lastError ? ` - ${analysis.provider.lastError}` : ""}
                 </p>
                 <p className="mt-1 text-muted">
-                  Start it with <code>npm run ai</code> in a second terminal (see memorylane-ai/README.md). Photos queue up meanwhile and are
+                  Start it with <code>npm run ai</code> in a second terminal (see its README). Photos queue up meanwhile and are
                   analysed once it's reachable; this card refreshes within a few seconds.
                 </p>
               </div>
@@ -663,11 +479,11 @@ export default function SettingsPage() {
         )}
       </section>
 
-      <section>
-        <h2 className="mb-1 font-serif text-lg font-semibold text-ink">Reports &amp; Metadata</h2>
+      <section id="running-analysis">
+        <h2 className="mb-1 font-serif text-lg font-semibold text-ink">Running Analysis</h2>
         <p className="mb-3 text-sm text-muted">
-          Background processing that runs after scans - full EXIF capture for Reports. Pauses automatically while a scan
-          is running.
+          Background processing that runs after scans - EXIF capture, keywords, stacking, and (when the AI sidecar is
+          running) embeddings, photo tags, and faces. Pauses automatically while a scan is running.
         </p>
         {activeTab === "analysis" && <AnalysisProgress key={analysisKey} onStatus={setAnalysis} />}
         {analysis && analysis.analyzers.some((a) => a.counts.failed + a.counts.unsupported > 0) && (

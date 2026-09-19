@@ -12,6 +12,7 @@ import { createFacesAnalyzer } from "./analyzers/faces.js";
 import { createAiTagAnalyzer } from "./analyzers/ai-tags.js";
 import { createImportedTagAnalyzer } from "./analyzers/import-tags.js";
 import type { PersonService } from "../persons/person-service.js";
+import type { MediaToolCapabilities } from "../capabilities/media-tools.js";
 
 export interface AnalyzerDeps {
   paths: AppPaths;
@@ -20,12 +21,13 @@ export interface AnalyzerDeps {
   provider: AiProvider | null;
   vectorIndex: VectorIndex;
   persons: PersonService;
+  mediaTools: MediaToolCapabilities;
 }
 
 // Registration order is execution order. Phase 1: EXIF; Phase 2: perceptual
 // hash for stacks; Phase 3: image embeddings via the sidecar. Faces follow.
 export function createAnalyzers(db: Database.Database, _logger: Logger, deps: AnalyzerDeps): Analyzer[] {
-  const analyzers: Analyzer[] = [createExifFullAnalyzer(db), createImportedTagAnalyzer(db), createPhashAnalyzer(db, deps.paths)];
+  const analyzers: Analyzer[] = [createExifFullAnalyzer(db, deps.mediaTools), createImportedTagAnalyzer(db), createPhashAnalyzer(db, deps.paths)];
   if (deps.provider) {
     analyzers.push(createEmbedImageAnalyzer(db, deps.paths, deps.provider, deps.vectorIndex, () => deps.settings.getAll().aiEnabled));
     analyzers.push(createAiTagAnalyzer(db, deps.provider, () => deps.settings.getAll().aiEnabled));

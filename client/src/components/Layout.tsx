@@ -2,19 +2,25 @@ import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { BarChart3, ChevronDown, FolderOpen, LibraryBig, LogOut, MapPinned, Search, Settings as SettingsIcon, Star, Tags, Trash2, Users, type LucideIcon } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
+import { usePluginActive } from "../utils/plugins";
+import CoreUpdateBanner from "./CoreUpdateBanner";
 
 // Mirrors life-archive-app's ArchiveNav.tsx: sticky glass header, serif
 // wordmark, pill-shaped nav with icon + label links, active item filled
 // solid (bg-photo-shell), icon-only circular search button at the end.
-const navItems: { to: string; label: string; icon: LucideIcon; end?: boolean }[] = [
-  { to: "/", label: "Browse", icon: FolderOpen, end: true },
-  { to: "/favorites", label: "Favorites", icon: Star },
-  { to: "/settings", label: "Settings", icon: SettingsIcon },
-];
+interface NavItem { to: string; label: string; icon: LucideIcon; end?: boolean }
+const browseItem: NavItem = { to: "/", label: "Browse", icon: FolderOpen, end: true };
+const settingsItem: NavItem = { to: "/settings", label: "Settings", icon: SettingsIcon };
+const peopleItem: NavItem = { to: "/people", label: "People", icon: Users };
 
-const libraryItems: { to: string; label: string; icon: LucideIcon }[] = [
+// Every other plugin-backed page stays tucked in the Library dropdown
+// regardless of plugin state (Locations etc. work with or without their
+// plugin, just with reduced content) - People is different because without
+// the People plugin the page is entirely empty, so it's promoted to a real
+// top-level tab only once the plugin is actually active, and left out of
+// the Library dropdown entirely rather than appearing in both places.
+const libraryItems: NavItem[] = [
   { to: "/locations", label: "Locations", icon: MapPinned },
-  { to: "/people", label: "People", icon: Users },
   { to: "/tags", label: "Tags", icon: Tags },
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/cleanup", label: "Cleanup", icon: Trash2 },
@@ -25,6 +31,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const peopleAvailable = usePluginActive("com.memorylane.people");
   const libraryRef = useRef<HTMLDivElement>(null);
   const libraryButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -58,7 +65,7 @@ export default function Layout() {
             MemoryLane
           </Link>
           <nav className="flex items-center gap-1 rounded-full border border-border bg-nav-pill p-1 text-[13px] font-medium text-nav-muted shadow-nav">
-            {navItems.slice(0, 2).map((item) => {
+            {[browseItem, { to: "/favorites", label: "Favorites", icon: Star } as NavItem, ...(peopleAvailable ? [peopleItem] : [])].map((item) => {
               const Icon = item.icon;
               return (
                 <NavLink
@@ -66,12 +73,15 @@ export default function Layout() {
                   to={item.to}
                   end={item.end}
                   title={item.label}
-                  // Icon-only below sm (a full "Browse / Favorites / Settings"
-                  // text row plus search/logout doesn't fit a phone-width
-                  // screen at all - it was forcing the whole page to scroll
-                  // horizontally) - text labels return once there's room.
+                  // Icon-only below sm (a full "Browse / Favorites / People /
+                  // Settings" text row plus search/logout doesn't fit a
+                  // phone-width screen at all - it was forcing the whole page
+                  // to scroll horizontally) - text labels return once there's
+                  // room. Browse alone stays visible on mobile; everything
+                  // else in this group falls back to the Library dropdown's
+                  // own sm:hidden links below.
                   className={({ isActive }) =>
-                    `${item.to === "/favorites" ? "hidden sm:flex" : "flex"} size-9 items-center justify-center gap-2 rounded-full transition sm:w-auto sm:justify-start sm:px-3.5 ${
+                    `${item.to === "/" ? "flex" : "hidden sm:flex"} size-9 items-center justify-center gap-2 rounded-full transition sm:w-auto sm:justify-start sm:px-3.5 ${
                       isActive ? "bg-photo-shell text-white" : "hover:bg-hover-soft hover:text-ink"
                     }`
                   }
@@ -103,13 +113,17 @@ export default function Layout() {
                   className={({ isActive }) => `flex items-center gap-2 rounded-lg px-3 py-2 text-sm sm:hidden ${isActive ? "bg-accent/15 text-accent" : "hover:bg-hover"}`}>
                   <Star aria-hidden size={16} />Favorites
                 </NavLink>
+                {peopleAvailable && <NavLink to="/people" onClick={() => setLibraryOpen(false)}
+                  className={({ isActive }) => `flex items-center gap-2 rounded-lg px-3 py-2 text-sm sm:hidden ${isActive ? "bg-accent/15 text-accent" : "hover:bg-hover"}`}>
+                  <Users aria-hidden size={16} />People
+                </NavLink>}
                 <NavLink to="/settings" onClick={() => setLibraryOpen(false)}
                   className={({ isActive }) => `flex items-center gap-2 rounded-lg px-3 py-2 text-sm sm:hidden ${isActive ? "bg-accent/15 text-accent" : "hover:bg-hover"}`}>
                   <SettingsIcon aria-hidden size={16} />Settings
                 </NavLink>
               </div>}
             </div>
-            {navItems.slice(2).map((item) => {
+            {[settingsItem].map((item) => {
               const Icon = item.icon;
               return <NavLink key={item.to} to={item.to} title={item.label}
                 className={({ isActive }) => `hidden size-9 items-center justify-center gap-2 rounded-full transition sm:flex sm:w-auto sm:px-3.5 ${isActive ? "bg-photo-shell text-white" : "hover:bg-hover-soft hover:text-ink"}`}>
@@ -147,6 +161,7 @@ export default function Layout() {
           </nav>
         </div>
       </header>
+      <CoreUpdateBanner />
       <main className="mx-auto w-full max-w-[1440px] px-3 py-6 sm:px-5 sm:py-8 lg:px-8">
         <Outlet />
       </main>

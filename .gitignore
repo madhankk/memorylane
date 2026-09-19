@@ -19,13 +19,21 @@ server/data/
 # env
 .env
 .env.local
+.keys/
+plugins/optional/com.memorylane.ai-runtime/bin/
+plugins/optional/com.memorylane.apple-photos/bin/
+# Generated only after native plugin binaries are signed on this machine.
+plugins/.signed-*
 
-# desktop tray app - runtime/ is the assembled node binary + server files
-# (see desktop/scripts/prepare-runtime.mjs), release/ is electron-forge's
-# `make`/`package` output (see desktop/forge.config.ts's outDir)
-desktop/runtime/
-desktop/release/
-desktop/out/
+# native desktop tray generated runtime and release artifacts
+tray-go/runtime/
+tray-go/release/
+tray-go/bundled-plugins/
+tray-go/.cache/
+tray-go/release-phase*/
+tray-go/probe*/
+tray-go/electron-probe*/
+tray-go/*smoke-*/
 
 # isolated development worktrees
 .worktrees/

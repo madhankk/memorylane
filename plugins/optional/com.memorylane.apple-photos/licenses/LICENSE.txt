@@ -1,0 +1,1 @@
+MemoryLane first-party Apple Photos integration. Bundled dependency license notices are included by the platform build.

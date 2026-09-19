@@ -273,3 +273,14 @@ button:not(:disabled),
 .zoom-settle {
   animation: memorylane-zoom-settle 1.8s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
 }
+
+@keyframes plugin-install-progress {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(360%); }
+}
+.plugin-install-progress {
+  animation: plugin-install-progress 1.25s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .plugin-install-progress { animation-duration: 3s; }
+}

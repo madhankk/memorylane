@@ -12,6 +12,7 @@ import { processMediaItem } from "../media/media-processor.js";
 import { AnalysisRepo } from "../analysis/analysis-repo.js";
 import { markFoldersDirty } from "../stacks/dirty.js";
 import { isApplePhotosEnabled } from "../plugins/registry.js";
+import { DeferredMediaToolCapabilities, type MediaToolCapabilities } from "../capabilities/media-tools.js";
 
 interface ScanRootRow {
   id: number;
@@ -91,6 +92,7 @@ export class ScannerService {
     private db: Database.Database,
     private paths: AppPaths,
     private logger: Logger,
+    private mediaTools: MediaToolCapabilities = new DeferredMediaToolCapabilities(),
   ) {
     this.analysisRepo = new AnalysisRepo(db);
   }
@@ -185,7 +187,7 @@ export class ScannerService {
             parent_folder_id: parentFolderId,
             absolute_path: absolutePath,
             media_type: mediaType,
-          }).finally(() => {
+          }, this.mediaTools).finally(() => {
             stats.thumbnailsProcessed++;
           }),
         ),

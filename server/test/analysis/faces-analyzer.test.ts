@@ -7,7 +7,7 @@ import { createTestDb, seedScanRoot, seedFolder, seedMedia } from "../helpers/db
 import { startFakeSidecar, type FakeSidecar } from "../helpers/fake-sidecar.js";
 import { createFacesAnalyzer } from "../../src/analysis/analyzers/faces.js";
 import { SidecarProvider } from "../../src/providers/sidecar-provider.js";
-import { LanceVectorIndex } from "../../src/vectors/lance-vector-index.js";
+import { MemoryVectorIndex } from "../../src/vectors/memory-vector-index.js";
 import { spaceFor } from "../../src/vectors/vector-index.js";
 import type { AppPaths } from "../../src/config/paths.js";
 import { SettingsRepo } from "../../src/db/settings-repo.js";
@@ -40,7 +40,7 @@ describe("faces analyzer", () => {
     fs.writeFileSync(previewPath, Buffer.from([2, 9, 9, 9, 9])); // 2 faces
     const video = seedMedia(db, folder, root, { filename: "v.mp4", media_type: "video" });
     const provider = new SidecarProvider(fake.url, { expectedModel: fake.model, healthTtlMs: 0 });
-    const index = new LanceVectorIndex(paths.vectorsDir);
+    const index = new MemoryVectorIndex();
     const received: number[][] = [];
     const analyzer = createFacesAnalyzer(db, paths, provider, index, new SettingsRepo(db), () => true, async (ids) => {
       received.push(ids);

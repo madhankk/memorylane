@@ -33,13 +33,12 @@ Photos, RAW, video, and Apple Live Photos are all indexed and browsable.
 
 ## AI features (optional)
 
-Find similar, describe-it search, image-similarity stacking and People use small local models served by the `memorylane-ai` sidecar (CLIP for image/text vectors, YuNet + SFace or InsightFace ArcFace for faces, all via ONNX Runtime). Nothing leaves your machine: the sidecar never sees your file paths - the server sends it thumbnails and keeps the resulting vectors in its own data directory. It runs on Windows, macOS (Apple Silicon) and Linux; CPU is plenty (about 50 photos/s for embeddings on an M2 Max), GPU optional. Start it with `npm run ai` in a second terminal (Python 3.11+ required, ~350 MB model download on first start); see [memorylane-ai/README.md](memorylane-ai/README.md). Without it, everything else works exactly as before - EXIF reports and time/hash-based stacks need no sidecar.
+Find similar, describe-it search, image-similarity stacking and People use small local models served by the `memorylane-ai` sidecar (CLIP for image/text vectors, YuNet + SFace or InsightFace ArcFace for faces, all via ONNX Runtime). Nothing leaves your machine: the sidecar never sees your file paths - the server sends it thumbnails and keeps the resulting vectors in its own data directory. It runs on Windows, macOS (Apple Silicon) and Linux; CPU is plenty (about 50 photos/s for embeddings on an M2 Max), GPU optional. Start it with `npm run ai` in a second terminal (Python 3.11+ required, ~350 MB model download on first start); see [its README](plugins/optional/com.memorylane.ai-runtime/python/README.md). Without it, everything else works exactly as before - EXIF reports and time/hash-based stacks need no sidecar.
 
 ## Requirements
 
 - Node.js 20+
-- [ExifTool](https://exiftool.org/) available on PATH (RAW metadata/preview extraction; standard image browsing still works without it)
-- ffmpeg/ffprobe - bundled automatically (via ffmpeg-static/ffprobe-static), no separate install needed; used only to extract a video's poster-frame thumbnail and duration, never to transcode
+- ExifTool, ffmpeg, and ffprobe are all bundled automatically (via `exiftool-vendored`, `ffmpeg-static`, `ffprobe-static`) - nothing extra to install; ffmpeg/ffprobe are used only to extract a video's poster-frame thumbnail and duration, never to transcode
 
 ## Setup
 
@@ -50,6 +49,8 @@ npm install
 npm run build
 npm start
 ```
+
+No configuration is required to get this far. If you want to override any defaults (a custom port, a throwaway data directory, plugin development - see "Configuration" and "Development" below), copy `.env.example` to `.env` first; `npm start`/`npm run dev` load it automatically.
 
 Open `http://127.0.0.1:4280`. On first launch you'll be asked to create an admin username and password - there's no default account and no public sign-up, so this is the only way in. After logging in, go to **Settings** and add one or more folders to scan; MemoryLane will index them and start generating thumbnails in the background.
 
@@ -64,17 +65,61 @@ This works whether the server is running or stopped, and signs out every existin
 
 ## Development
 
+### Without the desktop tray (day-to-day work)
+
+Use two terminals:
+
 ```bash
 npm install
-npm run dev          # starts the Fastify server on :4280
-npm run dev:client   # in a second terminal - Vite dev server on :5173 with API proxy
+cp .env.example .env   # optional - see "Configuration" and the plugin section below
+npm run dev            # starts the Fastify server on :4280
+npm run dev:client     # in a second terminal - Vite dev server on :5173 with API proxy
 ```
 
-Open `http://localhost:5173` during development (the client dev server proxies `/api` to the backend).
+Open `http://localhost:5173` (the client dev server proxies `/api` to the backend). This is the fastest inner loop - no Go build, no runtime staging - and is what you want for almost all server/client work.
+
+`npm run dev`/`npm start` both load `.env` from the repo root automatically (see `.env.example`) - it's the place to put anything you'd otherwise have to re-export in every shell: a throwaway `MEMORYLANE_DATA_DIR`, the optional real-signed-pipeline variables covered below, and so on. Any path-shaped value in it is resolved against the repo root, not npm's own working directory, so relative paths just work.
+
+### Building and running a plugin
+
+Plugins live under `plugins/` (`optional/`, or a new folder of your own) as a `manifest.template.json` plus source; `plugins/fixtures/com.memorylane.fixture-module` is a minimal example. There's no `plugins/required/` - metadata/RAW and video support are core dependencies, not plugins (see below).
+
+**Dev-catalog mode is automatic and needs no setup.** Whenever `npm run dev`/`npm start` finds neither `MEMORYLANE_PLUGIN_CATALOG_URL` nor `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY` set (the default, with a stock `.env`), it loads plugins straight from `plugins/optional/` on disk - no build step, no signing key, no network. Drop a new folder with its own `manifest.template.json` under `plugins/optional/` and it shows up in Settings → Plugins to install and enable. After changing a module or command-kind plugin's source, re-enable it (or restart the server) to pick up the change - there's no artifact to rebuild.
+
+(Metadata/EXIF/RAW-preview and video probing/thumbnails/transcoding aren't plugins - they're core dependencies (`exiftool-vendored`, `ffmpeg-static`, `ffprobe-static`), same as `sharp` is, since every install needs them regardless. Only the genuinely optional AI features - AI Runtime, AI Search, People, Apple Photos - go through the plugin platform.)
+
+A service-kind dev plugin (one whose `entry.kind` is `"service"`) can also be run and restarted independently of core: declare a fixed `devPort` on its manifest entry and run it yourself (your own `npm run dev`, watch-and-restart, whatever) instead of letting the server spawn it. Core then only health-checks that port - it never starts, stops, or restarts a process with a `devPort` set, so your own dev loop is in full control. The plugin still needs to answer the same `/health` contract every service plugin does; authenticate with the fixed `DEV_SERVICE_TOKEN` exported from `@memorylane/plugin-sdk` instead of the per-launch token core would normally inject.
+
+Dropping into Settings and clicking Install/Update on a dev-catalog plugin is a no-op beyond enabling it - there's no artifact to download, since it's already sitting on disk.
+
+**Testing the real signed pipeline** (the one a packaged installer actually uses) is a separate, less common case - use it if you're working on plugin *signing/distribution* itself, not on a plugin's own code:
+
+```bash
+npm run build --workspace=plugin-sdk
+npm run plugins:build -- stable development
+```
+
+`development` (skip it if you have the real key - see below) generates a throwaway signing keypair and writes its public half to `dist/plugin-repository/v1/stable/development-public-key.pem`. Uncomment the two `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY`/`MEMORYLANE_PLUGIN_PUBLIC_KEY` lines in `.env` (copy `.env.example` first if you haven't) and restart `npm run dev` - this takes over from dev-catalog mode and serves install/update requests from that signed local directory instead. After changing plugin source, re-run `npm run plugins:build -- stable development` and hit **Install** again (bump `version` in `manifest.template.json` first if you want **Update** instead, which requires a strictly newer version).
+
+If `.keys/plugin-release-private.pem` exists locally (see "Building for production" below), you don't need `MEMORYLANE_PLUGIN_PUBLIC_KEY` at all - the build signs with the real key, which the server trusts by default.
+
+### With the desktop tray
+
+Only needed when working on `tray-go/` itself (the system tray, process supervision, launch-at-login, the updater) or verifying the packaged experience. Build the web/server output and stage its isolated runtime first:
+
+```bash
+npm run build
+npm run desktop:runtime
+go -C tray-go run .
+```
+
+Run `go -C tray-go run .` from the repo root (as shown) or from inside `tray-go/` - both are auto-detected with no extra configuration. After server, shared, or client changes, repeat `npm run build && npm run desktop:runtime`. Changes confined to `tray-go/` only need `go -C tray-go run .` restarted.
+
+For an isolated supervisor check without the full tray UI, run `go -C tray-go run . --smoke-test` after preparing the runtime.
 
 ## Configuration
 
-MemoryLane is configured entirely through environment variables (no config file):
+MemoryLane is configured entirely through environment variables. `npm run dev`/`npm start` load `<repo-root>/.env` automatically if present (see `.env.example`); a packaged desktop build has no `.env` and relies solely on variables compiled in or set in its own environment.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -82,6 +127,11 @@ MemoryLane is configured entirely through environment variables (no config file)
 | `MEMORYLANE_PORT` | `4280` | Port the server listens on |
 | `MEMORYLANE_BIND_ADDRESS` | `0.0.0.0` | Bind address - `0.0.0.0` (the default) listens on every network interface, so other devices on your LAN (phone, tablet, another computer) can reach it at `http://<this-machine's-LAN-IP>:4280`. Set to `127.0.0.1` to restrict it to this machine only. |
 | `MEMORYLANE_ALLOW_REMOTE_SETUP` | unset (disabled) | Initial admin account setup is restricted to the machine hosting MemoryLane by default - since the server is reachable on your LAN as soon as it starts, this stops someone else on the network from claiming the one admin account before you do. Set to `1` to allow completing setup from another device. |
+| `MEMORYLANE_PLUGIN_DIR` | OS-standard local application support | Fixed location for installed plugin code and activation state. This does not move with the media data directory. |
+| `MEMORYLANE_PLUGIN_CATALOG_URL` | unset when running from source (`npm run dev`/`npm start`) | HTTPS URL of the signed first-party `catalog.json`. Plugin installation remains unavailable until configured (unless `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY` is set - see below). Packaged desktop builds compile in `https://memorylaneapp.org/plugins/v1/stable/catalog.json` as the default (see `tray-go/scripts/package-*`) - set this to override it, e.g. for a beta channel or a self-hosted mirror. |
+| `MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY` | unset | Dev/local-catalog fallback: a directory built by `npm run plugins:build` (see "Building and running a plugin" above), served for install/update instead of a real HTTPS catalog. Only used when `MEMORYLANE_PLUGIN_CATALOG_URL` isn't set. A relative path is resolved against the repo root, not the working directory. |
+| `MEMORYLANE_PLUGIN_PUBLIC_KEY` | the real committed release key | Ed25519 public key PEM, or a path to one, used to verify the catalog and plugin artifacts (relative paths resolve against the repo root). Point this at a `development-public-key.pem` to trust a `plugins:build -- stable development` output. |
+| `MEMORYLANE_PLUGIN_ALLOW_HTTP` | unset (disabled) | Development only: permits an HTTP catalog. Artifact HTTP remains restricted to loopback. |
 
 MemoryLane has no HTTPS/TLS support, so traffic (including your session cookie and the photos themselves) is unencrypted on the network - fine on a trusted home LAN, but don't expose the default `0.0.0.0` bind directly to the internet (e.g. via router port-forwarding) without putting a reverse proxy with real TLS in front of it.
 
@@ -104,52 +154,77 @@ Occasionally a migration needs to invalidate existing thumbnails (e.g. to fix a 
 
 ## Desktop app (Windows/macOS tray installer)
 
-`desktop/` packages MemoryLane as a tray app for non-developers: it manages the server as a background process (start/stop, launch-at-login, a small status window) and needs no separate Node.js install, since it bundles its own copy of the Node runtime rather than requiring one on the target machine.
+`tray-go/` packages MemoryLane as a small native tray app for non-developers. It manages the server process, launch-at-login, browser opening, and signed updates without an embedded browser engine. It bundles Node so target machines need no separate Node.js installation. See "Development" above for running it locally - this section is the production build sequence.
 
-### Build sequence
+### Building for production
+
+Every command below runs from the repo root, in order. One first-party signing key covers both the plugin catalog and core update manifests - it already exists at its default repo location and is picked up automatically with **no configuration needed** - override only if you want something different:
+
+| Key | Default location | Override |
+| --- | --- | --- |
+| Signing key (plugin catalog + core update manifests) | `.keys/plugin-release-private.pem` | `MEMORYLANE_PLUGIN_SIGNING_KEY` |
+| Plugin catalog URL (compiled into the tray) | `.../plugins/v1/stable/win32-x64/catalog.json` (Windows) or `.../darwin-arm64/catalog.json` (macOS) | `MEMORYLANE_PLUGIN_CATALOG_URL` |
+| Core update feed URL (compiled into the tray) | `.../updates/win32-x64/manifest.json` (Windows) or `.../updates/darwin-arm64/manifest.json` (macOS) | `MEMORYLANE_UPDATE_FEED_URL` |
+
+**1. Build the core**
 
 ```bash
-# 1. From the repo root - builds shared, client, and server
 npm install
 npm run build
-
-# 2. From desktop/ - bundles the tray app, assembles the runtime folder
-#    (a copy of node.exe + step 1's server build + its production
-#    dependencies - see scripts/prepare-runtime.mjs), and produces a
-#    platform installer
-cd desktop
-npm install
-npm run make
 ```
 
-`npm run make` chains `npm run build` (desktop's own tray app code), `npm run prepare-runtime`, then `electron-forge make`. Step 1 must already have run - `prepare-runtime` fails loudly if `server/dist`, `server/public`, or `shared/dist` don't exist yet, rather than silently packaging a stale or empty runtime.
+**2. Package the installer**
 
-Output lands in `desktop/release/<version>/`:
-- Packaged app: `MemoryLane-win32-x64/` (Windows) or the `.app` (macOS)
-- Installer: `make/squirrel.windows/x64/MemoryLane-Setup.exe` (Windows) or `MemoryLane-<arch>.dmg` (macOS)
+```bash
+npm run desktop:package     # Windows: staged app + ZIP
+npm run desktop:installer   # Windows: also builds MemoryLane-Setup.exe (needs Inno Setup 7+)
+bash tray-go/scripts/package-macos.sh   # macOS: run on macOS - builds .app + DMG
+```
 
-Use `npm run package` instead of `make` to produce just the packaged app folder without an installer (useful for a quick sanity check without waiting on Squirrel/DMG packaging).
+This assembles `tray-go/runtime` (including `exiftool-vendored`/`ffmpeg-static`/`ffprobe-static` as ordinary server dependencies - metadata/RAW/video support just works, no plugin catalog or network access needed for it) and compiles the tray.
 
-### Signing a real release
+`MEMORYLANE_UPDATE_FEED_URL` defaults to the real hosted feed (same as the plugin catalog URL above) - the tray reports "Updates not configured" and does nothing only if nothing's actually been published there yet (see step 5) or you've explicitly overridden it to something unset/unreachable.
+
+Output lands in `tray-go/release/<version>/`: the staged app + ZIP, `MemoryLane-Setup.exe` if you ran `desktop:installer` (a native 64-bit installer - `installer.iss` uses Inno Setup 7's `SetupArchitecture=x64`), or a `.app` + DMG on macOS.
+
+**3. Code-sign (optional)**
 
 ```powershell
 $env:SIGN_RELEASE = "1"
-npm run make
+npm run desktop:installer
 ```
 
-Both `memorylane-desktop.exe` **and** `node-runtime.exe` get signed (the latter is spawned as its own process, not a library loaded by the already-signed app, so it needs an independent signature or Windows SmartScreen flags it on its own), plus the `MemoryLane-Setup.exe` installer itself - see `desktop/forge.config.ts` and `desktop/scripts/sign-*.ps1`. This requires Windows code-signing infrastructure already set up on the build machine (Azure Trusted Signing via `signtool`, pointed at `C:\codesigning\metadata.json`). Without `SIGN_RELEASE=1`, `make` still produces a working installer, just unsigned - fine for local testing, but Windows will show a SmartScreen warning and macOS will block launch outright without a signed, notarized build.
+Signs `MemoryLane.exe`, `node-runtime.exe`, `MemoryLane-Setup.exe`, and every vendored native executable under the runtime (`exiftool.exe`, `ffmpeg.exe`, `ffprobe.exe`, etc.) through the Azure Trusted Signing scripts under `tray-go/scripts`. On macOS, `SIGN_RELEASE=1` also signs the tray, Node runtime, native modules and executables, and app bundle, then notarizes and staples the DMG (needs `MACOS_SIGNING_IDENTITY` and `APPLE_NOTARY_KEYCHAIN_PROFILE`).
 
-macOS signing/notarization is wired up in `forge.config.ts` too, but is **not yet complete**: the automatic `osxSign` pass signs the `.app` bundle's own code, but `runtime/`'s own binaries (`node-runtime.exe`, and the native `.node`/`dylib` files inside `runtime/node_modules` for `better-sqlite3`/`sharp`) still need an explicit `codesign` pass added before notarization will actually pass - see the `TODO` comment in `forge.config.ts`.
+**4. Publish the plugin catalog (AI Runtime, AI Search, People, Apple Photos)**
 
-### Development
+These are the only genuinely optional, plugin-platform-backed features left - installed on demand from the hosted catalog, not bundled into step 2's package. **Each platform (`win32-x64`, `darwin-arm64`) has its own catalog and is published independently**, from that platform's own machine - AI Runtime and Apple Photos each ship a real native executable that can only be built on its own target OS/arch, not something `plugins:build` can cross-compile:
 
 ```bash
-cd desktop
-npm run prepare-runtime   # first time only, or after a server/shared code change
-npm run dev
+npm run plugins:prepare-ai-runtime     # Windows: builds the win32-x64 AI Runtime binary
+npm run plugins:prepare-apple-photos   # macOS: builds the darwin-arm64 Apple Photos binary
+npm run plugins:sign-native            # needs real signing credentials - see step 3
+npm run plugins:build -- stable        # signs with .keys/plugin-release-private.pem automatically
+npm run plugins:verify -- dist/plugin-repository/v1/stable/win32-x64    # or .../darwin-arm64 on macOS
 ```
 
-`npm run dev` only rebuilds the tray app itself, not the runtime folder - it doesn't call `prepare-runtime`, so a fresh clone (or a change to server/shared code) needs an explicit `prepare-runtime` run first. Re-run it whenever server or shared code changes; the tray app's own code (`desktop/src`, `desktop/ui`) is picked up by `npm run dev` alone.
+`plugins:build` writes one catalog per platform subdirectory and only builds what the current machine actually has a native binary for - AI Runtime is skipped on a Mac, Apple Photos is skipped on Windows, so this same sequence runs unmodified on both.
+
+If `SIGN_RELEASE=1` is set in your shell (e.g. left over from step 3), `plugins:build` refuses to run until AI Runtime's/Apple Photos' own native executables have been code-signed first - it's checking for the marker file `plugins:sign-native` writes, not just a version-controlled setting:
+
+For a plain local/unsigned catalog build, just make sure `SIGN_RELEASE` isn't set (`Remove-Item Env:\SIGN_RELEASE` in PowerShell, or open a fresh shell) - `plugins:build` runs straight through without it.
+
+Then upload `dist/plugin-repository/v1/stable/win32-x64/` to `https://memorylaneapp.org/plugins/v1/stable/win32-x64/` (or `darwin-arm64` on macOS - the URL step 2 already points at by default for each platform's own build) - see [plugin repository deployment](docs/plugin-repository-deployment.md) for the atomic-upload procedure and hosting details. Publishing from one platform never touches the other's live catalog - there's nothing to merge and no ordering requirement between the two machines.
+
+**5. Publish a core update (optional, once you're ready to ship an update to existing installs)**
+
+```bash
+npm run desktop:update-manifest -- <installer-path> <public-installer-url> <output-manifest.json>
+```
+
+Signs with `.keys/plugin-release-private.pem` automatically, same key as the plugin catalog (override with `MEMORYLANE_PLUGIN_SIGNING_KEY` as usual).
+
+Upload the signed installer and the manifest it produced to `https://memorylaneapp.org/updates/<platform>/` (`win32-x64`, `darwin-arm64` - Intel Mac is out of scope for now), then set `MEMORYLANE_UPDATE_FEED_URL` to that manifest's URL for future packaging runs (step 2) - from then on, every new package points existing installs at the update.
 
 ## Repository layout
 
@@ -157,7 +232,7 @@ npm run dev
 server/   Fastify + TypeScript backend: auth, scanning, thumbnails, SQLite, REST API
 client/   React + TypeScript + Vite frontend
 shared/   Shared DTOs, enums, and zod validation schemas used by both
-desktop/  Electron tray app that packages the server as a Windows/macOS installer
+tray-go/  Native Windows/macOS tray, process supervisor, updater, and packaging
 ```
 
 ## License

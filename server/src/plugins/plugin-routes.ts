@@ -1,13 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Logger } from "pino";
-import os from "node:os";
-import path from "node:path";
 import type { AppContext } from "../context.js";
 import { APPLE_PHOTOS_PLUGIN_ID, applePhotosPluginStatus } from "./registry.js";
 import { isApplePhotosEnabled } from "./registry.js";
 import { toMediaDto, type MediaRow } from "../api/mappers.js";
 import { decorateMedia } from "../api/decorate-media.js";
+import { resolveRepoPath } from "../config/paths.js";
 
 const updateSchema = z.object({ enabled: z.boolean() }).strict();
 
@@ -23,8 +22,133 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
       FROM apple_photos_assets WHERE scan_root_id = ?`).get(id) as { previewOnly: number; unavailable: number };
     return { ...(row ?? { status: "idle", processed: 0, total: 0, failed: 0, error: null, startedAt: null, finishedAt: null, lastSuccessAt: null }), ...availability };
   };
+  app.get("/api/internal/update-readiness", async (request, reply) => {
+    const expected=process.env.MEMORYLANE_DESKTOP_TOKEN;
+    if(!expected||request.headers["x-memorylane-desktop-token"]!==expected)return reply.code(404).send({error:"Not found"});
+    const reasons:string[]=[];
+    if(ctx.pluginManager?.isBusy())reasons.push("A plugin operation is running");
+    if(ctx.scanner.isRunning())reasons.push("A library scan is running");
+    if(ctx.db.prepare("SELECT 1 FROM video_transcode_jobs WHERE status IN ('pending','transcoding') LIMIT 1").get())reasons.push("Video processing is running");
+    if(ctx.db.prepare("SELECT 1 FROM apple_photos_sync_state WHERE status='running' LIMIT 1").get())reasons.push("Apple Photos sync is running");
+    return reply.send({ready:reasons.length===0,reasons});
+  });
   app.get("/api/plugins", { preHandler: app.requireAuth }, async (_request, reply) =>
     reply.send([applePhotosPluginStatus(ctx.db)]));
+
+  // Generic first-party plugin inventory. The existing /api/plugins route
+  // remains stable until the Phase 3 UI moves off the legacy Apple adapter.
+  app.get("/api/plugin-platform", { preHandler: app.requireAuth }, async (_request, reply) =>
+    reply.send(ctx.pluginManager?.inventory() ?? []));
+
+  app.get("/api/plugin-platform/onboarding", { preHandler: app.requireAuth }, async (_request, reply) => {
+    const inventory = ctx.pluginManager?.inventory() ?? [];
+    return reply.send({ complete: ctx.pluginManager?.state.snapshot().onboardingComplete ?? true, plugins: inventory });
+  });
+
+  app.get("/api/plugin-platform/updates", { preHandler: app.requireAuth }, async (_request, reply) =>
+    reply.send({ available: ctx.pluginManager?.availableUpdates() ?? [], history: ctx.pluginUpdates?.history() ?? [] }));
+
+  app.post("/api/plugin-platform/updates/check", { preHandler: app.requireAuth }, async (_request, reply) => {
+    if(!ctx.pluginUpdates)return reply.code(503).send({error:"Plugin update catalog is not configured"});
+    try{return reply.send(await ctx.pluginUpdates.checkNow());}catch(error){return reply.code(503).send({error:error instanceof Error?error.message:String(error)});}
+  });
+
+  app.post("/api/plugin-platform/onboarding/complete", { preHandler: app.requireAuth }, async (_request, reply) => {
+    if (!ctx.pluginManager) return reply.code(503).send({ error: "Plugin platform is unavailable on this system" });
+    const missing = ctx.pluginManager.inventory().filter((plugin) => plugin.required && plugin.state !== "ready");
+    if (missing.length) return reply.code(409).send({ error: `Required plugins are not ready: ${missing.map((item) => item.name).join(", ")}` });
+    ctx.pluginManager.state.update((draft) => { draft.onboardingComplete = true; });
+    return reply.send({ complete: true });
+  });
+
+  app.put("/api/plugin-platform/:id", { preHandler: app.requireAuth }, async (request, reply) => {
+    if (!ctx.pluginManager) return reply.code(503).send({ error: "Plugin platform is unavailable on this system" });
+    const id = (request.params as { id: string }).id;
+    const parsed = z.object({ enabled: z.boolean(), version: z.string().optional() }).strict().safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "Invalid input" });
+    // Required plugins can still be disabled internally as part of an update
+    // (activateInstalledUpdate disables the old version before enabling the
+    // new one) - that's not a user turning a core feature off, so the guard
+    // belongs here, on the explicit user-facing request, not inside
+    // PluginManager.disable() itself.
+    if (!parsed.data.enabled && ctx.pluginManager.inventory().find((plugin) => plugin.id === id)?.required) {
+      return reply.code(409).send({ error: "Required plugins cannot be disabled" });
+    }
+    // Same reasoning as the required-plugins guard above - enforced here,
+    // not inside PluginManager.disable(), so activateInstalledUpdate()'s own
+    // internal disable+enable cycle during a version update is unaffected.
+    if (!parsed.data.enabled) {
+      const dependents = ctx.pluginManager.enabledDependents(id);
+      if (dependents.length > 0) return reply.code(409).send({ error: `Cannot disable - still needed by ${dependents.join(", ")}` });
+    }
+    try {
+      if (parsed.data.enabled) {
+        const version = parsed.data.version ?? ctx.pluginManager.state.snapshot().plugins[id]?.activeVersion;
+        if (!version) return reply.code(409).send({ error: "Install a plugin version before enabling it" });
+        await ctx.pluginManager.enable(id, version);
+      } else await ctx.pluginManager.disable(id);
+      if (id === "com.memorylane.apple-photos") ctx.db.prepare(`INSERT INTO plugin_settings (id, enabled) VALUES (?, ?)
+        ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')`)
+        .run(APPLE_PHOTOS_PLUGIN_ID, parsed.data.enabled ? 1 : 0);
+      return reply.send(ctx.pluginManager.inventory().find((plugin) => plugin.id === id));
+    } catch (error) {
+      return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  app.delete("/api/plugin-platform/:id/:version", { preHandler: app.requireAuth }, async (request, reply) => {
+    if (!ctx.pluginManager) return reply.code(503).send({ error: "Plugin platform is unavailable on this system" });
+    const { id, version } = request.params as { id: string; version: string };
+    try { await ctx.pluginManager.uninstall(id, version); return reply.code(204).send(); }
+    catch (error) { return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) }); }
+  });
+
+  // The dev/local-catalog fallback (MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY) lets
+  // install/update be exercised from Settings against a directory built with
+  // `npm run plugins:build -- stable development`, without standing up a real
+  // HTTPS catalog - see docs/plugin-repository-deployment.md. It only kicks
+  // in when no real catalog URL is configured, so a production deployment
+  // with MEMORYLANE_PLUGIN_CATALOG_URL set is unaffected.
+  app.post("/api/plugin-platform/:id/install", { preHandler: app.requireAuth }, async (request, reply) => {
+    if (!ctx.pluginManager) return reply.code(503).send({ error: "Plugin platform is unavailable on this system" });
+    const id = (request.params as { id: string }).id;
+    const parsed = z.object({ version: z.string() }).strict().safeParse(request.body);
+    const catalogUrl = process.env.MEMORYLANE_PLUGIN_CATALOG_URL;
+    const bundledDirectory = process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY ? resolveRepoPath(process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY) : undefined;
+    if (!parsed.success) return reply.code(400).send({ error: "Invalid input" });
+    // Dev-catalog plugins load straight from their source directory (see
+    // dev-catalog.ts) - there's nothing to download or unpack, so "install"
+    // is a no-op; the enable PUT below is what actually starts/loads them.
+    if (ctx.pluginManager.isDevPlugin(id)) return reply.code(201).send(ctx.pluginManager.inventory().find((plugin) => plugin.id === id));
+    if (!catalogUrl && !bundledDirectory) return reply.code(503).send({ error: "Plugin catalog is not configured" });
+    try {
+      if (catalogUrl) await ctx.pluginManager.installFromCatalog(id, parsed.data.version, catalogUrl);
+      else await ctx.pluginManager.installFromDirectory(id, parsed.data.version, bundledDirectory!);
+      return reply.code(201).send(ctx.pluginManager.inventory().find((plugin) => plugin.id === id));
+    } catch (error) {
+      return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  app.post("/api/plugin-platform/:id/update", { preHandler: app.requireAuth }, async (request, reply) => {
+    if (!ctx.pluginManager) return reply.code(503).send({ error: "Plugin platform is unavailable on this system" });
+    const id=(request.params as {id:string}).id, parsed=z.object({version:z.string()}).strict().safeParse(request.body);
+    const catalogUrl=process.env.MEMORYLANE_PLUGIN_CATALOG_URL, bundledDirectory=process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY?resolveRepoPath(process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY):undefined;
+    if(!parsed.success)return reply.code(400).send({error:"Invalid input"});
+    if(ctx.pluginManager.isDevPlugin(id))return reply.send(ctx.pluginManager.inventory().find(p=>p.id===id));
+    if(!catalogUrl&&!bundledDirectory)return reply.code(400).send({error:"Plugin version or catalog is unavailable"});
+    try{
+      if(catalogUrl)await ctx.pluginManager.updateFromCatalog(id,parsed.data.version,catalogUrl);
+      else await ctx.pluginManager.updateFromDirectory(id,parsed.data.version,bundledDirectory!);
+      return reply.send(ctx.pluginManager.inventory().find(p=>p.id===id));
+    }
+    catch(error){return reply.code(409).send({error:error instanceof Error?error.message:String(error)});}
+  });
+
+  app.get("/api/plugin-platform/:id/logs", { preHandler: app.requireAuth }, async (request, reply) => {
+    if (!ctx.pluginManager) return reply.code(503).send({ error: "Plugin platform is unavailable on this system" });
+    return reply.send({ lines: ctx.pluginManager.logs((request.params as {id:string}).id) });
+  });
 
   app.put("/api/plugins/apple-photos", { preHandler: app.requireAuth }, async (request, reply) => {
     const parsed = updateSchema.safeParse(request.body);
@@ -43,8 +167,9 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
   app.get("/api/plugins/apple-photos/health", { preHandler: app.requireAuth }, async (_request, reply) => {
     if (!isApplePhotosEnabled(ctx.db)) return reply.code(409).send({ error: "Apple Photos is disabled" });
     try {
-      const { photosHelperHealth } = await import("./apple-photos/helper-client.js");
-      return reply.send(await photosHelperHealth(ctx.paths.dataDir));
+      const { applePhotosHealth } = await import("./apple-photos/plugin-client.js");
+      if (!ctx.pluginManager) throw new Error("Plugin platform unavailable");
+      return reply.send(await applePhotosHealth(ctx.pluginManager));
     } catch (error) {
       return reply.code(503).send({ error: error instanceof Error ? error.message : "Photos helper unavailable" });
     }
@@ -52,8 +177,9 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
 
   app.get("/api/plugins/apple-photos/libraries", { preHandler: app.requireAuth }, async (_request, reply) => {
     if (!isApplePhotosEnabled(ctx.db)) return reply.code(409).send({ error: "Apple Photos is disabled" });
-    const { detectPhotosLibraries } = await import("./apple-photos/detect.js");
-    return reply.send(detectPhotosLibraries(path.join(os.homedir(), "Pictures")));
+    const { detectApplePhotosLibraries } = await import("./apple-photos/plugin-client.js");
+    if (!ctx.pluginManager) return reply.code(503).send({ error: "Plugin platform unavailable" });
+    return reply.send(await detectApplePhotosLibraries(ctx.pluginManager));
   });
 
   const resolveRoot = (id: number) => ctx.db.prepare("SELECT id, path, enabled FROM scan_roots WHERE id = ? AND kind = 'apple-photos'")
@@ -112,8 +238,9 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
       return reply.code(404).send({ error: "Apple Photos item not found" });
     }
     try {
-      const { openInPhotos } = await import("./apple-photos/open-in-photos.js");
-      await openInPhotos(input.data.uuid);
+      const { openInApplePhotos } = await import("./apple-photos/plugin-client.js");
+      if (!ctx.pluginManager) throw new Error("Plugin platform unavailable");
+      await openInApplePhotos(ctx.pluginManager, input.data.uuid);
       return reply.send({ ok: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not open Photos";
@@ -134,9 +261,10 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
     }
     if (activeSyncs.has(id)) return reply.code(409).send({ error: "Sync is already running. Check again when it finishes." });
     try {
-      const { fetchCatalogPage } = await import("./apple-photos/helper-client.js");
+      const { fetchCatalogPage } = await import("./apple-photos/plugin-client.js");
       const { findAppleCatalogAsset, upsertAppleAsset, applyAppleMetadata } = await import("./apple-photos/sync.js");
-      const asset = await findAppleCatalogAsset((cursor) => fetchCatalogPage(ctx.paths.dataDir, root.path, cursor), input.data.uuid);
+      if (!ctx.pluginManager) throw new Error("Plugin platform unavailable");
+      const asset = await findAppleCatalogAsset((cursor) => fetchCatalogPage(ctx.pluginManager!, root.path, cursor), input.data.uuid);
       if (!asset) return reply.code(404).send({ error: "Item is no longer in the Photos catalog" });
       if (!isApplePhotosEnabled(ctx.db) || !resolveRoot(id)?.enabled) return reply.code(409).send({ error: "Apple Photos is disabled" });
       const result = upsertAppleAsset(ctx.db, id, asset);
@@ -170,15 +298,16 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
     if (activeSyncs.has(id)) throw new Error("Sync already running");
     activeSyncs.add(id);
     try {
-      const { photosHelperHealth, fetchCatalogPage } = await import("./apple-photos/helper-client.js");
-      await photosHelperHealth(ctx.paths.dataDir);
+      const { applePhotosHealth, fetchCatalogPage } = await import("./apple-photos/plugin-client.js");
+      if (!ctx.pluginManager) throw new Error("Plugin platform unavailable");
+      await applePhotosHealth(ctx.pluginManager);
       const { syncAppleRoot, shouldKickAppleAnalysis } = await import("./apple-photos/sync.js");
       ctx.db.prepare(`INSERT INTO apple_photos_sync_state (scan_root_id, status, processed, total, failed, last_error, started_at, finished_at)
         VALUES (?, 'running', 0, 0, 0, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), NULL)
         ON CONFLICT(scan_root_id) DO UPDATE SET status = 'running', processed = 0, total = 0, failed = 0,
           last_error = NULL, started_at = excluded.started_at, finished_at = NULL`).run(id);
       const completion = syncAppleRoot(ctx.db, id,
-        (cursor) => fetchCatalogPage(ctx.paths.dataDir, root.path, cursor),
+        (cursor) => fetchCatalogPage(ctx.pluginManager!, root.path, cursor),
         () => isApplePhotosEnabled(ctx.db) && resolveRoot(id)?.enabled === 1,
         async ({ mediaId, changed, preserveCapturedDate, preservedCapturedDate }, asset) => {
           if (!changed || mediaId === null) return;
@@ -253,8 +382,9 @@ export async function registerPluginRoutes(app: FastifyInstance, ctx: AppContext
       .get(parsed.data.mediaId) as { uuid: string } | undefined;
     if (!asset) return reply.code(404).send({ error: "Apple Photos item not found" });
     try {
-      const { openInPhotos } = await import("./apple-photos/open-in-photos.js");
-      await openInPhotos(asset.uuid);
+      const { openInApplePhotos } = await import("./apple-photos/plugin-client.js");
+      if (!ctx.pluginManager) throw new Error("Plugin platform unavailable");
+      await openInApplePhotos(ctx.pluginManager, asset.uuid);
       return reply.send({ ok: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not open Photos";

@@ -195,8 +195,15 @@ export async function registerFolderRoutes(app: FastifyInstance, ctx: AppContext
         FROM media ${query.joins} WHERE ${query.where} ORDER BY media.id DESC LIMIT 6`)
         .all(...query.bindings);
     };
-    const direct = previewItems(false);
-    const items = direct.length > 0 ? direct : previewItems(true);
+    const direct = previewItems(false) as Array<{ id: number; thumbnailVersion: number }>;
+    // One direct photo is not enough to animate a card. Fill the small,
+    // bounded preview set from descendants while keeping direct photos first.
+    const recursive = direct.length < 6 ? previewItems(true) as Array<{ id: number; thumbnailVersion: number }> : [];
+    const seen = new Set<number>();
+    const items = [...direct, ...recursive].filter((item) => {
+      if (seen.size >= 6 || seen.has(item.id)) return false;
+      seen.add(item.id); return true;
+    });
     return reply.send({ items });
   });
 

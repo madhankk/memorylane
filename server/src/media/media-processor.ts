@@ -1,14 +1,12 @@
 import path from "node:path";
 import type Database from "better-sqlite3";
 import type { Logger } from "pino";
-import type { Tags } from "exiftool-vendored";
 import { thumbnailPathForMediaId, previewPathForMediaId, type AppPaths } from "../config/paths.js";
-import { readTags, extractLargestEmbeddedPreview, isExifToolAvailable, getExifToolVersion } from "./exiftool-client.js";
 import { ExifRepo } from "../exif/exif-repo.js";
 import { EXIF_PROMOTE_VERSION, parseLeadingNumber } from "../exif/promote.js";
 import { AnalysisRepo } from "../analysis/analysis-repo.js";
 import { EXIF_FULL_KEY } from "../analysis/analyzers/exif-full.js";
-import { probeVideo, extractPosterFrame, isFfmpegAvailable } from "./video-client.js";
+import { DeferredMediaToolCapabilities, type MediaToolCapabilities, type MetadataTags } from "../capabilities/media-tools.js";
 import {
   generateThumbnailFromFile,
   generateThumbnailFromBuffer,
@@ -36,10 +34,11 @@ function dateOrNull(v: unknown): string | null {
       return null;
     }
   }
+  if (typeof v === "string" && !Number.isNaN(Date.parse(v))) return new Date(v).toISOString();
   return null;
 }
 
-function extractMetadataFields(tags: Tags | null) {
+function extractMetadataFields(tags: MetadataTags | null) {
   if (!tags) {
     return {
       capturedDate: null, width: null, height: null, orientation: null,
@@ -74,7 +73,7 @@ function extractMetadataFields(tags: Tags | null) {
     // Apple Live Photos: the still half and its paired ~3s video share this
     // identifier - used only to find each other during indexing (see
     // linkLivePhotoPair), never exposed to the client.
-    contentIdentifier: tags.ContentIdentifier ?? null,
+    contentIdentifier: typeof tags.ContentIdentifier === "string" ? tags.ContentIdentifier : null,
   };
 }
 
@@ -158,14 +157,15 @@ export async function processMediaItem(
   paths: AppPaths,
   logger: Logger,
   row: MediaRowForProcessing,
+  capabilities: MediaToolCapabilities = new DeferredMediaToolCapabilities(),
 ): Promise<void> {
   const destPath = thumbnailPathForMediaId(paths.thumbnailsDir, row.id);
 
-  let tags: Tags | null = null;
+  let tags: MetadataTags | null = null;
   let tagsError: string | null = null;
   let metadata: ReturnType<typeof extractMetadataFields>;
   try {
-    tags = isExifToolAvailable() ? await readTags(row.absolute_path) : null;
+    tags = capabilities.metadata.available() ? await capabilities.metadata.read(row.absolute_path) : null;
     metadata = extractMetadataFields(tags);
   } catch (err) {
     tagsError = err instanceof Error ? err.message : String(err);
@@ -176,7 +176,7 @@ export async function processMediaItem(
   let thumbnailStatus: "done" | "unsupported" | "failed" = "failed";
   try {
     if (row.media_type === "raw") {
-      const preview = await extractLargestEmbeddedPreview(row.absolute_path);
+      const preview = await capabilities.rawPreview.extract(row.absolute_path);
       if (preview) {
         // Two tiers from the same extracted buffer (no extra ExifTool call):
         // a small grid thumbnail, and a much larger preview for the fullscreen
@@ -209,8 +209,8 @@ export async function processMediaItem(
       // as-is for playback, never transcoded. If a browser can't decode a
       // given container/codec it simply won't play, same as any other
       // unsupported format elsewhere in the app - no compatibility layer.
-      if (isFfmpegAvailable()) {
-        const probe = await probeVideo(row.absolute_path);
+      if (capabilities.video.available()) {
+        const probe = await capabilities.video.probe(row.absolute_path);
         if (probe) {
           metadata = {
             ...metadata,
@@ -221,7 +221,7 @@ export async function processMediaItem(
             audioCodec: probe.audioCodec,
           };
         }
-        const frame = await extractPosterFrame(row.absolute_path);
+        const frame = await capabilities.video.poster(row.absolute_path);
         if (frame) {
           await generateThumbnailFromBuffer(frame, destPath, null);
           thumbnailStatus = "done";
@@ -261,7 +261,7 @@ export async function processMediaItem(
     // Full EXIF capture (design doc §7.2) - written here because we already
     // hold the Tags, so the backfill analyzer never has to re-read this file.
     if (tags) {
-      new ExifRepo(db).upsertFromTags(row.id, tags, getExifToolVersion());
+      new ExifRepo(db).upsertFromTags(row.id, tags, capabilities.metadata.version());
       new AnalysisRepo(db).markDone(row.id, EXIF_FULL_KEY, EXIF_PROMOTE_VERSION);
     } else if (tagsError) {
       // Leave it to the exif_full analyzer to retry later (e.g. once a

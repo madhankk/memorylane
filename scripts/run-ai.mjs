@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // One-command launcher for the memorylane-ai sidecar: finds a Python >= 3.11,
-// creates memorylane-ai/.venv if missing, installs the package when needed,
-// then runs it with your environment (MEMORYLANE_AI_* variables pass through).
+// creates its .venv if missing, installs the package when needed, then runs
+// it with your environment (MEMORYLANE_AI_* variables pass through).
 // Cross-platform so `npm run ai` works the same on macOS, Windows and Linux.
 import { spawnSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -9,7 +9,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const aiDir = path.join(root, "memorylane-ai");
+// Lives inside the plugin it backs (plugins/optional/com.memorylane.ai-runtime/python/)
+// rather than at the repo root - see build-plugin-repository.mjs's packaging
+// filter, which already excludes a plugin's own src/ or python/ subdirectory
+// from what ships, same convention every plugin's source follows.
+const aiDir = path.join(root, "plugins", "optional", "com.memorylane.ai-runtime", "python");
 const venv = path.join(aiDir, ".venv");
 const win = process.platform === "win32";
 const binDir = path.join(venv, win ? "Scripts" : "bin");
@@ -55,7 +59,7 @@ function run(cmd, args, opts = {}) {
 }
 
 if (!fs.existsSync(path.join(aiDir, "pyproject.toml"))) {
-  console.error("[memorylane-ai] memorylane-ai/ not found next to this script");
+  console.error(`[memorylane-ai] Python source not found at ${aiDir}`);
   process.exit(1);
 }
 

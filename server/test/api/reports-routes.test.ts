@@ -23,6 +23,46 @@ const get = (t: Awaited<ReturnType<typeof createTestApp>>, url: string) =>
   t.app.inject({ method: "GET", url, headers: { cookie: t.cookie } });
 
 describe("reports", () => {
+  it("uses the adaptive focal scale without truncating populated buckets", async () => {
+    const t = await createTestApp();
+    try {
+      const root = seedScanRoot(t.db);
+      const folder = seedFolder(t.db, root, "/library");
+      const insert = t.db.prepare(`INSERT INTO media_exif
+        (media_id, focal_length, tags_json, exiftool_version) VALUES (?, ?, '{}', 't')`);
+      for (let focal = 10; focal < 80; focal++) insert.run(seedMedia(t.db, folder, root, { filename: `${focal}.jpg` }), focal);
+      insert.run(seedMedia(t.db, folder, root, { filename: "phone.jpg" }), 4.25);
+      insert.run(seedMedia(t.db, folder, root, { filename: "fisheye.jpg" }), 8);
+
+      const response = await get(t, "/api/reports/facets");
+      const focal = response.json().facets.focal as Array<{ value: string; label: string; count: number }>;
+      expect(focal).toHaveLength(44);
+      expect(focal[0]).toEqual({ value: "lt10", label: "< 10 mm", count: 2 });
+      expect(focal.at(-1)).toEqual({ value: "70-79", label: "70–79 mm", count: 10 });
+      expect((await get(t, "/api/media?focalMin=0&focalMax=9.999999999")).json().total).toBe(2);
+    } finally { await t.close(); }
+  });
+
+  it("puts rounded focal lengths into the correct transition buckets", async () => {
+    const t = await createTestApp();
+    try {
+      const root = seedScanRoot(t.db);
+      const folder = seedFolder(t.db, root, "/library");
+      const insert = t.db.prepare(`INSERT INTO media_exif
+        (media_id, focal_length, tags_json, exiftool_version) VALUES (?, ?, '{}', 't')`);
+      for (const focal of [49.49, 49.5, 199.49, 199.5, 699.49, 699.5, 999.49, 999.5]) {
+        insert.run(seedMedia(t.db, folder, root, { filename: `${focal}.jpg` }), focal);
+      }
+
+      const response = await get(t, "/api/reports/facets");
+      const focal = response.json().facets.focal as Array<{ value: string; label: string; count: number }>;
+      expect(focal.map((bucket) => bucket.value)).toEqual([
+        "49", "50-59", "190-199", "200-219", "680-699", "700-749", "950-999", "gte1000",
+      ]);
+      for (const bucket of focal) expect(bucket.count).toBe(1);
+    } finally { await t.close(); }
+  });
+
   it("facets: counts per field, each ignoring its own filter", async () => {
     const S = await seeded();
     try {
@@ -42,8 +82,8 @@ describe("reports", () => {
         { value: "7.1", label: "f/7.1", count: 1 },
       ]);
       expect(body.facets.focal).toEqual([
-        { value: "201-400", label: "201–400 mm", count: 1 },
-        { value: "401-9999", label: "> 400 mm", count: 1 },
+        { value: "300-319", label: "300–319 mm", count: 1 },
+        { value: "500-519", label: "500–519 mm", count: 1 },
       ]);
       expect(body.facets.year).toEqual([{ value: "2024", label: "2024", count: 2 }]);
       expect(body.facets.iso.map((b: { value: string }) => b.value)).toEqual(["800", "3200"]);

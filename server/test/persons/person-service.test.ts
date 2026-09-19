@@ -6,7 +6,7 @@ import { createTestDb, seedScanRoot, seedFolder, seedMedia } from "../helpers/db
 import { startFakeSidecar, type FakeSidecar } from "../helpers/fake-sidecar.js";
 import { SidecarProvider } from "../../src/providers/sidecar-provider.js";
 import { SettingsRepo } from "../../src/db/settings-repo.js";
-import { LanceVectorIndex } from "../../src/vectors/lance-vector-index.js";
+import { MemoryVectorIndex } from "../../src/vectors/memory-vector-index.js";
 import { spaceFor } from "../../src/vectors/vector-index.js";
 import { FaceRepo } from "../../src/persons/face-repo.js";
 import { PersonService, PersonError } from "../../src/persons/person-service.js";
@@ -38,7 +38,7 @@ async function setup() {
   const settings = new SettingsRepo(db);
   settings.update({ personsEnabled: true, faceMinClusterSize: 2 });
   const provider = new SidecarProvider(fake.url, { expectedModel: fake.model, healthTtlMs: 0 });
-  const index = new LanceVectorIndex(path.join(dir, `vectors-${Math.random().toString(36).slice(2)}`));
+  const index = new MemoryVectorIndex();
   const faces = new FaceRepo(db);
   const svc = new PersonService(db, logger, settings, () => provider, index, path.join(dir, "faces"));
   const space = spaceFor("faces", "yunet-sface@1");

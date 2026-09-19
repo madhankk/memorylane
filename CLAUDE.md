@@ -10,7 +10,7 @@ The one deliberate exception to "never touch originals" is the opt-in video mode
 
 ## Commands
 
-npm workspaces monorepo: `shared`, `server`, `client`, `desktop`. Run from the repo root unless noted.
+npm workspaces monorepo: `shared`, `server`, `client`. The native desktop shell is the Go module in `tray-go/`. Run from the repo root unless noted.
 
 ```bash
 npm install
@@ -20,7 +20,7 @@ npm run dev            # server only, tsx watch (regenerates server/src/version.
 npm run dev:client     # Vite on :5173, proxies /api → 127.0.0.1:4280 (run alongside `npm run dev`)
 npm run typecheck      # tsc --noEmit across shared, server, client
 npm test               # vitest, server/test/** (in-memory SQLite; one file: npm test --workspace=server -- test/exif/promote.test.ts)
-npm run ai             # AI sidecar (scripts/run-ai.mjs: finds Python 3.11+, makes memorylane-ai/.venv, installs, runs)
+npm run ai             # AI sidecar (scripts/run-ai.mjs: finds Python 3.11+, makes its .venv, installs, runs)
 npm run reset-password -- <args>   # server/scripts/reset-password.ts
 ```
 
@@ -29,12 +29,13 @@ npm run reset-password -- <args>   # server/scripts/reset-password.ts
 - Migrations are copied to `server/dist/migrations` at build time; `migrate.ts` resolves whichever of `server/migrations` (dev) or `dist/migrations` (built) exists.
 - Set `MEMORYLANE_NO_OPEN=1` to stop the server auto-opening a browser tab (already suppressed under `npm run dev`). `MEMORYLANE_DATA_DIR` relocates the DB/thumbnail cache — useful for a throwaway dev library. Without it, `resolveAppDataDir` honours a `data-location.txt` pointer in the platform default dir, written by Settings › Storage › Move (`config/data-dir-move.ts`: SQLite online backup + recursive copy, restart to switch, old copy left in place).
 
-Desktop (Electron tray app) — run from `desktop/`, and only after a root `npm run build`:
+Desktop (native Go tray app) — run after a root `npm run build`:
 
 ```bash
-npm run prepare-runtime   # assembles desktop/runtime/ (node binary + server/dist + prod deps); fails loudly if root build is missing
-npm run dev               # rebuilds tray app only, NOT the runtime — re-run prepare-runtime after server/shared changes
-npm run make              # build + prepare-runtime + electron-forge make → desktop/release/<version>/
+npm run desktop:runtime    # assembles tray-go/runtime/ (Node + server/dist + production dependencies)
+npm run desktop:package    # Windows native tray + runtime ZIP
+npm run desktop:installer  # Windows Inno Setup installer
+# macOS: bash tray-go/scripts/package-macos.sh
 ```
 
 ## Architecture
@@ -75,7 +76,7 @@ client (React SPA) ── fetch /api/* ──▶ Fastify routes (server/src/api/
 
 ### AI sidecar & embeddings
 
-`memorylane-ai/` (Python, FastAPI, onnxruntime; see its README) serves CLIP ViT-B/32 embeddings at `MEMORYLANE_AI_URL` (default `http://127.0.0.1:4281`). Run it with `npm run ai` (or manually: `cd memorylane-ai && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]" && .venv/bin/memorylane-ai`); tests: `.venv/bin/pytest -q` (first run downloads ~350 MB). The server side: `providers/` (`createProvider()` from env — `MEMORYLANE_AI_PROVIDER=none` disables everything AI; `SidecarProvider` classifies failures: outages → `ProviderUnavailableError`, 4xx → plain `Error`), `vectors/` (`EmbeddingRepo` over `media_embeddings` = durable truth; `LanceVectorIndex` under `<data>/vectors/` = rebuildable cache, `ensureSynced` on startup; `@lancedb/lancedb` pinned to 0.33.0 for Node 20), `analyzers/embed-image.ts` (embeds the 500 px thumbnail, batch 16, version = model id). `AnalysisWorker` handles `ProviderUnavailableError` by un-claiming rows and backing off 5 s → 5 min per analyzer — never marks them failed. Vectors from different models never mix: the index space is `media:<model>`. Features: `GET /api/media/:id/similar` (works offline once vectors exist), `GET /api/search?mode=semantic` (needs the sidecar for the text embedding), stacks v2 (`stackMinCosine`), faces (see People). Settings › AI shows provider status; `aiEnabled` pauses `embed_image` via `Analyzer.isEnabled`.
+`plugins/optional/com.memorylane.ai-runtime/python/` (Python, FastAPI, onnxruntime; see its README - source lives inside the plugin it backs, not at the repo root, same convention every plugin's source follows) serves CLIP ViT-B/32 embeddings at `MEMORYLANE_AI_URL` (default `http://127.0.0.1:4281`). Run it with `npm run ai` (or manually: `cd plugins/optional/com.memorylane.ai-runtime/python && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]" && .venv/bin/memorylane-ai`); tests: `.venv/bin/pytest -q` (first run downloads ~350 MB). The server side: `providers/` (`createProvider()` from env — `MEMORYLANE_AI_PROVIDER=none` disables everything AI; `SidecarProvider` classifies failures: outages → `ProviderUnavailableError`, 4xx → plain `Error`), `vectors/` (`EmbeddingRepo` over `media_embeddings` = durable truth; `LanceVectorIndex` under `<data>/vectors/` = rebuildable cache, `ensureSynced` on startup; `@lancedb/lancedb` pinned to 0.33.0 for Node 20), `analyzers/embed-image.ts` (embeds the 500 px thumbnail, batch 16, version = model id). `AnalysisWorker` handles `ProviderUnavailableError` by un-claiming rows and backing off 5 s → 5 min per analyzer — never marks them failed. Vectors from different models never mix: the index space is `media:<model>`. Features: `GET /api/media/:id/similar` (works offline once vectors exist), `GET /api/search?mode=semantic` (needs the sidecar for the text embedding), stacks v2 (`stackMinCosine`), faces (see People). Settings › AI shows provider status; `aiEnabled` pauses `embed_image` via `Analyzer.isEnabled`.
 
 ### People (faces)
 
@@ -117,4 +118,4 @@ React 18 + React Router 6 + Tailwind 4 (Vite plugin). `App.tsx` routes: `/setup`
 
 - README.md and several code comments reference `PLAN.md` (spec section numbers); that file is not in the repo. The media-intelligence design lives at `docs/architecture/2026-09-14-media-intelligence-design.md`.
 - ExifTool must be on PATH for RAW/metadata; ffmpeg/ffprobe are bundled via `ffmpeg-static`/`ffprobe-static`. Both are detected at startup and degrade gracefully (thumbnail_status `unsupported`) when missing.
-- macOS signing/notarization in `desktop/forge.config.ts` is incomplete (runtime binaries need an explicit codesign pass — see the TODO there).
+- Release signing lives in `tray-go/scripts/`: Azure Trusted Signing on Windows and recursive Developer ID signing plus notarization on macOS.

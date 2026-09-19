@@ -16,6 +16,9 @@ describe("Apple Photos plugin lifecycle", () => {
       const initial = await call("GET", "/api/plugins");
       expect(initial.statusCode).toBe(200);
       expect(initial.json()).toContainEqual(expect.objectContaining({ id: "apple-photos", enabled: false, available: process.platform === "darwin" }));
+      const platformInventory = await call("GET", "/api/plugin-platform");
+      expect(platformInventory.statusCode).toBe(200);
+      expect(platformInventory.json()).toEqual([]);
       expect((await call("POST", "/api/scan-roots", { path: library, kind: "apple-photos" })).statusCode).toBe(409);
 
       const enabled = await call("PUT", "/api/plugins/apple-photos", { enabled: true });
