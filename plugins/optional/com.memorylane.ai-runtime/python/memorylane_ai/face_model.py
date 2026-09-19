@@ -200,11 +200,14 @@ class ArcFaceModel(FaceModel):
     NUM_ANCHORS = 2
 
     def __init__(self, providers: list):  # noqa: D107 - see class docstring
-        from huggingface_hub import snapshot_download
+        from .hub_download import load_from_hub
 
-        path = snapshot_download(ARCFACE_REPO, allow_patterns=["detection/model.onnx", "recognition/model.onnx"])
-        self.det = ort.InferenceSession(f"{path}/detection/model.onnx", providers=providers)
-        self.rec = ort.InferenceSession(f"{path}/recognition/model.onnx", providers=providers)
+        def load(path):
+            det = ort.InferenceSession(f"{path}/detection/model.onnx", providers=providers)
+            rec = ort.InferenceSession(f"{path}/recognition/model.onnx", providers=providers)
+            return det, rec
+
+        self.det, self.rec = load_from_hub(ARCFACE_REPO, ["detection/model.onnx", "recognition/model.onnx"], load)
         self.det_input = self.det.get_inputs()[0].name
         self.rec_input = self.rec.get_inputs()[0].name
 

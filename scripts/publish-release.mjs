@@ -83,6 +83,12 @@ function publishCatalog() {
   // this directory always exists solely as this run's staging area.
   runSsh(`mkdir -p '${remoteChannelDir}' && rm -rf '${remoteNext}'`);
   runSftpPut([[localDir, remoteNext]]);
+  // sftp's own `put -r` creates remote directories in a restrictive mode
+  // (confirmed: 0700, owner-only) regardless of the uploading user's umask -
+  // nginx (running as www-data) then gets a 403 trying to even traverse into
+  // it, no matter how permissive the files inside are. Force it back to
+  // world-readable before this ever goes live.
+  runSsh(`chmod -R a+rX '${remoteNext}'`);
   // "mv live previous" only runs when something is actually live yet (a
   // first-ever deploy has nothing to preserve) - the exit code of the `[ -e ]`
   // test controls that without needing sftp's own error-tolerant "-" prefix.

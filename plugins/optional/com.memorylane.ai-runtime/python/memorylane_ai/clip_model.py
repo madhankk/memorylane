@@ -10,9 +10,10 @@ from dataclasses import dataclass
 
 import numpy as np
 import onnxruntime as ort
-from huggingface_hub import snapshot_download
 from PIL import Image
 from tokenizers import Tokenizer
+
+from .hub_download import load_from_hub
 
 MEAN = np.array([0.48145466, 0.4578275, 0.40821073], dtype=np.float32)
 STD = np.array([0.26862954, 0.26130258, 0.27577711], dtype=np.float32)
@@ -46,13 +47,19 @@ class ModelInfo:
 
 class ClipModel:
     def __init__(self, repo: str, device: str = "cpu"):
-        path = snapshot_download(repo, allow_patterns=["onnx/vision_model.onnx", "onnx/text_model.onnx", "*.json", "*.txt"])
         providers = _providers(device)
-        self.vision = ort.InferenceSession(f"{path}/onnx/vision_model.onnx", providers=providers)
-        self.text = ort.InferenceSession(f"{path}/onnx/text_model.onnx", providers=providers)
-        self.tokenizer = Tokenizer.from_file(f"{path}/tokenizer.json")
-        self.tokenizer.enable_padding(pad_id=EOS, pad_token="<|endoftext|>", length=CONTEXT)
-        self.tokenizer.enable_truncation(CONTEXT)
+
+        def load(path):
+            vision = ort.InferenceSession(f"{path}/onnx/vision_model.onnx", providers=providers)
+            text = ort.InferenceSession(f"{path}/onnx/text_model.onnx", providers=providers)
+            tokenizer = Tokenizer.from_file(f"{path}/tokenizer.json")
+            tokenizer.enable_padding(pad_id=EOS, pad_token="<|endoftext|>", length=CONTEXT)
+            tokenizer.enable_truncation(CONTEXT)
+            return vision, text, tokenizer
+
+        self.vision, self.text, self.tokenizer = load_from_hub(
+            repo, ["onnx/vision_model.onnx", "onnx/text_model.onnx", "*.json", "*.txt"], load
+        )
         dim = self.vision.get_outputs()[0].shape[-1]
         used = self.vision.get_providers()[0]
         resolved = "cuda" if "CUDA" in used else "dml" if "Dml" in used else "coreml" if "CoreML" in used else "cpu"
