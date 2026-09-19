@@ -23,6 +23,8 @@
     "package:size": "node scripts/report-package-size.mjs",
     "plugins:build": "node scripts/build-plugin-repository.mjs",
     "plugins:verify": "node scripts/verify-plugin-repository.mjs",
+    "plugins:publish": "node scripts/publish-release.mjs catalog",
+    "desktop:publish-update": "node scripts/publish-release.mjs update",
     "plugins:sign-native": "node scripts/sign-native-plugins.mjs",
     "plugins:prepare-ai-runtime": "node scripts/prepare-ai-runtime-plugin.mjs",
     "plugins:prepare-apple-photos": "node scripts/prepare-apple-photos-plugin.mjs",

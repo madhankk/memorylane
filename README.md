@@ -164,6 +164,7 @@ Every command below runs from the repo root, in order. One first-party signing k
 | --- | --- | --- |
 | Signing key (plugin catalog + core update manifests) | `.keys/plugin-release-private.pem` | `MEMORYLANE_PLUGIN_SIGNING_KEY` |
 | Plugin catalog URL (compiled into the tray) | `.../plugins/v1/stable/win32-x64/catalog.json` (Windows) or `.../darwin-arm64/catalog.json` (macOS) | `MEMORYLANE_PLUGIN_CATALOG_URL` |
+| Core update feed URL (compiled into the tray) | `.../updates/win32-x64/manifest.json` (Windows) or `.../updates/darwin-arm64/manifest.json` (macOS) | `MEMORYLANE_UPDATE_FEED_URL` |
 
 **1. Build the core**
 
@@ -182,7 +183,7 @@ bash tray-go/scripts/package-macos.sh   # macOS: run on macOS - builds .app + DM
 
 This assembles `tray-go/runtime` (including `exiftool-vendored`/`ffmpeg-static`/`ffprobe-static` as ordinary server dependencies - metadata/RAW/video support just works, no plugin catalog or network access needed for it) and compiles the tray.
 
-`MEMORYLANE_UPDATE_FEED_URL` has **no default** - leave it unset until step 5 has actually published a feed, otherwise the tray just reports "Updates not configured" and does nothing.
+`MEMORYLANE_UPDATE_FEED_URL` defaults to the real hosted feed (same as the plugin catalog URL above) - the tray reports "Updates not configured" and does nothing only if nothing's actually been published there yet (see step 5) or you've explicitly overridden it to something unset/unreachable.
 
 Output lands in `tray-go/release/<version>/`: the staged app + ZIP, `MemoryLane-Setup.exe` if you ran `desktop:installer` (a native 64-bit installer - `installer.iss` uses Inno Setup 7's `SetupArchitecture=x64`), or a `.app` + DMG on macOS.
 

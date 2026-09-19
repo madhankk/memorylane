@@ -14,14 +14,17 @@ node (Join-Path $PSScriptRoot "prepare-runtime.mjs")
 # always the win32-x64 one. Override for a build that should point at a
 # different catalog (e.g. a beta channel or a self-hosted mirror).
 $PluginCatalogUrl = if ($env:MEMORYLANE_PLUGIN_CATALOG_URL) { $env:MEMORYLANE_PLUGIN_CATALOG_URL } else { "https://memorylaneapp.org/plugins/v1/stable/win32-x64/catalog.json" }
-# The update manifest is verified with the same first-party key that signs
-# the plugin catalog (tray-go/updater.go's updatePublicKey), so there's
-# nothing to bake in here. MEMORYLANE_UPDATE_FEED_URL still has no default:
-# updater.go treats updates as "not configured" unless it's set, and no feed
-# is hosted yet - see docs/plugin-repository-deployment.md.
+# The real, signed feed this verifies against (same key as the plugin
+# catalog - tray-go/updater.go's updatePublicKey) is published by
+# scripts/publish-release.mjs's "update" mode - see
+# docs/plugin-repository-deployment.md's "Core update feed". Override for a
+# build that should point at a different feed instead (a beta channel, a
+# self-hosted mirror); leave it pointed here otherwise, same as the plugin
+# catalog URL above.
+$UpdateFeedUrl = if ($env:MEMORYLANE_UPDATE_FEED_URL) { $env:MEMORYLANE_UPDATE_FEED_URL } else { "https://memorylaneapp.org/updates/win32-x64/manifest.json" }
 Push-Location $TrayRoot
 try {
-  go build -trimpath -ldflags "-s -w -H windowsgui -X main.version=$Version -X main.updateFeedURL=$env:MEMORYLANE_UPDATE_FEED_URL -X main.pluginCatalogURL=$PluginCatalogUrl" -o "dist\MemoryLane.exe" .
+  go build -trimpath -ldflags "-s -w -H windowsgui -X main.version=$Version -X main.updateFeedURL=$UpdateFeedUrl -X main.pluginCatalogURL=$PluginCatalogUrl" -o "dist\MemoryLane.exe" .
 } finally { Pop-Location }
 
 if (Test-Path -LiteralPath $Stage) { Remove-Item -LiteralPath $Stage -Recurse -Force }
@@ -64,6 +67,14 @@ if ($Installer) {
   if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
   $Setup = Join-Path $ReleaseRoot "MemoryLane-Setup.exe"
   if ($env:SIGN_RELEASE -eq "1") { & (Join-Path $PSScriptRoot "sign-installer-windows.ps1") $Setup }
+
+  # Mirrors the plugin catalog's own dist/plugin-repository/ and the update
+  # manifest's dist/updates/ - one place under dist/ to gather everything
+  # that eventually gets published, instead of also having to remember
+  # tray-go/release/<version>/ separately.
+  $DistInstallerDir = Join-Path $RepoRoot "dist\installer"
+  New-Item -ItemType Directory -Force $DistInstallerDir | Out-Null
+  Copy-Item -LiteralPath $Setup (Join-Path $DistInstallerDir "MemoryLane-Setup.exe") -Force
 }
 
 Write-Host "MemoryLane desktop package: $ReleaseRoot"

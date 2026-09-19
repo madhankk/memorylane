@@ -19,12 +19,15 @@ mkdir -p "$TRAY_ROOT/dist"
 # build that should point at a different catalog (e.g. a beta channel or a
 # self-hosted mirror).
 PLUGIN_CATALOG_URL="${MEMORYLANE_PLUGIN_CATALOG_URL:-https://memorylaneapp.org/plugins/v1/stable/darwin-$ARCH/catalog.json}"
-# The update manifest is verified with the same first-party key that signs
-# the plugin catalog (tray-go/updater.go's updatePublicKey), so there's
-# nothing to bake in here. MEMORYLANE_UPDATE_FEED_URL still has no default:
-# updater.go treats updates as "not configured" unless it's set, and no feed
-# is hosted yet - see docs/plugin-repository-deployment.md.
-(cd "$TRAY_ROOT" && go build -trimpath -ldflags "-s -w -X main.version=$VERSION -X main.updateFeedURL=${MEMORYLANE_UPDATE_FEED_URL:-} -X main.pluginCatalogURL=$PLUGIN_CATALOG_URL" -o dist/MemoryLane .)
+# The real, signed feed this verifies against (same key as the plugin
+# catalog - tray-go/updater.go's updatePublicKey) is published by
+# scripts/publish-release.mjs's "update" mode - see
+# docs/plugin-repository-deployment.md's "Core update feed". Override for a
+# build that should point at a different feed instead (a beta channel, a
+# self-hosted mirror); leave it pointed here otherwise, same as the plugin
+# catalog URL above.
+UPDATE_FEED_URL="${MEMORYLANE_UPDATE_FEED_URL:-https://memorylaneapp.org/updates/darwin-$ARCH/manifest.json}"
+(cd "$TRAY_ROOT" && go build -trimpath -ldflags "-s -w -X main.version=$VERSION -X main.updateFeedURL=$UPDATE_FEED_URL -X main.pluginCatalogURL=$PLUGIN_CATALOG_URL" -o dist/MemoryLane .)
 rm -rf "$APP"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 cp "$TRAY_ROOT/dist/MemoryLane" "$CONTENTS/MacOS/MemoryLane"

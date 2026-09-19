@@ -11,10 +11,16 @@ const root = path.resolve(import.meta.dirname, "..");
 // discovery walk or the packaging walk below.
 const PLUGIN_SOURCE_DIR_NAMES = ["src", "python"];
 // darwin-x64 stays a valid PLUGIN_PLATFORMS value (schema-wise) but isn't a
-// supported release target for now - drop it from the default set so a plain
-// `plugins:build` without --platforms doesn't try to package it. Pass
-// --platforms explicitly to build it anyway.
-const defaultReleasePlatforms = ["win32-x64", "darwin-arm64"];
+// supported release target for now. win32-x64/darwin-arm64 are, but only
+// the one matching the machine actually running this - a plain
+// `plugins:build` with no --platforms builds this host's own platform, not
+// every supported platform, so running it on Windows never reaches into
+// darwin-arm64 territory (harmless today since only pure-JS module plugins
+// would land there, but it broke the "each platform is built and uploaded
+// from its own machine, independently" model the per-platform catalog split
+// is for). Pass --platforms explicitly to build a different one anyway.
+const supportedReleasePlatforms = ["win32-x64", "darwin-arm64"];
+const hostPlatform = `${process.platform}-${process.arch}`;
 const args = process.argv.slice(2);
 const valueAfter = (flag) => {
   const assigned = args.find((item) => item.startsWith(`${flag}=`));
@@ -31,7 +37,8 @@ const platforms = flaggedPlatforms
   ? flaggedPlatforms.split(",")
   : positionalPlatforms.length > 0
     ? positionalPlatforms
-    : defaultReleasePlatforms;
+    : supportedReleasePlatforms.includes(hostPlatform) ? [hostPlatform]
+      : (() => { throw new Error(`No default release platform for this host (${hostPlatform}) - pass --platforms explicitly (supported: ${supportedReleasePlatforms.join(", ")})`); })();
 for (const platform of platforms) if (!PLUGIN_PLATFORMS.includes(platform)) throw new Error(`Unsupported platform: ${platform}`);
 const baseOutputDir = path.resolve(root, valueAfter("--output") ?? `dist/plugin-repository/v1/${channel}`);
 const sourceRoot = path.resolve(root, valueAfter("--source") ?? "plugins");
