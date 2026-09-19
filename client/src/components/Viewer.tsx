@@ -9,6 +9,7 @@ import { formatBytes, formatDuration } from "../utils/format";
 import { useEngagementTracking } from "../hooks/useEngagementTracking";
 import { usePluginActive } from "../utils/plugins";
 import { ApplePreviewNotice } from "./ApplePreviewNotice";
+import { OriginalUnavailableNotice } from "./OriginalUnavailableNotice";
 import TagEditor from "./TagEditor";
 
 interface ViewerProps {
@@ -257,6 +258,8 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
           });
         }} />
       )}
+
+      <OriginalUnavailableNotice fallback={fallback} sourceKind={current.sourceKind} />
 
       <button
         className={`absolute top-1/2 left-5 -translate-y-1/2 ${controlButtonClass}`}
