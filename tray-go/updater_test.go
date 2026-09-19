@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"runtime"
 	"testing"
 )
 
@@ -36,5 +37,33 @@ func TestVerifyManifest(t *testing.T) {
 	manifest.URL += ".tampered"
 	if err = verifyManifest(manifest); err == nil {
 		t.Fatal("tampered manifest accepted")
+	}
+}
+
+// Regression test for the "go run . reports Updates not configured" gap:
+// pluginCatalogURL/updateFeedURL are only ever set via -X ldflags in a real
+// packaged build (package-windows.ps1/package-macos.sh) - anyone running the
+// tray straight from source (no ldflags) needs the same real hosted URL a
+// packaged build for this host would have compiled in, not an empty string.
+func TestHostReleasePlatform(t *testing.T) {
+	got := hostReleasePlatform()
+	want := map[string]string{"windows/amd64": "win32-x64", "darwin/arm64": "darwin-arm64"}[runtime.GOOS+"/"+runtime.GOARCH]
+	if got != want {
+		t.Fatalf("hostReleasePlatform() on %s/%s = %q, want %q", runtime.GOOS, runtime.GOARCH, got, want)
+	}
+}
+
+func TestResolvedPluginCatalogURLFallsBackWhenUnset(t *testing.T) {
+	original := pluginCatalogURL
+	defer func() { pluginCatalogURL = original }()
+	pluginCatalogURL = ""
+	got := resolvedPluginCatalogURL()
+	if platform := hostReleasePlatform(); platform != "" {
+		want := "https://memorylaneapp.org/plugins/v1/stable/" + platform + "/catalog.json"
+		if got != want {
+			t.Fatalf("resolvedPluginCatalogURL() with no ldflag = %q, want %q", got, want)
+		}
+	} else if got != "" {
+		t.Fatalf("resolvedPluginCatalogURL() on an unsupported host = %q, want empty", got)
 	}
 }

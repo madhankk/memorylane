@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,7 +37,57 @@ func resolvedPluginCatalogURL() string {
 	if explicit := os.Getenv("MEMORYLANE_PLUGIN_CATALOG_URL"); explicit != "" {
 		return explicit
 	}
-	return pluginCatalogURL
+	if pluginCatalogURL != "" {
+		return pluginCatalogURL
+	}
+	return defaultReleaseURL("plugins/v1/stable/%s/catalog.json")
+}
+
+// win32-x64/darwin-arm64, matching the plugin/update feed URL path
+// convention everywhere else (scripts/build-plugin-repository.mjs,
+// publish-release.mjs) - "" for anything else, since Intel Mac and other
+// platforms aren't a supported release target yet.
+func hostReleasePlatform() string {
+	var goos string
+	switch runtime.GOOS {
+	case "windows":
+		goos = "win32"
+	case "darwin":
+		goos = "darwin"
+	default:
+		return ""
+	}
+	var arch string
+	switch runtime.GOARCH {
+	case "amd64":
+		arch = "x64"
+	case "arm64":
+		arch = "arm64"
+	default:
+		return ""
+	}
+	if goos == "win32" && arch != "x64" {
+		return ""
+	}
+	if goos == "darwin" && arch != "arm64" {
+		return ""
+	}
+	return goos + "-" + arch
+}
+
+// Only reached when there's no compiled-in ldflag value at all (pluginCatalogURL/
+// updateFeedURL are "" - a `go run .`/plain `go build` with no -X, not a real
+// packaged build, where package-windows.ps1/package-macos.sh always pass one
+// explicitly). Without this, running the tray straight from source has no
+// catalog and no update feed configured at all, even though the real hosted
+// ones are perfectly reachable - this fills in the same default a packaged
+// build for this host would have compiled in.
+func defaultReleaseURL(pathTemplate string) string {
+	platform := hostReleasePlatform()
+	if platform == "" {
+		return ""
+	}
+	return "https://memorylaneapp.org/" + fmt.Sprintf(pathTemplate, platform)
 }
 
 type config struct {

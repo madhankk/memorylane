@@ -50,6 +50,12 @@ type coreUpdater struct {
 func newCoreUpdater(setMenu func(string, bool)) *coreUpdater {
 	if value := os.Getenv("MEMORYLANE_UPDATE_FEED_URL"); value != "" {
 		updateFeedURL = value
+	} else if updateFeedURL == "" {
+		// No -X ldflag either (go run ., or a plain go build with no
+		// flags) - fill in the same default a packaged build for this
+		// host would have compiled in, same as resolvedPluginCatalogURL's
+		// defaultReleaseURL fallback in main.go.
+		updateFeedURL = defaultReleaseURL("updates/%s/manifest.json")
 	}
 	return &coreUpdater{setMenu: setMenu}
 }
