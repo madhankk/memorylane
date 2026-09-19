@@ -3,8 +3,13 @@ import path from "node:path";
 
 const root = process.cwd();
 const releaseRoot = path.resolve(root, process.argv[2] ?? "tray-go/release");
-const warningMiB = Number(process.env.MEMORYLANE_SIZE_WARNING_MIB ?? 180);
-const limitMiB = Number(process.env.MEMORYLANE_SIZE_LIMIT_MIB ?? 200);
+// exiftool-vendored/ffmpeg-static/ffprobe-static are core dependencies now
+// (server/node_modules), not a separately-bundled required plugin - same
+// binaries as before the fold-into-core migration, just packaged differently,
+// so the installer's real size hasn't moved much (~120 MiB zipped as of this
+// writing). These defaults keep some headroom above that for future growth.
+const warningMiB = Number(process.env.MEMORYLANE_SIZE_WARNING_MIB ?? 200);
+const limitMiB = Number(process.env.MEMORYLANE_SIZE_LIMIT_MIB ?? 220);
 
 function bytesIn(target) {
   if (!fs.existsSync(target)) return 0;

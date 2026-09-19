@@ -8,18 +8,20 @@ $Stage = Join-Path $ReleaseRoot "MemoryLane-win32-x64"
 
 node (Join-Path $PSScriptRoot "prepare-runtime.mjs")
 # The real, signed catalog this verifies against is already hosted - see
-# docs/plugin-repository-deployment.md. Override for a build that should
-# point at a different catalog (e.g. a beta channel or a self-hosted mirror).
-$PluginCatalogUrl = if ($env:MEMORYLANE_PLUGIN_CATALOG_URL) { $env:MEMORYLANE_PLUGIN_CATALOG_URL } else { "https://memorylaneapp.org/plugins/v1/stable/catalog.json" }
-# The real core-update keypair (generated via `npm run desktop:update-keygen`,
-# private half in the gitignored .keys/) - public half only, safe to bake in.
-# MEMORYLANE_UPDATE_FEED_URL still has no default: updater.go treats updates
-# as "not configured" unless both the feed URL and this key are set, and no
-# feed is hosted yet - see docs/plugin-repository-deployment.md.
-$UpdatePublicKey = if ($env:MEMORYLANE_UPDATE_PUBLIC_KEY) { $env:MEMORYLANE_UPDATE_PUBLIC_KEY } else { "zMbIhcnUMlucTxa0tOMI6gtciLN3X6rN3uZj7Q+j7Tc=" }
+# docs/plugin-repository-deployment.md. Each platform has its own catalog
+# (scripts/build-plugin-repository.mjs writes one per platform subdirectory,
+# uploaded and updated independently of any other platform's), so this is
+# always the win32-x64 one. Override for a build that should point at a
+# different catalog (e.g. a beta channel or a self-hosted mirror).
+$PluginCatalogUrl = if ($env:MEMORYLANE_PLUGIN_CATALOG_URL) { $env:MEMORYLANE_PLUGIN_CATALOG_URL } else { "https://memorylaneapp.org/plugins/v1/stable/win32-x64/catalog.json" }
+# The update manifest is verified with the same first-party key that signs
+# the plugin catalog (tray-go/updater.go's updatePublicKey), so there's
+# nothing to bake in here. MEMORYLANE_UPDATE_FEED_URL still has no default:
+# updater.go treats updates as "not configured" unless it's set, and no feed
+# is hosted yet - see docs/plugin-repository-deployment.md.
 Push-Location $TrayRoot
 try {
-  go build -trimpath -ldflags "-s -w -H windowsgui -X main.version=$Version -X main.updateFeedURL=$env:MEMORYLANE_UPDATE_FEED_URL -X main.updatePublicKey=$UpdatePublicKey -X main.pluginCatalogURL=$PluginCatalogUrl" -o "dist\MemoryLane.exe" .
+  go build -trimpath -ldflags "-s -w -H windowsgui -X main.version=$Version -X main.updateFeedURL=$env:MEMORYLANE_UPDATE_FEED_URL -X main.pluginCatalogURL=$PluginCatalogUrl" -o "dist\MemoryLane.exe" .
 } finally { Pop-Location }
 
 if (Test-Path -LiteralPath $Stage) { Remove-Item -LiteralPath $Stage -Recurse -Force }
@@ -34,7 +36,11 @@ if ($env:SIGN_RELEASE -eq "1") {
   # dependencies now (see server/src/media/exiftool-client.ts,
   # video-client.ts), not a separately-signed plugin anymore, so their
   # binaries need explicit coverage here instead.
-  $VendoredExecutables = Get-ChildItem (Join-Path $Stage "runtime\node_modules") -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue
+  # -File matters here, not just style - exiftool-vendored's own npm package
+  # is literally a directory named "exiftool-vendored.exe" (its real .exe is
+  # inside, at bin\exiftool.exe), which -Filter "*.exe" alone would match and
+  # hand to the signer as if it were a PE file.
+  $VendoredExecutables = Get-ChildItem (Join-Path $Stage "runtime\node_modules") -File -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue
   foreach ($executable in $VendoredExecutables) {
     & (Join-Path $PSScriptRoot "sign-app-windows.ps1") $executable.FullName
   }

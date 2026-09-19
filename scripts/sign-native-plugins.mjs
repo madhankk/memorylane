@@ -10,9 +10,14 @@ const plugins = path.join(root, "plugins");
 // (server/node_modules), covered by the app's own code-signing step instead.
 const nativeRoots = [path.join(plugins, "optional", "com.memorylane.ai-runtime"), path.join(plugins, "optional", "com.memorylane.apple-photos")]
   .filter((directory) => fs.existsSync(directory));
+// src/python hold a plugin's own out-of-band source (build tooling, venvs,
+// test caches - see plugins/optional/com.memorylane.ai-runtime/python/),
+// never descended into - same reasoning, and the same directory names, as
+// build-plugin-repository.mjs's PLUGIN_SOURCE_DIR_NAMES.
+const SOURCE_DIR_NAMES = ["src", "python"];
 const files = nativeRoots.flatMap((directory) => walk(directory));
 if (process.platform === "win32") {
-  const signer = path.join(root, "desktop", "scripts", "sign-app-windows.ps1");
+  const signer = path.join(root, "tray-go", "scripts", "sign-app-windows.ps1");
   const targets = files.filter((file) => file.toLowerCase().endsWith(".exe"));
   if (!targets.length) throw new Error("No Windows plugin executables found");
   for (const target of targets) execFileSync("powershell.exe", ["-ExecutionPolicy", "Bypass", "-File", signer, target], { stdio: "inherit" });
@@ -25,4 +30,4 @@ if (process.platform === "win32") {
 } else throw new Error("Release plugin signing is supported only on Windows and macOS");
 fs.writeFileSync(path.join(plugins, `.signed-${process.platform}-${process.arch}`), new Date().toISOString());
 
-function walk(directory, out = []) { for (const entry of fs.readdirSync(directory, { withFileTypes: true })) { const item=path.join(directory,entry.name); if(entry.isDirectory()) walk(item,out); else out.push(item); } return out; }
+function walk(directory, out = []) { for (const entry of fs.readdirSync(directory, { withFileTypes: true })) { if(entry.isDirectory() && SOURCE_DIR_NAMES.includes(entry.name)) continue; const item=path.join(directory,entry.name); if(entry.isDirectory()) walk(item,out); else out.push(item); } return out; }

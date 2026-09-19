@@ -23,7 +23,14 @@ import (
 )
 
 var updateFeedURL string
-var updatePublicKey string
+
+// Raw 32-byte Ed25519 public key (base64), same keypair that signs the
+// plugin catalog - server/src/plugin-platform/release-public-key.ts's
+// PLUGIN_RELEASE_PUBLIC_KEY in its other encoding (SPKI PEM there, since
+// Node's crypto.verify wants that; raw bytes here, since ed25519.Verify
+// wants that). One first-party signing key for everything MemoryLane ships,
+// not a second keypair to generate and guard.
+var updatePublicKey = "6fSlBqpHIuoB26XKwmc1lKkk4ouFJh381CrWIaQhgRM="
 
 type updateManifest struct {
 	Version   string `json:"version"`
@@ -44,14 +51,11 @@ func newCoreUpdater(setMenu func(string, bool)) *coreUpdater {
 	if value := os.Getenv("MEMORYLANE_UPDATE_FEED_URL"); value != "" {
 		updateFeedURL = value
 	}
-	if value := os.Getenv("MEMORYLANE_UPDATE_PUBLIC_KEY"); value != "" {
-		updatePublicKey = value
-	}
 	return &coreUpdater{setMenu: setMenu}
 }
 
 func (u *coreUpdater) start() {
-	if updateFeedURL == "" || updatePublicKey == "" {
+	if updateFeedURL == "" {
 		u.setMenu("Updates not configured", false)
 		return
 	}

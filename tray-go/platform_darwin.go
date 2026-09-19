@@ -46,6 +46,12 @@ func setLaunchAtLogin(enabled bool) error {
 	plist := `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>com.memorylane.desktop</string><key>ProgramArguments</key><array><string>` + html.EscapeString(executable) + `</string></array><key>RunAtLoad</key><true/></dict></plist>`
 	return os.WriteFile(path, []byte(plist), 0600)
 }
+func openBrowser(raw string) error {
+	if !validLocalURL(raw) {
+		return fmt.Errorf("refusing non-local URL")
+	}
+	return exec.Command("open", raw).Start()
+}
 func launchInstaller(path string) error { return exec.Command("open", path).Start() }
 func acquireSingleInstance() error {
 	path := filepath.Join(appDataDir(), "tray.lock")

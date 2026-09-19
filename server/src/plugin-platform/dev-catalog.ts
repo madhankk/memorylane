@@ -10,7 +10,8 @@ export interface DevPluginEntry {
 // Dev-catalog mode: when nothing points the server at a real signed catalog
 // (MEMORYLANE_PLUGIN_CATALOG_URL) or a signed local build
 // (MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY), plugins load straight from their
-// source under plugins/required/ and plugins/optional/ - no zip, no signing,
+// source under plugins/optional/ (and plugins/required/, if that ever comes
+// back - no first-party plugin is required today) - no zip, no signing,
 // no catalog.json. This deliberately does not go through PluginCatalogSchema
 // (which requires sha256/signature/size fields with no escape hatch, by
 // design - see the plan) or PluginInstaller; it's a parallel, much simpler

@@ -20,6 +20,7 @@ import PersonPage from "./pages/PersonPage";
 import CleanupPage from "./pages/CleanupPage";
 import TagsPage from "./pages/TagsPage";
 import PluginWelcomePage from "./pages/PluginWelcomePage";
+import WelcomePage from "./pages/WelcomePage";
 const LocationsPage = lazy(() => import("./pages/LocationsPage"));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -30,7 +31,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function OnboardingGate({children}:{children:React.ReactNode}){const[complete,setComplete]=useState<boolean|null>(null);useEffect(()=>{void api.pluginPlatform.onboarding().then(x=>setComplete(x.complete)).catch(()=>setComplete(true));},[]);if(complete===null)return null;if(!complete)return <Navigate to="/welcome/plugins" replace/>;return <>{children}</>;}
+function OnboardingGate({children}:{children:React.ReactNode}){const[complete,setComplete]=useState<boolean|null>(null);useEffect(()=>{void api.pluginPlatform.onboarding().then(x=>setComplete(x.complete)).catch(()=>setComplete(true));},[]);if(complete===null)return null;if(!complete)return <Navigate to="/welcome" replace/>;return <>{children}</>;}
 
 export default function App() {
   const { needsSetup, loading } = useAuth();
@@ -41,6 +42,7 @@ export default function App() {
     <Routes>
       <Route path="/setup" element={needsSetup ? <SetupPage /> : <Navigate to="/login" replace />} />
       <Route path="/login" element={needsSetup ? <Navigate to="/setup" replace /> : <LoginPage />} />
+      <Route path="/welcome" element={<ProtectedRoute><WelcomePage /></ProtectedRoute>} />
       <Route path="/welcome/plugins" element={<ProtectedRoute><PluginWelcomePage /></ProtectedRoute>} />
       <Route
         element={

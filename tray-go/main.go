@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,9 +23,9 @@ import (
 var version = "0.2.0"
 
 // Compiled in at package time via -X main.pluginCatalogURL=... (see
-// package-windows.ps1 / package-macos.sh), same mechanism as updateFeedURL
-// in updater.go. Empty by default so a dev build with no ldflag simply has
-// no catalog configured, same as before this existed.
+// package-windows.ps1 / package-macos.sh), same mechanism as
+// updater.go's updateFeedURL. Empty by default so a dev build with no
+// ldflag simply has no catalog configured, same as before this existed.
 var pluginCatalogURL string
 
 // An explicit MEMORYLANE_PLUGIN_CATALOG_URL in the tray's own environment
@@ -39,8 +40,9 @@ func resolvedPluginCatalogURL() string {
 }
 
 type config struct {
-	Port          int  `json:"port"`
-	LaunchAtLogin bool `json:"launchAtLogin"`
+	Port                int  `json:"port"`
+	LaunchAtLogin       bool `json:"launchAtLogin"`
+	OpenBrowserAtLaunch bool `json:"openBrowserAtLaunch"`
 }
 
 type supervisor struct {
@@ -58,11 +60,12 @@ type supervisor struct {
 }
 
 var (
-	sup        *supervisor
-	menuState  *systray.MenuItem
-	menuLogin  *systray.MenuItem
-	menuUpdate *systray.MenuItem
-	tray       *systray.SystemTray
+	sup           *supervisor
+	menuState     *systray.MenuItem
+	menuLogin     *systray.MenuItem
+	menuOpenAtRun *systray.MenuItem
+	menuUpdate    *systray.MenuItem
+	tray          *systray.SystemTray
 )
 
 func main() {
@@ -121,7 +124,22 @@ func (s *supervisor) waitForState(want string, timeout time.Duration) bool {
 func onReady() {
 	cfg := loadConfig()
 	sup.port = cfg.Port
-	sup.onState = updateMenu
+	// Opens exactly once per launch, the first time the server actually
+	// reaches "running" - not on every state change (a crash-and-manual-relaunch
+	// mid-session shouldn't keep popping new tabs). This is the tray's own
+	// concern, separate from the server's own auto-open logic (server.ts) -
+	// the tray always passes MEMORYLANE_NO_OPEN=1 when it spawns the server
+	// (see start() below) specifically so the two never both fire. A plain
+	// `npm run dev`/`node dist/server.js` outside the tray is unaffected
+	// either way and keeps using its own auto-open behavior as before.
+	openedThisLaunch := false
+	sup.onState = func(state string) {
+		updateMenu(state)
+		if state == "running" && cfg.OpenBrowserAtLaunch && !openedThisLaunch {
+			openedThisLaunch = true
+			_ = openBrowser(fmt.Sprintf("http://127.0.0.1:%d", sup.port))
+		}
+	}
 	menu := systray.NewMenu()
 	menuState = menu.Add("MemoryLane stopped", nil)
 	menuState.SetDisabled(true)
@@ -136,6 +154,12 @@ func onReady() {
 			menuLogin.SetChecked(enable)
 			_ = saveConfig(cfg)
 		}
+	})
+	menuOpenAtRun = menu.AddCheckbox("Open MemoryLane in Browser at Launch", cfg.OpenBrowserAtLaunch, func() {
+		enable := !menuOpenAtRun.IsChecked()
+		cfg.OpenBrowserAtLaunch = enable
+		menuOpenAtRun.SetChecked(enable)
+		_ = saveConfig(cfg)
 	})
 	menu.AddSeparator()
 	updater := newCoreUpdater(func(label string, enabled bool) {
@@ -232,7 +256,7 @@ func (s *supervisor) start(port int) {
 		"MEMORYLANE_NO_OPEN=1",
 		"MEMORYLANE_DESKTOP_TOKEN="+s.token,
 	)
-	if plugins := bundledPluginsDir(runtimeDir); plugins != "" {
+	if plugins := bundledPluginsDir(); plugins != "" {
 		cmd.Env = append(cmd.Env, "MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY="+plugins)
 	}
 	if catalogURL := resolvedPluginCatalogURL(); catalogURL != "" {
@@ -331,7 +355,7 @@ func (s *supervisor) fail(err error) {
 }
 
 func loadConfig() config {
-	cfg := config{Port: 4280}
+	cfg := config{Port: 4280, OpenBrowserAtLaunch: true}
 	data, err := os.ReadFile(filepath.Join(appDataDir(), "desktop-config.json"))
 	if err == nil {
 		_ = json.Unmarshal(data, &cfg)
@@ -392,17 +416,8 @@ func resolveRuntimeDir() (string, error) {
 	return "", errors.New("MemoryLane runtime not found; set MEMORYLANE_RUNTIME_DIR")
 }
 
-func bundledPluginsDir(runtimeDir string) string {
-	if explicit := os.Getenv("MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY"); explicit != "" {
-		return explicit
-	}
-	candidates := []string{filepath.Join(filepath.Dir(runtimeDir), "bundled-plugins"), filepath.Join(runtimeDir, "..", "bundled-plugins")}
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return filepath.Clean(candidate)
-		}
-	}
-	return ""
+func bundledPluginsDir() string {
+	return os.Getenv("MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY")
 }
 
 func writeReadyMarker() {
@@ -412,3 +427,8 @@ func writeReadyMarker() {
 }
 
 func nodeBinaryName() string { return platformNodeBinaryName() }
+
+func validLocalURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "http" && u.Hostname() == "127.0.0.1"
+}

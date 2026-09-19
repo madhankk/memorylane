@@ -69,7 +69,7 @@ async function main(): Promise<void> {
   const pluginCatalogUrl = process.env.MEMORYLANE_PLUGIN_CATALOG_URL;
   const bundledPluginRepository = process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY ? resolveRepoPath(process.env.MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY) : undefined;
   // Dev-catalog mode: when neither a real catalog nor a signed local build is
-  // configured, load plugins straight from plugins/required|optional/ in the
+  // configured, load plugins straight from plugins/optional/ in the
   // repo - no zip, no signing, no network. This is what makes a plain
   // `npm run dev`/`npm start` from a source checkout work out of the box,
   // without falling into the dead middle ground of "no catalog configured at

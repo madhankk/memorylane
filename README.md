@@ -158,13 +158,12 @@ Occasionally a migration needs to invalidate existing thumbnails (e.g. to fix a 
 
 ### Building for production
 
-Every command below runs from the repo root, in order. Three keys already exist at their default repo locations and are picked up automatically with **no configuration needed** - override only if you want something different:
+Every command below runs from the repo root, in order. One first-party signing key covers both the plugin catalog and core update manifests - it already exists at its default repo location and is picked up automatically with **no configuration needed** - override only if you want something different:
 
 | Key | Default location | Override |
 | --- | --- | --- |
-| Plugin signing key | `.keys/plugin-release-private.pem` | `MEMORYLANE_PLUGIN_SIGNING_KEY` |
-| Plugin catalog URL (compiled into the tray) | `https://memorylaneapp.org/plugins/v1/stable/catalog.json` | `MEMORYLANE_PLUGIN_CATALOG_URL` |
-| Update manifest public key (compiled into the tray) | the real key from `desktop:update-keygen` | `MEMORYLANE_UPDATE_PUBLIC_KEY` |
+| Signing key (plugin catalog + core update manifests) | `.keys/plugin-release-private.pem` | `MEMORYLANE_PLUGIN_SIGNING_KEY` |
+| Plugin catalog URL (compiled into the tray) | `.../plugins/v1/stable/win32-x64/catalog.json` (Windows) or `.../darwin-arm64/catalog.json` (macOS) | `MEMORYLANE_PLUGIN_CATALOG_URL` |
 
 **1. Build the core**
 
@@ -198,25 +197,33 @@ Signs `MemoryLane.exe`, `node-runtime.exe`, `MemoryLane-Setup.exe`, and every ve
 
 **4. Publish the plugin catalog (AI Runtime, AI Search, People, Apple Photos)**
 
-These are the only genuinely optional, plugin-platform-backed features left - installed on demand from the hosted catalog, not bundled into step 2's package:
+These are the only genuinely optional, plugin-platform-backed features left - installed on demand from the hosted catalog, not bundled into step 2's package. **Each platform (`win32-x64`, `darwin-arm64`) has its own catalog and is published independently**, from that platform's own machine - AI Runtime and Apple Photos each ship a real native executable that can only be built on its own target OS/arch, not something `plugins:build` can cross-compile:
 
 ```bash
-npm run plugins:prepare-ai-runtime
-npm run plugins:prepare-apple-photos   # macOS only
+npm run plugins:prepare-ai-runtime     # Windows: builds the win32-x64 AI Runtime binary
+npm run plugins:prepare-apple-photos   # macOS: builds the darwin-arm64 Apple Photos binary
+npm run plugins:sign-native            # needs real signing credentials - see step 3
 npm run plugins:build -- stable        # signs with .keys/plugin-release-private.pem automatically
-npm run plugins:verify -- dist/plugin-repository/v1/stable
+npm run plugins:verify -- dist/plugin-repository/v1/stable/win32-x64    # or .../darwin-arm64 on macOS
 ```
 
-Then upload `dist/plugin-repository/v1/stable/` to `https://memorylaneapp.org/plugins/v1/stable/` (the URL step 2 already points at by default) - see [plugin repository deployment](docs/plugin-repository-deployment.md) for the atomic-upload procedure and hosting details.
+`plugins:build` writes one catalog per platform subdirectory and only builds what the current machine actually has a native binary for - AI Runtime is skipped on a Mac, Apple Photos is skipped on Windows, so this same sequence runs unmodified on both.
+
+If `SIGN_RELEASE=1` is set in your shell (e.g. left over from step 3), `plugins:build` refuses to run until AI Runtime's/Apple Photos' own native executables have been code-signed first - it's checking for the marker file `plugins:sign-native` writes, not just a version-controlled setting:
+
+For a plain local/unsigned catalog build, just make sure `SIGN_RELEASE` isn't set (`Remove-Item Env:\SIGN_RELEASE` in PowerShell, or open a fresh shell) - `plugins:build` runs straight through without it.
+
+Then upload `dist/plugin-repository/v1/stable/win32-x64/` to `https://memorylaneapp.org/plugins/v1/stable/win32-x64/` (or `darwin-arm64` on macOS - the URL step 2 already points at by default for each platform's own build) - see [plugin repository deployment](docs/plugin-repository-deployment.md) for the atomic-upload procedure and hosting details. Publishing from one platform never touches the other's live catalog - there's nothing to merge and no ordering requirement between the two machines.
 
 **5. Publish a core update (optional, once you're ready to ship an update to existing installs)**
 
 ```bash
-MEMORYLANE_UPDATE_PRIVATE_KEY=.keys/core-update-private.pem \
-  npm run desktop:update-manifest -- <installer-path> <public-installer-url> <output-manifest.json>
+npm run desktop:update-manifest -- <installer-path> <public-installer-url> <output-manifest.json>
 ```
 
-Upload the signed installer and the manifest it produced to `https://memorylaneapp.org/updates/<platform>/` (`win32-x64`, `darwin-x64`, `darwin-arm64`), then set `MEMORYLANE_UPDATE_FEED_URL` to that manifest's URL for future packaging runs (step 2) - from then on, every new package points existing installs at the update.
+Signs with `.keys/plugin-release-private.pem` automatically, same key as the plugin catalog (override with `MEMORYLANE_PLUGIN_SIGNING_KEY` as usual).
+
+Upload the signed installer and the manifest it produced to `https://memorylaneapp.org/updates/<platform>/` (`win32-x64`, `darwin-arm64` - Intel Mac is out of scope for now), then set `MEMORYLANE_UPDATE_FEED_URL` to that manifest's URL for future packaging runs (step 2) - from then on, every new package points existing installs at the update.
 
 ## Repository layout
 

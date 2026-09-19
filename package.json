@@ -23,15 +23,15 @@
     "package:size": "node scripts/report-package-size.mjs",
     "plugins:build": "node scripts/build-plugin-repository.mjs",
     "plugins:verify": "node scripts/verify-plugin-repository.mjs",
-    "plugins:sign-required": "node scripts/sign-required-plugins.mjs",
+    "plugins:sign-native": "node scripts/sign-native-plugins.mjs",
     "plugins:prepare-ai-runtime": "node scripts/prepare-ai-runtime-plugin.mjs",
     "plugins:prepare-apple-photos": "node scripts/prepare-apple-photos-plugin.mjs",
     "plugins:keygen": "node scripts/generate-plugin-signing-key.mjs",
     "desktop:runtime": "node tray-go/scripts/prepare-runtime.mjs",
     "desktop:package": "powershell -ExecutionPolicy Bypass -File tray-go/scripts/package-windows.ps1",
     "desktop:installer": "powershell -ExecutionPolicy Bypass -File tray-go/scripts/package-windows.ps1 -Installer",
-    "desktop:update-keygen": "node scripts/generate-core-update-key.mjs",
-    "desktop:update-manifest": "node scripts/build-core-update-manifest.mjs"
+    "desktop:update-manifest": "node scripts/build-core-update-manifest.mjs",
+    "build:windows-install": "node scripts/build-windows-install.mjs"
   },
   "devDependencies": {
     "@types/yazl": "^3.3.1",

@@ -7,6 +7,7 @@ import { formatMemoryBlurb } from "../utils/blurb";
 import { displaySrc } from "../utils/mediaSrc";
 import { formatBytes, formatDuration } from "../utils/format";
 import { useEngagementTracking } from "../hooks/useEngagementTracking";
+import { usePluginActive } from "../utils/plugins";
 import { ApplePreviewNotice } from "./ApplePreviewNotice";
 import TagEditor from "./TagEditor";
 
@@ -47,6 +48,7 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
 
   const current = items[index];
   useEngagementTracking(current?.id);
+  const aiSearchAvailable = usePluginActive("com.memorylane.ai-search");
 
   // Always land on the still image first when navigating to a new item.
   useEffect(() => {
@@ -211,20 +213,42 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      <button
-        className={`absolute top-5 right-16 ${controlButtonClass}`}
-        onClick={() => {
-          onClose();
-          navigate(`/similar/${current.id}`);
-        }}
-        aria-label="Find similar photos"
-        title="Find similar photos (AI)"
-      >
-        <Sparkles size={16} strokeWidth={1.8} />
-      </button>
-      <button className={`absolute top-5 right-5 ${controlButtonClass}`} onClick={onClose} aria-label="Close">
-        ✕
-      </button>
+      {/* One flex row for the whole top-right cluster - each button used to be
+          individually `absolute`-positioned with a manually chosen `right-N`
+          offset (right-5/16/24), which didn't leave enough room for each
+          button's own 48px width and left them overlapping (e.g. the AI
+          "Find similar" button overlapping both its neighbors). A flex row
+          lets the browser space them instead of hand-picked pixel math. */}
+      <div className="absolute top-5 right-5 flex items-center gap-2">
+        <button
+          className={`grid place-items-center ${controlButtonClass}`}
+          onClick={toggleFavorite}
+          aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+          aria-pressed={isFavorite}
+        >
+          <Star
+            size={22}
+            strokeWidth={1.8}
+            className={isFavorite ? "fill-amber-400 text-amber-400" : "text-white"}
+          />
+        </button>
+        {aiSearchAvailable && (
+          <button
+            className={controlButtonClass}
+            onClick={() => {
+              onClose();
+              navigate(`/similar/${current.id}`);
+            }}
+            aria-label="Find similar photos"
+            title="Find similar photos (AI)"
+          >
+            <Sparkles size={16} strokeWidth={1.8} />
+          </button>
+        )}
+        <button className={controlButtonClass} onClick={onClose} aria-label="Close">
+          ✕
+        </button>
+      </div>
 
       {current.sourceKind === "apple-photos" && !current.originalAvailable && (
         <ApplePreviewNotice error={openInPhotosError} onOpen={() => {
@@ -233,19 +257,6 @@ export default function Viewer({ items, startIndex, onClose, autoPlay = false, t
           });
         }} />
       )}
-
-      <button
-        className={`absolute top-5 right-24 grid place-items-center ${controlButtonClass}`}
-        onClick={toggleFavorite}
-        aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-        aria-pressed={isFavorite}
-      >
-        <Star
-          size={22}
-          strokeWidth={1.8}
-          className={isFavorite ? "fill-amber-400 text-amber-400" : "text-white"}
-        />
-      </button>
 
       <button
         className={`absolute top-1/2 left-5 -translate-y-1/2 ${controlButtonClass}`}

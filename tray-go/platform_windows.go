@@ -50,6 +50,13 @@ func setLaunchAtLogin(enabled bool) error {
 	return cmd.Run()
 }
 
+func openBrowser(raw string) error {
+	if !validLocalURL(raw) {
+		return fmt.Errorf("refusing non-local URL")
+	}
+	return exec.Command("rundll32", "url.dll,FileProtocolHandler", raw).Start()
+}
+
 func launchInstaller(path string) error {
 	cmd := exec.Command(path, "/SILENT", "/CLOSEAPPLICATIONS")
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}

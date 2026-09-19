@@ -11,16 +11,20 @@ CONTENTS="$APP/Contents"
 node "$TRAY_ROOT/scripts/prepare-runtime.mjs"
 mkdir -p "$TRAY_ROOT/dist"
 # The real, signed catalog this verifies against is already hosted - see
-# docs/plugin-repository-deployment.md. Override for a build that should
-# point at a different catalog (e.g. a beta channel or a self-hosted mirror).
-PLUGIN_CATALOG_URL="${MEMORYLANE_PLUGIN_CATALOG_URL:-https://memorylaneapp.org/plugins/v1/stable/catalog.json}"
-# The real core-update keypair (generated via `npm run desktop:update-keygen`,
-# private half in the gitignored .keys/) - public half only, safe to bake in.
-# MEMORYLANE_UPDATE_FEED_URL still has no default: updater.go treats updates
-# as "not configured" unless both the feed URL and this key are set, and no
-# feed is hosted yet - see docs/plugin-repository-deployment.md.
-UPDATE_PUBLIC_KEY="${MEMORYLANE_UPDATE_PUBLIC_KEY:-zMbIhcnUMlucTxa0tOMI6gtciLN3X6rN3uZj7Q+j7Tc=}"
-(cd "$TRAY_ROOT" && go build -trimpath -ldflags "-s -w -X main.version=$VERSION -X main.updateFeedURL=${MEMORYLANE_UPDATE_FEED_URL:-} -X main.updatePublicKey=$UPDATE_PUBLIC_KEY -X main.pluginCatalogURL=$PLUGIN_CATALOG_URL" -o dist/MemoryLane .)
+# docs/plugin-repository-deployment.md. Each platform has its own catalog
+# (scripts/build-plugin-repository.mjs writes one per platform subdirectory,
+# uploaded and updated independently of any other platform's) - ARCH is
+# "arm64" on Apple Silicon, matching that subdirectory's name directly (Intel
+# Mac/darwin-x64 isn't a supported release target for now). Override for a
+# build that should point at a different catalog (e.g. a beta channel or a
+# self-hosted mirror).
+PLUGIN_CATALOG_URL="${MEMORYLANE_PLUGIN_CATALOG_URL:-https://memorylaneapp.org/plugins/v1/stable/darwin-$ARCH/catalog.json}"
+# The update manifest is verified with the same first-party key that signs
+# the plugin catalog (tray-go/updater.go's updatePublicKey), so there's
+# nothing to bake in here. MEMORYLANE_UPDATE_FEED_URL still has no default:
+# updater.go treats updates as "not configured" unless it's set, and no feed
+# is hosted yet - see docs/plugin-repository-deployment.md.
+(cd "$TRAY_ROOT" && go build -trimpath -ldflags "-s -w -X main.version=$VERSION -X main.updateFeedURL=${MEMORYLANE_UPDATE_FEED_URL:-} -X main.pluginCatalogURL=$PLUGIN_CATALOG_URL" -o dist/MemoryLane .)
 rm -rf "$APP"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 cp "$TRAY_ROOT/dist/MemoryLane" "$CONTENTS/MacOS/MemoryLane"
