@@ -29,6 +29,7 @@
     "plugins:prepare-ai-runtime": "node scripts/prepare-ai-runtime-plugin.mjs",
     "plugins:prepare-apple-photos": "node scripts/prepare-apple-photos-plugin.mjs",
     "plugins:keygen": "node scripts/generate-plugin-signing-key.mjs",
+    "version:bump": "node scripts/bump-version.mjs",
     "desktop:runtime": "node tray-go/scripts/prepare-runtime.mjs",
     "desktop:package": "powershell -ExecutionPolicy Bypass -File tray-go/scripts/package-windows.ps1",
     "desktop:installer": "powershell -ExecutionPolicy Bypass -File tray-go/scripts/package-windows.ps1 -Installer",
