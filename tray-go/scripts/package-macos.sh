@@ -50,7 +50,68 @@ fi
 
 DMG="$RELEASE/MemoryLane-$ARCH.dmg"
 rm -f "$DMG"
-hdiutil create -volname MemoryLane -srcfolder "$APP" -ov -format ULFO "$DMG"
+
+# Build a conventional drag-to-Applications disk image. A writable image is
+# needed briefly so Finder can persist its icon positions, window geometry,
+# and background into .DS_Store before the final compressed image is made.
+DMG_WORK="$(mktemp -d /private/tmp/memorylane-dmg.XXXXXX)"
+DMG_STAGE="$DMG_WORK/root"
+DMG_MOUNT="/Volumes/MemoryLane"
+DMG_RW="$DMG_WORK/MemoryLane-rw.dmg"
+DMG_MOUNTED=0
+cleanup_dmg() {
+  if [[ "$DMG_MOUNTED" == "1" ]]; then hdiutil detach "$DMG_MOUNT" -quiet || true; fi
+  rm -rf "$DMG_WORK"
+}
+trap cleanup_dmg EXIT
+
+if [[ -e "$DMG_MOUNT" ]]; then
+  echo "A volume is already mounted at $DMG_MOUNT; eject it and retry." >&2
+  exit 1
+fi
+mkdir -p "$DMG_STAGE/.background"
+cp -R "$APP" "$DMG_STAGE/MemoryLane.app"
+ln -s /Applications "$DMG_STAGE/Applications"
+cp "$TRAY_ROOT/assets/dmg/background.png" "$DMG_STAGE/.background/background.png"
+
+hdiutil create -volname MemoryLane -srcfolder "$DMG_STAGE" -ov -format UDRW -fs HFS+ "$DMG_RW" >/dev/null
+hdiutil attach "$DMG_RW" -readwrite -noverify -noautoopen -mountpoint "$DMG_MOUNT" >/dev/null
+DMG_MOUNTED=1
+# Finder does not add a no-auto-open volume to its scripting object model
+# until the volume has been opened once.
+open "$DMG_MOUNT"
+sleep 2
+
+osascript <<EOF
+tell application "Finder"
+  tell disk "MemoryLane"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set pathbar visible of container window to false
+    set sidebar width of container window to 0
+    set the bounds of container window to {120, 120, 780, 520}
+    set viewOptions to the icon view options of container window
+    set arrangement of viewOptions to not arranged
+    set icon size of viewOptions to 104
+    set text size of viewOptions to 14
+    set background picture of viewOptions to file ".background:background.png"
+    set position of item "MemoryLane.app" of container window to {175, 190}
+    set position of item "Applications" of container window to {485, 190}
+    update without registering applications
+    delay 2
+    close
+  end tell
+end tell
+EOF
+
+sync
+hdiutil detach "$DMG_MOUNT" -quiet
+DMG_MOUNTED=0
+hdiutil convert "$DMG_RW" -format ULFO -o "$DMG" >/dev/null
+rm -rf "$DMG_WORK"
+trap - EXIT
 if [[ "${SIGN_RELEASE:-}" == "1" ]]; then
   : "${APPLE_NOTARY_KEYCHAIN_PROFILE:?APPLE_NOTARY_KEYCHAIN_PROFILE is required}"
   codesign --force --sign "$IDENTITY" --timestamp "$DMG"
