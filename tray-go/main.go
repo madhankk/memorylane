@@ -237,7 +237,8 @@ func onReady() {
 	menu.Add("Quit", func() { tray.Remove() })
 
 	tray = systray.New()
-	tray.SetIcon(trayIcon).SetTooltip("MemoryLane").SetMenu(menu).Show()
+	setTrayIcon(tray)
+	tray.SetTooltip("MemoryLane").SetMenu(menu).Show()
 	updateMenu("stopped")
 	writeReadyMarker()
 

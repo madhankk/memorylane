@@ -7,6 +7,12 @@ ARCH="$(uname -m)"
 RELEASE="$TRAY_ROOT/release/$VERSION"
 APP="$RELEASE/MemoryLane.app"
 CONTENTS="$APP/Contents"
+DMG_MOUNT="/Volumes/MemoryLane"
+
+if [[ -e "$DMG_MOUNT" ]]; then
+  echo "A volume is already mounted at $DMG_MOUNT; eject it and retry." >&2
+  exit 1
+fi
 
 node "$TRAY_ROOT/scripts/prepare-runtime.mjs"
 mkdir -p "$TRAY_ROOT/dist"
@@ -39,14 +45,30 @@ EOF
 
 if [[ "${SIGN_RELEASE:-}" == "1" ]]; then
   IDENTITY="${MACOS_SIGNING_IDENTITY:-Developer ID Application: Humanly Incorporated (RNTVBNC62M)}"
-  # -perm -u+x picks up exiftool-vendored/ffmpeg-static/ffprobe-static's own
-  # extensionless executables too - core dependencies now (see
-  # server/src/media/exiftool-client.ts, video-client.ts), not a
-  # separately-signed plugin anymore, so their binaries need coverage here.
-  while IFS= read -r file; do codesign --force --options runtime --timestamp --sign "$IDENTITY" "$file"; done < <(find "$CONTENTS/Resources/runtime" -type f \( -name '*.node' -o -name '*.dylib' -o -name 'node-runtime' -o -perm -u+x \))
-  codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" "$APP"
-  codesign --verify --deep --strict "$APP"
+  SIGN_ARGS=(--force --options runtime --timestamp --sign "$IDENTITY")
+else
+  # Copies of signed Mach-O files retain their original signature. Some Node
+  # installations have a stale/invalid signature that macOS tolerates in a
+  # terminal but kills with SIGTRAP inside an app bundle. Ad-hoc signing makes
+  # local builds launchable and gives the enclosing bundle a valid seal.
+  IDENTITY="-"
+  SIGN_ARGS=(--force --options runtime --sign "$IDENTITY")
 fi
+
+# Pick up Node, native addons, dylibs and extensionless tools such as ffmpeg,
+# while skipping executable-bit JavaScript/shell files and non-macOS binaries
+# that npm packages also ship for other platforms.
+while IFS= read -r file; do
+  if file "$file" | grep -q 'Mach-O'; then
+    if [[ "$(basename "$file")" == "node-runtime" ]]; then
+      codesign "${SIGN_ARGS[@]}" --entitlements "$TRAY_ROOT/assets/node-runtime-entitlements.plist" "$file"
+    else
+      codesign "${SIGN_ARGS[@]}" "$file"
+    fi
+  fi
+done < <(find "$CONTENTS/Resources/runtime" -type f \( -name '*.node' -o -name '*.dylib' -o -name 'node-runtime' -o -perm -u+x \))
+codesign "${SIGN_ARGS[@]}" --deep "$APP"
+codesign --verify --deep --strict "$APP"
 
 DMG="$RELEASE/MemoryLane-$ARCH.dmg"
 rm -f "$DMG"
@@ -56,7 +78,6 @@ rm -f "$DMG"
 # and background into .DS_Store before the final compressed image is made.
 DMG_WORK="$(mktemp -d /private/tmp/memorylane-dmg.XXXXXX)"
 DMG_STAGE="$DMG_WORK/root"
-DMG_MOUNT="/Volumes/MemoryLane"
 DMG_RW="$DMG_WORK/MemoryLane-rw.dmg"
 DMG_MOUNTED=0
 cleanup_dmg() {
@@ -65,10 +86,6 @@ cleanup_dmg() {
 }
 trap cleanup_dmg EXIT
 
-if [[ -e "$DMG_MOUNT" ]]; then
-  echo "A volume is already mounted at $DMG_MOUNT; eject it and retry." >&2
-  exit 1
-fi
 mkdir -p "$DMG_STAGE/.background"
 cp -R "$APP" "$DMG_STAGE/MemoryLane.app"
 ln -s /Applications "$DMG_STAGE/Applications"

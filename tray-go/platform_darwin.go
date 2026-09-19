@@ -11,10 +11,14 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/gogpu/systray"
 )
 
 //go:embed assets/trayTemplate.png
 var trayIcon []byte
+
+func setTrayIcon(t *systray.SystemTray) { t.SetTemplateIcon(trayIcon) }
 
 var instanceFile *os.File
 

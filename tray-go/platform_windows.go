@@ -10,11 +10,14 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/gogpu/systray"
 	"golang.org/x/sys/windows"
 )
 
 //go:embed assets/icon-32.png
 var trayIcon []byte
+
+func setTrayIcon(t *systray.SystemTray) { t.SetIcon(trayIcon) }
 
 var instanceMutex windows.Handle
 
