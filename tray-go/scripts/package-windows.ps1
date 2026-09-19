@@ -24,8 +24,29 @@ $PluginCatalogUrl = if ($env:MEMORYLANE_PLUGIN_CATALOG_URL) { $env:MEMORYLANE_PL
 $UpdateFeedUrl = if ($env:MEMORYLANE_UPDATE_FEED_URL) { $env:MEMORYLANE_UPDATE_FEED_URL } else { "https://memorylaneapp.org/updates/win32-x64/manifest.json" }
 Push-Location $TrayRoot
 try {
+  # Windows Explorer and the Start menu read the application icon from the
+  # executable, not from Inno Setup's SetupIconFile. Generate a temporary Go
+  # resource object so the packaged tray executable carries the icon and
+  # useful file properties of its own.
+  $ResourceObject = Join-Path $TrayRoot "rsrc_windows_amd64.syso"
+  Remove-Item -LiteralPath $ResourceObject -Force -ErrorAction SilentlyContinue
+  go run github.com/tc-hib/go-winres@v0.3.3 simply `
+    --icon "assets\icon.ico" `
+    --manifest gui `
+    --arch amd64 `
+    --out rsrc `
+    --product-name "MemoryLane" `
+    --file-description "MemoryLane photo and video library" `
+    --original-filename "MemoryLane.exe" `
+    --product-version $Version `
+    --file-version $Version
+  if ($LASTEXITCODE -ne 0) { throw "Could not generate Windows application resources" }
   go build -trimpath -ldflags "-s -w -H windowsgui -X main.version=$Version -X main.updateFeedURL=$UpdateFeedUrl -X main.pluginCatalogURL=$PluginCatalogUrl" -o "dist\MemoryLane.exe" .
-} finally { Pop-Location }
+  if ($LASTEXITCODE -ne 0) { throw "Go build failed with exit code $LASTEXITCODE" }
+} finally {
+  Remove-Item -LiteralPath (Join-Path $TrayRoot "rsrc_windows_amd64.syso") -Force -ErrorAction SilentlyContinue
+  Pop-Location
+}
 
 if (Test-Path -LiteralPath $Stage) { Remove-Item -LiteralPath $Stage -Recurse -Force }
 New-Item -ItemType Directory -Force $Stage | Out-Null

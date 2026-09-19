@@ -22,6 +22,8 @@ server/data/
 .keys/
 plugins/optional/com.memorylane.ai-runtime/bin/
 plugins/optional/com.memorylane.apple-photos/bin/
+# Generated only after native plugin binaries are signed on this machine.
+plugins/.signed-*
 
 # native desktop tray generated runtime and release artifacts
 tray-go/runtime/

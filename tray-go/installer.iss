@@ -12,6 +12,7 @@
 AppId={{8C70D798-1C76-45A7-92B1-8C456BD8FA32}
 AppName=MemoryLane
 AppVersion={#AppVersion}
+AppPublisher=MemoryLane
 DefaultDirName={localappdata}\Programs\MemoryLane
 DefaultGroupName=MemoryLane
 OutputDir={#OutputDir}
@@ -35,8 +36,8 @@ SetupArchitecture=x64
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\MemoryLane"; Filename: "{app}\MemoryLane.exe"
-Name: "{userdesktop}\MemoryLane"; Filename: "{app}\MemoryLane.exe"; Tasks: desktopicon
+Name: "{group}\MemoryLane"; Filename: "{app}\MemoryLane.exe"; IconFilename: "{app}\MemoryLane.exe"
+Name: "{userdesktop}\MemoryLane"; Filename: "{app}\MemoryLane.exe"; IconFilename: "{app}\MemoryLane.exe"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
