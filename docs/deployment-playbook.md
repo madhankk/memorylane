@@ -91,7 +91,7 @@ Open a **second terminal**, leave it running:
 npm run ai
 ```
 
-That one command works on macOS, Windows and Linux: it finds a Python 3.11+ (`python3`, or `py -3` on Windows), creates `memorylane-ai/.venv` if missing, installs the package on first run (or when its dependencies change), and starts the service. First start also downloads the CLIP model (~350 MB); the face models (~38 MB) download the first time People runs. You'll see `Uvicorn running on http://127.0.0.1:4281`. Check it:
+That one command works on macOS, Windows and Linux: it finds a Python 3.11+ (`python3`, or `py -3` on Windows), creates `plugins/optional/com.memorylane.ai-runtime/python/.venv` if missing, installs the package on first run (or when its dependencies change), and starts the service. First start also downloads the CLIP model (~350 MB); the face models (~38 MB) download the first time People runs. You'll see `Uvicorn running on http://127.0.0.1:4281`. Check it:
 
 ```bash
 curl http://127.0.0.1:4281/v1/health
@@ -104,7 +104,7 @@ Notes
 - CPU is the default and does ~50 images/s (embeddings) and ~10 images/s (faces) on an M2 Max. GPU is optional: NVIDIA → `pip install onnxruntime-gpu` in the venv + `MEMORYLANE_AI_DEVICE=cuda`; Windows without CUDA → `pip install onnxruntime-directml` + `MEMORYLANE_AI_DEVICE=dml`.
 - Keep it on `127.0.0.1` unless the server runs on another machine; then set `MEMORYLANE_AI_HOST=0.0.0.0` and `MEMORYLANE_AI_TOKEN` on both sides, and point the server at it with `MEMORYLANE_AI_URL`.
 - **Launch it from the same kind of terminal as the server** (see the macOS note in §2) — the sidecar itself never touches your photo folders, but the venv lives inside the repo.
-- Sidecar tests: `memorylane-ai/.venv/bin/pytest -q` (macOS/Linux) / `memorylane-ai\.venv\Scripts\pytest -q` (Windows) → 9 passed.
+- Sidecar tests: `plugins/optional/com.memorylane.ai-runtime/python/.venv/bin/pytest -q` (macOS/Linux) / `plugins\optional\com.memorylane.ai-runtime\python\.venv\Scripts\pytest -q` (Windows) → 9 passed.
 
 ---
 
@@ -194,7 +194,7 @@ Run through this after every fresh setup (≈10 minutes). All steps have passed 
 | 12 | Windows only: paths with spaces/Unicode and a scan root on a second drive (`D:\Photos`) index correctly | – | ☐ |
 | 13 | **People** (Settings › People on, min faces 2 for a small library): faces detected, persons appear after the queue drains, rename / ✗ not-them / merge work, "Delete all face data" empties the page | ✅ | ☐ |
 
-Tests: `npm test` (server, in-memory SQLite, needs no sidecar), `npm run typecheck`, `memorylane-ai/.venv/bin/pytest -q`.
+Tests: `npm test` (server, in-memory SQLite, needs no sidecar), `npm run typecheck`, `plugins/optional/com.memorylane.ai-runtime/python/.venv/bin/pytest -q`.
 
 ---
 
@@ -209,7 +209,7 @@ npm run desktop:installer   # Windows Inno Setup installer
 bash tray-go/scripts/package-macos.sh  # macOS .app + DMG
 ```
 
-- Required and optional feature runtimes are installed through the plugin repository.
+- Optional feature runtimes (AI Runtime, AI Search, People, Apple Photos) are installed through the plugin repository - metadata/RAW/video support are core dependencies now, bundled directly, not installed separately.
 - Unsigned builds: macOS blocks launch (right-click → Open, or sign), Windows shows SmartScreen. Signing requires the code-signing setup described in the README.
 
 ---

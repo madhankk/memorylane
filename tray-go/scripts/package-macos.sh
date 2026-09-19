@@ -57,4 +57,14 @@ if [[ "${SIGN_RELEASE:-}" == "1" ]]; then
   xcrun notarytool submit "$DMG" --keychain-profile "$APPLE_NOTARY_KEYCHAIN_PROFILE" --wait
   xcrun stapler staple -v "$DMG"
 fi
+
+# Mirrors the plugin catalog's own dist/plugin-repository/ and the update
+# manifest's dist/updates/ - one place under dist/ to gather everything that
+# eventually gets published, instead of also having to remember
+# tray-go/release/<version>/ separately (see package-windows.ps1's own copy
+# of this step).
+DIST_INSTALLER_DIR="$REPO_ROOT/dist/installer"
+mkdir -p "$DIST_INSTALLER_DIR"
+cp "$DMG" "$DIST_INSTALLER_DIR/MemoryLane-$ARCH.dmg"
+
 echo "MemoryLane desktop package: $RELEASE"

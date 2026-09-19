@@ -34,7 +34,8 @@
     "desktop:package": "powershell -ExecutionPolicy Bypass -File tray-go/scripts/package-windows.ps1",
     "desktop:installer": "powershell -ExecutionPolicy Bypass -File tray-go/scripts/package-windows.ps1 -Installer",
     "desktop:update-manifest": "node scripts/build-core-update-manifest.mjs",
-    "build:windows-install": "node scripts/build-windows-install.mjs"
+    "build:windows-install": "node scripts/build-windows-install.mjs",
+    "build:mac-install": "node scripts/build-mac-install.mjs"
   },
   "devDependencies": {
     "@types/yazl": "^3.3.1",

@@ -219,12 +219,15 @@ Then upload `dist/plugin-repository/v1/stable/win32-x64/` to `https://memorylane
 **5. Publish a core update (optional, once you're ready to ship an update to existing installs)**
 
 ```bash
-npm run desktop:update-manifest -- <installer-path> <public-installer-url> <output-manifest.json>
+# Windows
+npm run desktop:update-manifest -- dist/installer/MemoryLane-Setup.exe https://memorylaneapp.org/updates/win32-x64/MemoryLane-Setup.exe dist/updates/win32-x64/manifest.json
+# macOS
+npm run desktop:update-manifest -- dist/installer/MemoryLane-arm64.dmg https://memorylaneapp.org/updates/darwin-arm64/MemoryLane-arm64.dmg dist/updates/darwin-arm64/manifest.json
 ```
 
-Signs with `.keys/plugin-release-private.pem` automatically, same key as the plugin catalog (override with `MEMORYLANE_PLUGIN_SIGNING_KEY` as usual).
+Signs with `.keys/plugin-release-private.pem` automatically, same key as the plugin catalog (override with `MEMORYLANE_PLUGIN_SIGNING_KEY` as usual). Both installer paths are exactly what `desktop:installer`/`package-macos.sh` already copy to `dist/installer/` - see step 2.
 
-Upload the signed installer and the manifest it produced to `https://memorylaneapp.org/updates/<platform>/` (`win32-x64`, `darwin-arm64` - Intel Mac is out of scope for now), then set `MEMORYLANE_UPDATE_FEED_URL` to that manifest's URL for future packaging runs (step 2) - from then on, every new package points existing installs at the update.
+Publish with `node scripts/publish-release.mjs update <platform>` (defaults for `--installer`/`--manifest` match the paths above, per platform) - it uploads the installer before the manifest and refuses to run if the installer's SHA-256 doesn't match what the manifest was signed against. Then set `MEMORYLANE_UPDATE_FEED_URL` to that manifest's URL for future packaging runs (step 2) if you ever need to point at something other than the default hosted feed - from then on, every new package for that platform points existing installs at the update.
 
 ## Repository layout
 

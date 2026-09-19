@@ -114,7 +114,8 @@ function publishCatalog() {
 // per docs/plugin-repository-deployment.md ("Publish the signed installer
 // before its manifest").
 function publishUpdate() {
-  const defaultInstaller = platform === "win32-x64" ? path.join(root, "dist", "installer", "MemoryLane-Setup.exe") : null;
+  const defaultInstallerNames = { "win32-x64": "MemoryLane-Setup.exe", "darwin-arm64": "MemoryLane-arm64.dmg" };
+  const defaultInstaller = defaultInstallerNames[platform] ? path.join(root, "dist", "installer", defaultInstallerNames[platform]) : null;
   const installerPath = valueAfter("--installer") ?? defaultInstaller;
   const manifestPath = valueAfter("--manifest") ?? path.join(root, "dist", "updates", platform, "manifest.json");
   if (!installerPath) throw new Error(`No default installer path for ${platform} - pass --installer explicitly`);
