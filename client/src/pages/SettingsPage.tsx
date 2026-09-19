@@ -479,7 +479,7 @@ export default function SettingsPage() {
         )}
       </section>
 
-      <section>
+      <section id="running-analysis">
         <h2 className="mb-1 font-serif text-lg font-semibold text-ink">Running Analysis</h2>
         <p className="mb-3 text-sm text-muted">
           Background processing that runs after scans - EXIF capture, keywords, stacking, and (when the AI sidecar is

@@ -41,7 +41,7 @@ export function useHoverPreview(cover: PreviewFrame | null, load: () => Promise<
         if (sequence.length < 2) return;
         stopRotation = startPreviewRotation(sequence, setFrame);
       }).catch(() => {});
-    }, 300);
+    }, 150);
     return () => {
       cancelled = true;
       clearTimeout(delay);

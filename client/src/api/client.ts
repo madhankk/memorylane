@@ -49,6 +49,7 @@ import type {
   LocationSummaryDto,
   LocationCellsDto,
   LocationItemsDto,
+  CoreUpdateDto,
 } from "@memorylane/shared";
 import { trackPageRead } from "../utils/pageLoad";
 
@@ -266,6 +267,11 @@ export const api = {
     status: () => request<AnalysisStatusDto>("/api/analysis/status"),
     retryFailed: (analyzer?: string) =>
       request<{ requeued: number }>("/api/analysis/retry", { method: "POST", body: JSON.stringify(analyzer ? { analyzer } : {}) }),
+  },
+  coreUpdate: {
+    status: () => request<CoreUpdateDto>("/api/core-update"),
+    check: () => request<CoreUpdateDto>("/api/core-update/check", { method: "POST" }),
+    install: () => request<CoreUpdateDto>("/api/core-update/install", { method: "POST" }),
   },
   pluginPlatform: {
     list: () => request<PluginPlatformDto[]>("/api/plugin-platform"),

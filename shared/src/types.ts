@@ -85,6 +85,13 @@ export interface PluginPlatformDto {
   error: string | null;
 }
 
+export interface CoreUpdateDto {
+  state: "unavailable" | "idle" | "checking" | "current" | "downloading" | "ready" | "error";
+  currentVersion: string;
+  availableVersion: string | null;
+  message: string | null;
+}
+
 export interface ApplePhotosSyncStatusDto {
   status: "idle" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
   processed: number;
@@ -556,21 +563,39 @@ export interface RetryAnalysisRequest {
   analyzer?: string;
 }
 
-// Focal-length report buckets (mm). Shared so the facet value the server
-// emits is exactly the key the client sends back as focalMin/focalMax.
-export const FOCAL_BUCKETS: { key: string; label: string; min: number; max: number }[] = [
-  { key: "0-24", label: "≤ 24 mm", min: 0, max: 24 },
-  { key: "25-35", label: "25–35 mm", min: 25, max: 35 },
-  { key: "36-50", label: "36–50 mm", min: 36, max: 50 },
-  { key: "51-85", label: "51–85 mm", min: 51, max: 85 },
-  { key: "86-135", label: "86–135 mm", min: 86, max: 135 },
-  { key: "136-200", label: "136–200 mm", min: 136, max: 200 },
-  { key: "201-400", label: "201–400 mm", min: 201, max: 400 },
-  { key: "401-9999", label: "> 400 mm", min: 401, max: 9999 },
+export interface FocalBucket {
+  key: string;
+  label: string;
+  min: number;
+  max: number;
+}
+
+// Focal lengths are rounded to the nearest millimetre before grouping. The
+// filter bounds use half-millimetre edges so selecting a displayed bucket
+// returns exactly the photos counted in it.
+export const FOCAL_BUCKETS: FocalBucket[] = [
+  { key: "lt10", label: "< 10 mm", min: 0, max: 9.999999999 },
+  ...Array.from({ length: 40 }, (_, index) => {
+    const value = 10 + index;
+    return { key: String(value), label: `${value} mm`, min: value === 10 ? 10 : value - 0.5, max: value + 0.499999999 };
+  }),
+  ...Array.from({ length: 15 }, (_, index) => {
+    const low = 50 + index * 10, high = low + 9;
+    return { key: `${low}-${high}`, label: `${low}–${high} mm`, min: low - 0.5, max: high + 0.499999999 };
+  }),
+  ...Array.from({ length: 25 }, (_, index) => {
+    const low = 200 + index * 20, high = low + 19;
+    return { key: `${low}-${high}`, label: `${low}–${high} mm`, min: low - 0.5, max: high + 0.499999999 };
+  }),
+  ...Array.from({ length: 6 }, (_, index) => {
+    const low = 700 + index * 50, high = low + 49;
+    return { key: `${low}-${high}`, label: `${low}–${high} mm`, min: low - 0.5, max: high + 0.499999999 };
+  }),
+  { key: "gte1000", label: "≥ 1000 mm", min: 999.5, max: Number.MAX_SAFE_INTEGER },
 ];
 
 export interface FacetBucketDto {
-  // The filter value to send back (lens string, "2.8", "400", focal bucket key, "2019").
+  // The exact filter value to send back (lens string, "2.8", "400", "2019").
   value: string;
   label: string;
   count: number;

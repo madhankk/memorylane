@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { Download, X } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { ChevronDown, Download, X } from "lucide-react";
 import {
   FOCAL_BUCKETS,
   type MediaDto,
@@ -14,7 +14,6 @@ import MediaGrid from "../components/MediaGrid";
 import MediaTypeFilter from "../components/MediaTypeFilter";
 import Viewer from "../components/Viewer";
 import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
-import AnalysisProgress from "../components/AnalysisProgress";
 
 const PAGE_SIZE = 200;
 
@@ -28,6 +27,8 @@ const FACET_TITLES: Record<ReportFacetField, string> = {
   year: "Year",
 };
 const FACET_ORDER: ReportFacetField[] = ["lens", "camera", "aperture", "focal", "iso", "year", "make"];
+const PRIMARY_FACETS: ReportFacetField[] = ["camera", "lens", "focal"];
+const MORE_FACETS: ReportFacetField[] = ["aperture", "year", "make", "iso"];
 
 // URL query string is the single source of truth for the current report, so
 // a filtered view is bookmarkable/shareable and the back button works.
@@ -52,7 +53,7 @@ function filtersFromParams(sp: URLSearchParams): ReportFilters {
 }
 
 // Which facet is "selected" is derived from the filters: exact-value facets
-// map to one key, numeric facets to a min==max pair, focal to a bucket.
+// map to one key and numeric facets map to a min==max pair.
 function selectedFor(field: ReportFacetField, f: ReportFilters): string | undefined {
   switch (field) {
     case "lens":
@@ -68,7 +69,7 @@ function selectedFor(field: ReportFacetField, f: ReportFilters): string | undefi
     case "iso":
       return f.isoMin !== undefined && f.isoMin === f.isoMax ? String(f.isoMin) : undefined;
     case "focal":
-      return FOCAL_BUCKETS.find((b) => b.min === f.focalMin && b.max === f.focalMax)?.key;
+      return FOCAL_BUCKETS.find((bucket) => bucket.min === f.focalMin && bucket.max === f.focalMax)?.key;
   }
 }
 
@@ -94,9 +95,9 @@ function applyFacet(field: ReportFacetField, value: string | undefined, f: Repor
       next.isoMin = next.isoMax = value !== undefined ? Number(value) : undefined;
       break;
     case "focal": {
-      const b = FOCAL_BUCKETS.find((x) => x.key === value);
-      next.focalMin = b?.min;
-      next.focalMax = b?.max;
+      const bucket = FOCAL_BUCKETS.find((item) => item.key === value);
+      next.focalMin = bucket?.min;
+      next.focalMax = bucket?.max;
       break;
     }
   }
@@ -127,6 +128,7 @@ export default function ReportsPage() {
   const [mediaTotal, setMediaTotal] = useState(0);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const loadingMoreRef = useRef(false);
 
   const setFilters = (next: ReportFilters) => {
@@ -167,14 +169,17 @@ export default function ReportsPage() {
   const hasMore = media !== null && media.length < mediaTotal;
   const sentinelRef = useInfiniteScroll(loadMore, hasMore, loadingMore);
   const chips = activeChips(filters, facets);
+  const secondaryFilterActive = MORE_FACETS.some((field) => selectedFor(field, filters) !== undefined);
+  const showMoreFilters = moreFiltersOpen || secondaryFilterActive;
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-serif text-2xl font-semibold text-ink">Reports</h1>
-          <p className="text-sm text-muted">
+          <p className="text-xs text-muted">
             {facets ? `${facets.total.toLocaleString()} photos with EXIF data match` : "Loading…"}
+            {facets && <> · <Link to="/settings?tab=analysis#running-analysis" className="text-accent hover:underline">View analysis progress</Link></>}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -187,11 +192,6 @@ export default function ReportsPage() {
             <Download size={14} strokeWidth={1.8} /> Export CSV
           </a>
         </div>
-      </div>
-
-      {/* Facets fill in as metadata extraction runs - say so instead of "0 photos match". */}
-      <div className="max-w-2xl empty:hidden">
-        <AnalysisProgress only={["exif_full"]} hideWhenDone />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -238,8 +238,8 @@ export default function ReportsPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {FACET_ORDER.map((field) => (
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {PRIMARY_FACETS.map((field) => (
           <FacetPanel
             key={field}
             title={FACET_TITLES[field]}
@@ -248,6 +248,19 @@ export default function ReportsPage() {
             onSelect={(v) => setFilters(applyFacet(field, v, filters))}
           />
         ))}
+      </div>
+
+      <div>
+        <button type="button" aria-expanded={showMoreFilters} onClick={() => setMoreFiltersOpen((open) => !open)}
+          className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted hover:bg-hover hover:text-ink">
+          More filters
+          <ChevronDown size={14} aria-hidden className={`transition-transform ${showMoreFilters ? "rotate-180" : ""}`} />
+        </button>
+        {showMoreFilters && <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {MORE_FACETS.map((field) => <FacetPanel key={field} title={FACET_TITLES[field]}
+            buckets={facets?.facets[field] ?? []} selected={selectedFor(field, filters)}
+            onSelect={(v) => setFilters(applyFacet(field, v, filters))} />)}
+        </div>}
       </div>
 
       {media === null && <p className="text-sm text-muted">Loading photos…</p>}

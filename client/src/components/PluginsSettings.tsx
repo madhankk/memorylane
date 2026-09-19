@@ -3,6 +3,8 @@ import type { ApplePhotosSyncStatusDto, PluginDto, PluginPlatformDto, ScanRootDt
 import { api, ApiError } from "../api/client";
 import { useConfirm } from "./ConfirmDialog";
 import { isPluginActive } from "../utils/plugins";
+import { CORE_UPDATE_REFRESH_EVENT } from "./CoreUpdateBanner";
+import PluginInstallProgress from "./PluginInstallProgress";
 
 const buttonClass = "rounded-md border border-border px-3 py-1.5 text-sm text-ink hover:bg-hover disabled:opacity-40";
 
@@ -99,6 +101,7 @@ export default function PluginsSettings() {
   const [pluginLogs, setPluginLogs] = useState<{id:string;lines:string[]}|null>(null);
   const [updateHistory,setUpdateHistory]=useState<Array<{pluginId:string;toVersion:string;status:string;at:string;error?:string}>>([]);
   const [coreVersion, setCoreVersion] = useState<string | null>(null);
+  const [installingPlugin, setInstallingPlugin] = useState<{id:string;label:string}|null>(null);
 
   const refresh = useCallback(async () => {
     const [plugins, generic, updates, versionInfo] = await Promise.all([api.plugins.list(), api.pluginPlatform.list(), api.pluginPlatform.updates(), api.settings.version()]);
@@ -145,6 +148,7 @@ export default function PluginsSettings() {
   const changePlatformPlugin = async (item: PluginPlatformDto) => {
     if (!item.version) return;
     setBusy(true);
+    if (item.state === "available" || item.state === "update-available") setInstallingPlugin({ id: item.id, label: `${item.state === "available" ? "Installing" : "Updating"} ${item.name}…` });
     try {
       if (item.state === "update-available") await api.pluginPlatform.update(item.id, item.version);
       else if (item.state === "available") {
@@ -153,7 +157,7 @@ export default function PluginsSettings() {
       } else await api.pluginPlatform.setEnabled(item.id, !isPluginActive(item), item.version);
       await refresh();
     } catch (cause) { await notice({ title: `Could not change ${item.name}`, message: cause instanceof ApiError ? cause.message : "Something went wrong." }); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setInstallingPlugin(null); }
   };
 
   const removePlatformPlugin = async (item: PluginPlatformDto) => {
@@ -186,8 +190,8 @@ export default function PluginsSettings() {
     .filter((item) => item.state !== "available")
     .sort((a, b) => Number(b.required) - Number(a.required));
   const availablePlugins = platformPlugins.filter((item) => item.state === "available");
-  const renderPlugin = (item: PluginPlatformDto) => <section key={item.id} className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border p-5">
-    <div className="min-w-0">
+  const renderPlugin = (item: PluginPlatformDto) => <section key={item.id} className="rounded-xl border border-border p-5"><div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="min-w-0 flex-1">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="font-semibold text-ink">{item.name}</h3>
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${item.required ? "bg-accent/15 text-accent" : "bg-chip text-muted"}`}>
@@ -208,10 +212,11 @@ export default function PluginsSettings() {
       {(!item.required || item.state === "update-available") && <button type="button" className={buttonClass} disabled={busy || item.state === "incompatible" || !item.version} onClick={() => void changePlatformPlugin(item)}>
         {item.state === "available" ? "Install" : item.state === "update-available" ? "Update" : isPluginActive(item) ? "Disable" : "Enable"}
       </button>}
-      {!item.required && item.state !== "available" && <button type="button" className={buttonClass} disabled={busy} onClick={() => void removePlatformPlugin(item)}>Remove</button>}</div>
+      {!item.required && item.state !== "available" && <button type="button" className={buttonClass} disabled={busy} onClick={() => void removePlatformPlugin(item)}>Remove</button>}</div></div>
+    {installingPlugin?.id === item.id && <PluginInstallProgress label={installingPlugin.label} />}
   </section>;
   return <div className="space-y-6">
-    <div className="flex items-center justify-between gap-4"><p className="text-sm text-muted">Updates are checked daily and rolled back when startup health checks fail.</p><button type="button" className={buttonClass} disabled={busy} onClick={()=>{setBusy(true);void api.pluginPlatform.checkUpdates().then(()=>refresh()).catch(cause=>notice({title:"Update check failed",message:cause instanceof Error?cause.message:"Something went wrong."})).finally(()=>setBusy(false));}}>Check for updates</button></div>
+    <div className="flex items-center justify-between gap-4"><p className="text-sm text-muted">Core and plugin updates are checked daily. Plugin updates roll back when startup health checks fail.</p><button type="button" className={buttonClass} disabled={busy} onClick={()=>{setBusy(true);void Promise.all([api.pluginPlatform.checkUpdates(),api.coreUpdate.check()]).then(()=>{window.dispatchEvent(new Event(CORE_UPDATE_REFRESH_EVENT));return refresh();}).catch(cause=>notice({title:"Update check failed",message:cause instanceof Error?cause.message:"Something went wrong."})).finally(()=>setBusy(false));}}>Check for updates</button></div>
     <section className="space-y-3"><h2 className="font-serif text-lg font-semibold text-ink">Core</h2><div className="rounded-xl border border-border p-5"><h3 className="font-semibold text-ink">MemoryLane Core</h3><p className="text-sm text-muted">Built in · v{coreVersion ?? "…"} · running</p></div></section>
     <section className="space-y-3"><div><h2 className="font-serif text-lg font-semibold text-ink">Installed</h2><p className="text-sm text-muted">Required components plus any optional features you've added.</p></div>{installedPlugins.map(renderPlugin)}</section>
     <section className="space-y-3">

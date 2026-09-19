@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import type { CleanupMarkDto, MediaDto } from "@memorylane/shared";
 import { api } from "../api/client";
 import Viewer from "../components/Viewer";
@@ -100,7 +101,11 @@ export default function CleanupPage() {
       <button onClick={() => setSelectedIds(new Set())} className="rounded-md border border-border px-3 py-1.5">None</button>
       <button disabled={selectedMoveIds.length === 0 || working} onClick={() => void moveIds(selectedMoveIds)} className="rounded-md border border-border px-3 py-1.5 disabled:opacity-40">Move {selectedMoveIds.length} selected to trash</button>
     </div>}
-    {items.length === 0 && <p className="text-sm text-muted">Nothing marked for deletion.</p>}
+    {items.length === 0 && <div className="rounded-xl border border-dashed border-border-strong bg-surface p-6">
+      <h2 className="font-medium text-ink">Nothing marked for cleanup</h2>
+      <p className="mt-1 max-w-2xl text-sm text-muted">Open a folder, choose <strong className="text-ink">Select</strong>, click one or more photos, then choose <strong className="text-ink">Mark for deletion</strong>. Marking only hides them from normal browsing; no files move until you review them here.</p>
+      <Link to="/" className="mt-4 inline-flex rounded-md bg-accent px-4 py-2 text-sm font-medium text-page">Browse your library</Link>
+    </div>}
     {items.length > 0 && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{items.map((item, index) => <article key={item.media.id} className="overflow-hidden rounded-lg border border-border bg-surface">
       <button onClick={() => item.media.status === "active" && item.trashStatus === null && setViewerIndex(index)} disabled={item.media.status !== "active" || item.trashStatus !== null} className="aspect-square w-full bg-media disabled:cursor-default">
         {item.media.thumbnailStatus === "done" ? <img src={api.media.thumbnailUrl(item.media.id, item.media.thumbnailVersion)} alt={item.media.filename} loading="lazy" className="h-full w-full object-cover" /> : <span className="text-sm text-muted">Preview unavailable</span>}

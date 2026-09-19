@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -44,6 +45,8 @@ type coreUpdater struct {
 	manifest  *updateManifest
 	installer string
 	checking  bool
+	state     string
+	lastError string
 	setMenu   func(string, bool)
 }
 
@@ -57,11 +60,40 @@ func newCoreUpdater(setMenu func(string, bool)) *coreUpdater {
 		// defaultReleaseURL fallback in main.go.
 		updateFeedURL = defaultReleaseURL("updates/%s/manifest.json")
 	}
-	return &coreUpdater{setMenu: setMenu}
+	return &coreUpdater{setMenu: setMenu, state: "idle"}
+}
+
+type publicUpdateStatus struct {
+	State            string  `json:"state"`
+	CurrentVersion   string  `json:"currentVersion"`
+	AvailableVersion *string `json:"availableVersion"`
+	Message          *string `json:"message"`
+}
+
+func (u *coreUpdater) status() publicUpdateStatus {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	result := publicUpdateStatus{State: u.state, CurrentVersion: version}
+	if u.manifest != nil {
+		available := u.manifest.Version
+		result.AvailableVersion = &available
+	}
+	if u.lastError != "" {
+		message := u.lastError
+		result.Message = &message
+	}
+	return result
+}
+
+func (u *coreUpdater) setState(state, message string) {
+	u.mu.Lock()
+	u.state, u.lastError = state, message
+	u.mu.Unlock()
 }
 
 func (u *coreUpdater) start() {
 	if updateFeedURL == "" {
+		u.setState("unavailable", "")
 		u.setMenu("Updates not configured", false)
 		return
 	}
@@ -84,15 +116,18 @@ func (u *coreUpdater) activate(s *supervisor, tray *systray.SystemTray) {
 	}
 	ready, reasons := s.updateReadiness()
 	if !ready {
+		u.setState("ready", "Update waits for: "+strings.Join(reasons, ", "))
 		u.setMenu("Update waits for: "+strings.Join(reasons, ", "), true)
 		return
 	}
 	s.stop()
 	if !s.waitForState("stopped", 10*time.Second) {
+		u.setState("error", "Could not stop server for update")
 		u.setMenu("Could not stop server for update", true)
 		return
 	}
 	if err := launchInstaller(installer); err != nil {
+		u.setState("error", "Update launch failed")
 		u.setMenu("Update launch failed", true)
 		return
 	}
@@ -107,6 +142,7 @@ func (u *coreUpdater) check() error {
 	}
 	u.checking = true
 	u.mu.Unlock()
+	u.setState("checking", "")
 	defer func() { u.mu.Lock(); u.checking = false; u.mu.Unlock() }()
 	u.setMenu("Checking for Updates...", false)
 
@@ -115,39 +151,104 @@ func (u *coreUpdater) check() error {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, updateFeedURL, nil)
 	response, err := http.DefaultClient.Do(req)
 	if err != nil {
+		u.setState("error", "Update check failed")
 		u.setMenu("Update check failed", true)
 		return err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		err = fmt.Errorf("update feed returned %s", response.Status)
+		u.setState("error", "Update check failed")
 		u.setMenu("Update check failed", true)
 		return err
 	}
 	var manifest updateManifest
 	if err = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&manifest); err != nil {
+		u.setState("error", "Invalid update feed")
 		u.setMenu("Invalid update feed", true)
 		return err
 	}
 	if err = verifyManifest(manifest); err != nil {
+		u.setState("error", "Update signature invalid")
 		u.setMenu("Update signature invalid", true)
 		return err
 	}
 	if compareVersions(manifest.Version, version) <= 0 {
+		u.mu.Lock()
+		u.manifest, u.installer = nil, ""
+		u.mu.Unlock()
+		u.setState("current", "")
 		u.setMenu("MemoryLane is up to date", true)
 		return nil
 	}
 	u.setMenu("Downloading MemoryLane "+manifest.Version+"...", false)
+	u.mu.Lock()
+	u.manifest = &manifest
+	u.mu.Unlock()
+	u.setState("downloading", "")
 	installer, err := downloadInstaller(ctx, manifest)
 	if err != nil {
+		u.setState("error", "Update download failed")
 		u.setMenu("Update download failed", true)
 		return err
 	}
 	u.mu.Lock()
 	u.manifest, u.installer = &manifest, installer
 	u.mu.Unlock()
+	u.setState("ready", "")
 	u.setMenu("Install MemoryLane "+manifest.Version, true)
 	return nil
+}
+
+func startUpdateControlServer(u *coreUpdater, s *supervisor, token string) (string, func(), error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", func() {}, err
+	}
+	authorized := func(w http.ResponseWriter, r *http.Request) bool {
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get("x-memorylane-desktop-token")), []byte(token)) != 1 {
+			http.NotFound(w, r)
+			return false
+		}
+		w.Header().Set("Content-Type", "application/json")
+		return true
+	}
+	writeStatus := func(w http.ResponseWriter) { _ = json.NewEncoder(w).Encode(u.status()) }
+	mux := http.NewServeMux()
+	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(w, r) || r.Method != http.MethodGet {
+			return
+		}
+		writeStatus(w)
+	})
+	mux.HandleFunc("/check", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(w, r) || r.Method != http.MethodPost {
+			return
+		}
+		go func() { _ = u.check() }()
+		w.WriteHeader(http.StatusAccepted)
+		writeStatus(w)
+	})
+	mux.HandleFunc("/install", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(w, r) || r.Method != http.MethodPost {
+			return
+		}
+		if u.status().State != "ready" {
+			http.Error(w, `{"error":"Update is not ready"}`, http.StatusConflict)
+			return
+		}
+		if ready, reasons := s.updateReadiness(); !ready {
+			u.setState("ready", "Update waits for: "+strings.Join(reasons, ", "))
+			http.Error(w, `{"error":"Background work must finish before installing"}`, http.StatusConflict)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		writeStatus(w)
+		go u.activate(s, tray)
+	})
+	server := &http.Server{Handler: mux, ReadHeaderTimeout: 3 * time.Second}
+	go func() { _ = server.Serve(listener) }()
+	return "http://" + listener.Addr().String(), func() { _ = server.Close() }, nil
 }
 
 func verifyManifest(m updateManifest) error {

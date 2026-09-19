@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 import { BarChart3, ChevronDown, FolderOpen, LibraryBig, LogOut, MapPinned, Search, Settings as SettingsIcon, Star, Tags, Trash2, Users, type LucideIcon } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { usePluginActive } from "../utils/plugins";
+import CoreUpdateBanner from "./CoreUpdateBanner";
 
 // Mirrors life-archive-app's ArchiveNav.tsx: sticky glass header, serif
 // wordmark, pill-shaped nav with icon + label links, active item filled
@@ -160,6 +161,7 @@ export default function Layout() {
           </nav>
         </div>
       </header>
+      <CoreUpdateBanner />
       <main className="mx-auto w-full max-w-[1440px] px-3 py-6 sm:px-5 sm:py-8 lg:px-8">
         <Outlet />
       </main>

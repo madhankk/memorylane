@@ -24,6 +24,7 @@ import { registerPluginRoutes } from "./plugins/plugin-routes.js";
 import { registerCleanupRoutes } from "./api/cleanup-routes.js";
 import { registerTagRoutes } from "./api/tags-routes.js";
 import { registerLocationRoutes } from "./api/location-routes.js";
+import { registerCoreUpdateRoutes } from "./api/core-update-routes.js";
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const isProd = process.env.NODE_ENV === "production";
@@ -47,6 +48,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
 
   await registerAuthRoutes(app, ctx);
   await registerSettingsRoutes(app, ctx);
+  await registerCoreUpdateRoutes(app);
   await registerPluginRoutes(app, ctx);
   await registerScanRootRoutes(app, ctx);
   await registerScanRoutes(app, ctx);

@@ -97,13 +97,14 @@ type config struct {
 }
 
 type supervisor struct {
-	mu      sync.Mutex
-	cmd     *exec.Cmd
-	state   string
-	port    int
-	token   string
-	logFile *os.File
-	onState func(string)
+	mu         sync.Mutex
+	cmd        *exec.Cmd
+	state      string
+	port       int
+	token      string
+	controlURL string
+	logFile    *os.File
+	onState    func(string)
 	// Only set on the real tray's supervisor - runSmokeTest's own supervisor
 	// wants to handle a startup failure itself (print, return a code) rather
 	// than have fail() show a dialog and os.Exit from under it.
@@ -111,12 +112,13 @@ type supervisor struct {
 }
 
 var (
-	sup           *supervisor
-	menuState     *systray.MenuItem
-	menuLogin     *systray.MenuItem
-	menuOpenAtRun *systray.MenuItem
-	menuUpdate    *systray.MenuItem
-	tray          *systray.SystemTray
+	sup                *supervisor
+	menuState          *systray.MenuItem
+	menuLogin          *systray.MenuItem
+	menuOpenAtRun      *systray.MenuItem
+	menuUpdate         *systray.MenuItem
+	tray               *systray.SystemTray
+	updateControlClose func()
 )
 
 func main() {
@@ -213,11 +215,23 @@ func onReady() {
 		_ = saveConfig(cfg)
 	})
 	menu.AddSeparator()
+	if sup.token == "" {
+		tokenBytes := make([]byte, 32)
+		if _, err := rand.Read(tokenBytes); err != nil {
+			showFatalError("MemoryLane", "Could not initialize desktop security")
+			tray.Remove()
+			return
+		}
+		sup.token = base64.RawURLEncoding.EncodeToString(tokenBytes)
+	}
 	updater := newCoreUpdater(func(label string, enabled bool) {
 		menuUpdate.SetLabel(label)
 		menuUpdate.SetDisabled(!enabled)
 	})
 	menuUpdate = menu.Add("Check for Updates", func() { go updater.activate(sup, tray) })
+	if controlURL, closeControl, err := startUpdateControlServer(updater, sup, sup.token); err == nil {
+		sup.controlURL, updateControlClose = controlURL, closeControl
+	}
 	go updater.start()
 	menu.AddSeparator()
 	menu.Add("Quit", func() { tray.Remove() })
@@ -237,6 +251,9 @@ func onReady() {
 }
 
 func onExit() {
+	if updateControlClose != nil {
+		updateControlClose()
+	}
 	if sup != nil {
 		sup.stop()
 	}
@@ -294,18 +311,21 @@ func (s *supervisor) start(port int) {
 		return
 	}
 
-	tokenBytes := make([]byte, 32)
-	if _, err = rand.Read(tokenBytes); err != nil {
-		s.fail(err)
-		return
+	if s.token == "" {
+		tokenBytes := make([]byte, 32)
+		if _, err = rand.Read(tokenBytes); err != nil {
+			s.fail(err)
+			return
+		}
+		s.token = base64.RawURLEncoding.EncodeToString(tokenBytes)
 	}
-	s.token = base64.RawURLEncoding.EncodeToString(tokenBytes)
 	cmd := exec.Command(node, server)
 	cmd.Dir = runtimeDir
 	cmd.Env = append(os.Environ(),
 		"MEMORYLANE_PORT="+strconv.Itoa(port),
 		"MEMORYLANE_NO_OPEN=1",
 		"MEMORYLANE_DESKTOP_TOKEN="+s.token,
+		"MEMORYLANE_DESKTOP_CONTROL_URL="+s.controlURL,
 	)
 	if plugins := bundledPluginsDir(); plugins != "" {
 		cmd.Env = append(cmd.Env, "MEMORYLANE_BUNDLED_PLUGIN_REPOSITORY="+plugins)

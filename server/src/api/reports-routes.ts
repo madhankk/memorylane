@@ -31,14 +31,11 @@ export function toMediaQueryParams(q: MediaFilterQuery, extra: Partial<MediaQuer
   };
 }
 
-const FOCAL_CASE =
-  "CASE " + FOCAL_BUCKETS.map((b) => `WHEN mx.focal_length <= ${b.max} THEN '${b.key}'`).join(" ") + " END";
-
 // SQL expression + which filter keys the facet "owns" (removed when
 // computing that facet so its full list stays visible while selected).
 const FACETS: Record<
   ReportFacetField,
-  { expr: string; owns: (keyof ExifFilterQuery)[]; order: string; label: (v: string) => string }
+  { expr: string; owns: (keyof ExifFilterQuery)[]; order: string; label: (v: string) => string; unlimited?: boolean }
 > = {
   lens: { expr: "mx.lens_id", owns: ["lens"], order: "count DESC, value", label: (v) => v },
   camera: { expr: "mx.camera_model", owns: ["camera"], order: "count DESC, value", label: (v) => v },
@@ -46,10 +43,12 @@ const FACETS: Record<
   aperture: { expr: "round(mx.aperture, 1)", owns: ["apertureMin", "apertureMax"], order: "CAST(value AS REAL)", label: (v) => `f/${v}` },
   iso: { expr: "mx.iso", owns: ["isoMin", "isoMax"], order: "CAST(value AS INTEGER)", label: (v) => v },
   focal: {
-    expr: FOCAL_CASE,
+    expr: "CASE WHEN mx.focal_length IS NULL THEN NULL " + FOCAL_BUCKETS.slice(0, -1).map((bucket) =>
+      `WHEN mx.focal_length <= ${bucket.max} THEN '${bucket.key}'`).join(" ") + ` ELSE '${FOCAL_BUCKETS.at(-1)!.key}' END`,
     owns: ["focalMin", "focalMax"],
-    order: "CAST(substr(value, 1, instr(value, '-') - 1) AS INTEGER)",
-    label: (v) => FOCAL_BUCKETS.find((b) => b.key === v)?.label ?? v,
+    order: "CASE " + FOCAL_BUCKETS.map((bucket, index) => `WHEN value = '${bucket.key}' THEN ${index}`).join(" ") + " END",
+    label: (v) => FOCAL_BUCKETS.find((bucket) => bucket.key === v)?.label ?? v,
+    unlimited: true,
   },
   year: { expr: "substr(mx.captured_at_precise, 1, 4)", owns: ["year"], order: "value DESC", label: (v) => v },
 };
@@ -90,7 +89,7 @@ export async function registerReportsRoutes(app: FastifyInstance, ctx: AppContex
         .prepare(
           `${q.cte} SELECT ${def.expr} AS value, COUNT(*) AS count FROM media ${q.joins}
            WHERE ${q.where} AND ${def.expr} IS NOT NULL
-           GROUP BY value ORDER BY ${def.order} LIMIT ${MAX_BUCKETS}`,
+           GROUP BY value ORDER BY ${def.order}${def.unlimited ? "" : ` LIMIT ${MAX_BUCKETS}`}`,
         )
         .all(...q.bindings) as { value: string | number; count: number }[];
       facets[field] = rows.map((r) => ({ value: String(r.value), label: def.label(String(r.value)), count: r.count }));

@@ -183,38 +183,39 @@ export default function FolderPage() {
     <div className="flex flex-col gap-5">
       <div>
         <Breadcrumbs items={breadcrumbs} />
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="font-serif text-2xl font-semibold text-ink">{folder.name}</h1>
-          <div className="flex items-center gap-4">
+        <div className={selectMode ? "flex flex-col items-stretch gap-4" : "flex flex-wrap items-center justify-between gap-4"}>
+          <h1 className="min-w-0 break-words font-serif text-2xl font-semibold text-ink">{folder.name}</h1>
+          <div className={selectMode ? "flex w-full flex-wrap items-center gap-2 rounded-xl border border-border bg-surface p-3" : "flex flex-wrap items-center justify-end gap-3"}>
             {selectMode ? (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted">{selectedIds.size} selected</span>
-                <button onClick={() => setSelectedIds(new Set(media.map((m) => m.id)))} className="rounded-md border border-border px-3 py-1.5 text-ink hover:bg-hover">Select all {media.length} shown</button>
-                <button onClick={() => setSelectedIds(new Set())} className="rounded-md border border-border px-3 py-1.5 text-ink hover:bg-hover">None</button>
-                <button onClick={() => setSelectedIds(invertVisibleSelection(media.map((m) => m.id), selectedIds))} className="rounded-md border border-border px-3 py-1.5 text-ink hover:bg-hover">Invert shown</button>
-                <button onClick={() => void markSelected()} disabled={selectedIds.size === 0 || marking} className="rounded-md border border-border px-3 py-1.5 text-ink hover:bg-hover disabled:opacity-40">{marking ? "Marking…" : "Mark for deletion"}</button>
+              <div className="flex flex-1 flex-wrap items-center gap-2 text-sm">
+                <span className="mr-1 whitespace-nowrap font-medium text-ink"><span className="mr-1 inline-flex min-w-7 justify-center rounded-full bg-accent px-2 py-0.5 text-page">{selectedIds.size}</span> selected</span>
+                <button onClick={() => setSelectedIds(new Set(media.map((m) => m.id)))} title={`Select all ${media.length} items currently shown`} className="whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-ink hover:bg-hover">All shown</button>
+                <button onClick={() => setSelectedIds(new Set())} className="whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-ink hover:bg-hover">Clear</button>
+                <button onClick={() => setSelectedIds(invertVisibleSelection(media.map((m) => m.id), selectedIds))} className="whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-ink hover:bg-hover">Invert</button>
+                <button onClick={() => void markSelected()} disabled={selectedIds.size === 0 || marking} className="whitespace-nowrap rounded-md border border-red-500/30 px-3 py-1.5 text-red-600 hover:bg-red-500/10 disabled:opacity-40">{marking ? "Marking…" : "Mark for deletion"}</button>
                 <button
                   onClick={() => void stackSelected()}
                   disabled={selectedIds.size < 2}
-                  className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-page hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex items-center gap-1.5 whitespace-nowrap rounded-md bg-accent px-3 py-1.5 text-page hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Layers size={14} strokeWidth={1.8} />
                   Stack selected
                 </button>
-                <button onClick={exitSelectMode} className="rounded-md border border-border px-3 py-1.5 text-ink hover:bg-hover">
-                  Cancel
+                <button onClick={exitSelectMode} className="whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-ink hover:bg-hover">
+                  Done
                 </button>
               </div>
             ) : (
               <button
                 onClick={() => setSelectMode(true)}
-                title="Select photos to stack them by hand"
+                title="Select photos for cleanup or stacking"
                 className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-ink hover:bg-hover"
               >
                 <CheckSquare size={14} strokeWidth={1.8} />
                 Select
               </button>
             )}
+            {!selectMode && <>
             <MediaTypeFilter value={mediaType} onChange={(t) => void changeMediaType(t)} />
             <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap text-sm text-muted">
               <input
@@ -247,6 +248,7 @@ export default function FolderPage() {
                 </div>
               )}
             </div>
+            </>}
           </div>
         </div>
       </div>
